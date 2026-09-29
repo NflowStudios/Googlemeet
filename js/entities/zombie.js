@@ -147,8 +147,11 @@ export class Zombie {
         const td = Math.max(1, dist(this.x, this.y, this.lastSeenX, this.lastSeenY));
         mvx = (this.lastSeenX - this.x) / td;
         mvy = (this.lastSeenY - this.y) / td;
-        // ataque
-        if (d < Z.attackRange + p.r && this.attackCd <= 0) {
+        // ataque — SOLO con línea de visión directa: la franja del muro y las
+        // puertas cerradas bloquean el golpe (mismo criterio que el melee del
+        // jugador; el cristal de las ventanas deja golpear a través).
+        if (d < Z.attackRange + p.r && this.attackCd <= 0 &&
+            map.lineClear(this.x, this.y, p.x, p.y)) {
           this.attackCd = Z.attackCd;
           game.combatZombieHit(this);
         }

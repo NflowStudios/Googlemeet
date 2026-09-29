@@ -1,6 +1,6 @@
 # ZONA CERO — Prototipo de supervivencia zombi 2D
 
-> **Sobrevive. Cada ruido cuenta.** · v0.5
+> **Sobrevive. Cada ruido cuenta.** · v0.6
 
 Videojuego de supervivencia zombi con **vista cenital (top-down)** inspirado en la tensión de *Project Zomboid* y *DayZ*. Programado en **JavaScript vanilla + Canvas 2D** con arquitectura modular por módulos ES, **sin dependencias ni pasos de compilación**: se juega directamente en el navegador.
 
@@ -38,12 +38,12 @@ Luego abre `http://localhost:8000`. (Los módulos ES requieren servidor; no func
 - **Contadores vitales**: Vida, Energía (stamina), Hambre y Sed. Las necesidades críticas drenan vida y entorpecen la recuperación de energía. No hay regeneración natural: solo vendas y botiquines.
 - **Daño e infección**: los zombis reducen tu vida directamente. Las **mordidas** pueden transmitir la infección (barra verde), que progresa sin pausa hasta la muerte. Los antibióticos la curan solo si está incipiente.
 - **Comida y descomposición**: come y bebe para recuperar hambre/sed. La comida **podrida** (etiqueta en el inventario) daña, intoxica y alimenta muy poco.
-- **Visión en tiempo real**: solo ves un **cono frontal amplio** (~109°, con raycast: las paredes bloquean, las ventanas dejan ver) más un radio de percepción mínimo junto al cuerpo. **Sin memoria del terreno**: lo que queda a tus espaldas o fuera del cono es negro absoluto — nada se "desbloquea" nunca, así que vigila tu retaguardia girándote. **Paredes delgadas** (muros, ventanas y puertas son una franja fina sobre la línea de muro; el suelo a ambos lados es transitable): los muros, ventanas, puertas, **árboles y coches** con línea de visión se dibujan **nítidos sobre la niebla**, pero el **interior de las casas solo se ve por ventanas y puertas abiertas**. **Árboles y coches no tapan tu visión** (cámara aérea), aunque sí la de los zombis: úsalos como cobertura para esconderte. Los zombis fuera de tu visión son invisibles y no puedes golpear a través de los muros.
+- **Visión en tiempo real**: solo ves un **cono frontal amplio** (~109°, con raycast: las paredes bloquean, las ventanas dejan ver) más un radio de percepción mínimo junto al cuerpo. **Sin memoria del terreno**: lo que queda a tus espaldas o fuera del cono es negro absoluto — nada se "desbloquea" nunca, así que vigila tu retaguardia girándote. **Paredes delgadas** (muros, ventanas y puertas son una franja fina sobre la línea de muro; el suelo a ambos lados es transitable): los muros, ventanas, puertas, **árboles y coches** con línea de visión se dibujan **nítidos sobre la niebla**, pero el **interior de las casas solo se ve por ventanas y puertas abiertas**. **Árboles y coches no tapan tu visión** (cámara aérea), aunque sí la de los zombis: úsalos como cobertura para esconderte. Los zombis fuera de tu visión son invisibles y no puedes golpear a través de los muros — ni ellos a ti (el cristal de las ventanas deja pasar los golpes en ambos sentidos).
 - **Propagación de sonido**: correr, atacar, abrir puertas y registrar muebles emite ruido que **atrae a los zombis cercanos**. Camina agachado para reducir tu firma sonora (medidor RUIDO en el HUD).
 - **Inventario por espacios** (sin peso): mochila con slots limitados, contenedores saqueables (neveras, alacenas, armarios, casilleros, botiquines) y objetos apilables.
 - **Ropa con 4 categorías** estéticas y funcionales: **Cabeza** (cascos → reducción de daño), **Accesorios** (máscara de gas / pasamontañas → protección contra mordidas y sigilo), **Torso** (chaleco táctico → blindaje +4 espacios), **Pantalones** (cargo → +2 espacios). Las piezas cambian el aspecto del personaje.
 - **IA de zombis** con estados: deambulan, investigan los ruidos, persiguen al verte y atacan. Huyen de tu vista… no.
-- **Mundo procedural**: town con calles, manzanas, casas con puertas abribles y ventanas, muebles con botín, coches abandonados y árboles. Cada partida genera un mapa distinto.
+- **Mundo procedural**: town con calles, manzanas, casas con puertas abribles y ventanas, muebles con botín, coches abandonados y árboles. Cada partida genera un mapa distinto. **Pintura vial anclada al mundo** (nunca se desliza con la cámara): línea central discontinua, líneas de borde, pasos de cebra en los cruces, aceras de losas con bordillo y tapas de alcantarilla.
 - **Audio 100% procedural** (WebAudio, sin archivos): pasos, golpes, gemidos espaciales de zombis, latido con vida crítica y viento ambiental.
 
 ## Arquitectura
@@ -56,11 +56,20 @@ js/
 ├── config.js           — balance, base de datos de objetos, tablas de botín
 ├── utils.js / rng.js   — matemáticas y RNG con semilla
 ├── core/               — input, cámara, audio procedural
-├── world/              — mapa procedural + visión (cono/niebla)
-├── entities/           — jugador y zombi (IA)
+├── world/              — mapa procedural + visión (cono/niebla) + pintura vial
+├── entities/           — jugador y zombi (IA, ataque con línea de visión)
 ├── systems/            — supervivencia, ruido, inventario, combate
 └── ui/                 — HUD, inventario, menús, toasts
 ```
+
+## Historial de versiones
+
+- **v0.6** — Hitbox de ataque de zombis con línea de visión (no golpean a través de muros; el cristal de las ventanas sí deja pasar el golpe, como tu melee). Pintura vial precalculada y anclada al mundo: se acabó el "deslizamiento" de las líneas de la calle. Línea central discontinua ahora en el centro real de la calzada, líneas de borde, pasos de cebra en los 4 accesos de cada cruce, aceras de losas con juntas y bordillo, asfalto con grano/remiendos/grietas y tapas de alcantarilla.
+- **v0.5** — Paredes, puertas y ventanas DELGADAS (franja de 10px sobre la línea de muro). Melee del jugador no atraviesa muros.
+- **v0.4** — Árboles y coches no tapan la visión del jugador y se redibujan nítidos; sí tapan la vista de los zombis (cobertura).
+- **v0.3** — Campo de visión más grande; muros visibles con claridad sobre la niebla.
+- **v0.2** — Visión estrictamente en tiempo real (sin memoria del terreno).
+- **v0.1** — Prototipo inicial: 5 sistemas (supervivencia, ruido, inventario, ropa, IA).
 
 ## Roadmap (siguientes iteraciones)
 

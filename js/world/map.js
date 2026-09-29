@@ -40,8 +40,12 @@ export class GameMap {
     this.containers = [];   // {type, name, x, y, color, letter, searched}
     this.buildings = [];    // {x0, y0, x1, y1, cx, cy}
     this.doors = [];        // {tx, ty}
-    this.vMarks = [];       // marcas de carril verticales {x, y0, y1}
-    this.hMarks = [];
+    // Pintura vial PRECALCULADA en coordenadas de mundo (rects {x, y, w, h, c}):
+    // línea central discontinua, líneas de borde y pasos de cebra. Al estar
+    // anclada al mundo (no a la pantalla), las marcas NUNCA se deslizan sobre
+    // el asfalto al mover la cámara.
+    this.roadPaint = [];    // rects de pintura vial
+    this.manholes = [];     // tapas de alcantarilla {x, y}
     this.outdoorTiles = []; // índices de tiles exteriores caminables
     this.indoorTiles = [];  // índices de tiles de interior
     this.spawn = { x: 0, y: 0 };
@@ -273,16 +277,14 @@ export class GameMap {
     const rng = this.rng;
     const tiles = this.tiles;
 
-    // --- Calles y marcas de carril ---
+    // --- Calles ---
     for (const [a, b] of V_ROADS) {
       for (let x = a; x <= b; x++)
         for (let y = 0; y < MAP_H; y++) tiles[this.idx(x, y)] = T.ROAD;
-      this.vMarks.push({ x: b * TILE, y0: 0, y1: MAP_H * TILE });
     }
     for (const [a, b] of H_ROADS) {
       for (let y = a; y <= b; y++)
         for (let x = 0; x < MAP_W; x++) tiles[this.idx(x, y)] = T.ROAD;
-      this.hMarks.push({ y: b * TILE, x0: 0, x1: MAP_W * TILE });
     }
 
     // --- Aceras: hierba adyacente a calle ---
@@ -382,6 +384,112 @@ export class GameMap {
         if (t === T.ROAD || t === T.SIDEWALK || t === T.GRASS) this.outdoorTiles.push(this.idx(x, y));
         else if (t === T.FLOOR) this.indoorTiles.push(this.idx(x, y));
       }
+    }
+
+    // --- Pintura vial (tras coches/árboles para respetar sus tiles) ---
+    this._buildRoadPaint();
+  }
+
+  /**
+   * Precalcula TODA la pintura vial como rects en coordenadas de mundo.
+   * Se dibujan como fillRect directos (sin setLineDash): la fase de los
+   * guiones queda anclada al asfalto y no "nada" con la cámara.
+   * - Línea central discontinua amarilla en el CENTRO real de la calzada.
+   * - Líneas de borde blancas junto a la acera.
+   * - Pasos de cebra en los 4 accesos de cada cruce.
+   * - Tapas de alcantarilla repartidas por el asfalto.
+   */
+  _buildRoadPaint() {
+    const P = this.roadPaint;
+    const YEL = 'rgba(206,172,64,0.55)';   // línea central discontinua
+    const WHT = 'rgba(214,214,204,0.22)';  // líneas de borde
+    const ZEB = 'rgba(214,214,204,0.30)';  // pasos de cebra
+    const GAP = 52;                         // margen sin pintura alrededor de cruces
+
+    // Zonas de cruce (con margen) que la pintura longitudinal debe saltar.
+    const hCross = H_ROADS.map(([c, d]) => [c * TILE - GAP, (d + 1) * TILE + GAP]);
+    const vCross = V_ROADS.map(([a, b]) => [a * TILE - GAP, (b + 1) * TILE + GAP]);
+
+    // Sub-segmentos libres de [from, to] tras recortar los rangos a evitar.
+    const freeSegs = (from, to, skips) => {
+      const out = [];
+      let s = from;
+      const cuts = [];
+      for (const [s0, s1] of skips) if (s1 > s && s0 < to) cuts.push([Math.max(s, s0), Math.min(to, s1)]);
+      cuts.sort((p, q) => p[0] - q[0]);
+      for (const [a, b] of cuts) { if (a > s) out.push([s, a]); s = Math.max(s, b); }
+      if (s < to) out.push([s, to]);
+      return out;
+    };
+
+    // --- Calles verticales: centro discontinuo + líneas de borde ---
+    for (const [a, b] of V_ROADS) {
+      const cx = (a + b + 1) / 2 * TILE;            // centro REAL de la calzada
+      const exL = a * TILE + 7, exR = (b + 1) * TILE - 10;
+      for (const [y0, y1] of freeSegs(0, WORLD_H, hCross)) {
+        for (let y = y0; y + 12 <= y1; y += 28) P.push({ x: cx - 2, y, w: 4, h: 12, c: YEL });
+        P.push({ x: exL, y: y0, w: 3, h: y1 - y0, c: WHT });
+        P.push({ x: exR, y: y0, w: 3, h: y1 - y0, c: WHT });
+      }
+    }
+    // --- Calles horizontales ---
+    for (const [c, d] of H_ROADS) {
+      const cy = (c + d + 1) / 2 * TILE;
+      const eyT = c * TILE + 7, eyB = (d + 1) * TILE - 10;
+      for (const [x0, x1] of freeSegs(0, WORLD_W, vCross)) {
+        for (let x = x0; x + 12 <= x1; x += 28) P.push({ x, y: cy - 2, w: 12, h: 4, c: YEL });
+        P.push({ x: x0, y: eyT, w: x1 - x0, h: 3, c: WHT });
+        P.push({ x: x0, y: eyB, w: x1 - x0, h: 3, c: WHT });
+      }
+    }
+
+    // --- Pasos de cebra en los 4 accesos de cada cruce ---
+    for (const [a, b] of V_ROADS) {
+      for (const [c, d] of H_ROADS) {
+        // cebra para cruzar la calle VERTICAL (barras verticales, al N y al S)
+        const x0 = a * TILE + 9, x1 = (b + 1) * TILE - 9;
+        const yN = c * TILE - 46, yS = (d + 1) * TILE + 18;
+        for (let x = x0; x + 7 <= x1; x += 14) {
+          P.push({ x, y: yN, w: 7, h: 28, c: ZEB });
+          P.push({ x, y: yS, w: 7, h: 28, c: ZEB });
+        }
+        // cebra para cruzar la calle HORIZONTAL (barras horizontales, al O y al E)
+        const yy0 = c * TILE + 9, yy1 = (d + 1) * TILE - 9;
+        const xW = a * TILE - 46, xE = (b + 1) * TILE + 18;
+        for (let y = yy0; y + 7 <= yy1; y += 14) {
+          P.push({ x: xW, y, w: 28, h: 7, c: ZEB });
+          P.push({ x: xE, y, w: 28, h: 7, c: ZEB });
+        }
+      }
+    }
+
+    // --- Tapas de alcantarilla (nunca bajo coches ni sobre cebra/cruces) ---
+    const nearCross = (x, y) => {
+      for (const [a, b] of V_ROADS) {
+        if (x <= a * TILE - 58 || x >= (b + 1) * TILE + 58) continue;
+        for (const [c, d] of H_ROADS) {
+          if (y > c * TILE - 58 && y < (d + 1) * TILE + 58) return true;
+        }
+      }
+      return false;
+    };
+    let tries = 0;
+    while (this.manholes.length < 26 && tries < 500) {
+      tries++;
+      let x, y;
+      if (this.rng.chance(0.5)) {
+        const [a, b] = V_ROADS[this.rng.index(V_ROADS.length)];
+        x = this.rng.range(a * TILE + 16, (b + 1) * TILE - 16);
+        y = this.rng.range(48, WORLD_H - 48);
+      } else {
+        const [c, d] = H_ROADS[this.rng.index(H_ROADS.length)];
+        y = this.rng.range(c * TILE + 16, (d + 1) * TILE - 16);
+        x = this.rng.range(48, WORLD_W - 48);
+      }
+      if (nearCross(x, y)) continue;
+      if (this.tileAt(x, y) !== T.ROAD) continue; // coches (T.CAR) excluidos
+      if (Math.hypot(x - this.spawn.x, y - this.spawn.y) < 90) continue;
+      this.manholes.push({ x, y });
     }
   }
 
@@ -533,24 +641,51 @@ export class GameMap {
             break;
           }
           case T.ROAD: {
-            ctx.fillStyle = '#26262a';
+            // asfalto: base con variación por tile + grano + remiendos + grietas
+            ctx.fillStyle = h < 0.5 ? '#26262a' : '#29292d';
             ctx.fillRect(sx, sy, TILE, TILE);
-            if (h > 0.85) {
-              ctx.strokeStyle = '#1e1e22';
+            // grano (puntos claros deterministas por tile)
+            ctx.fillStyle = 'rgba(255,255,255,0.035)';
+            ctx.fillRect(sx + Math.floor(h * 26), sy + Math.floor((h * 61) % 27), 2, 2);
+            ctx.fillRect(sx + Math.floor((h * 97) % 28), sy + Math.floor(h * 23), 2, 1);
+            // remiendo oscuro (asfalto reaparado)
+            if (h > 0.62 && h < 0.74) {
+              ctx.fillStyle = 'rgba(0,0,0,0.16)';
+              ctx.fillRect(sx + 4, sy + 6, 20, 14);
+            }
+            // grieta en zigzag
+            if (h > 0.9) {
+              ctx.strokeStyle = '#1d1d21';
               ctx.lineWidth = 1;
               ctx.beginPath();
-              ctx.moveTo(sx + 4, sy + 6 + h * 10);
-              ctx.lineTo(sx + 20, sy + 14 + h * 8);
+              ctx.moveTo(sx + 5, sy + 7 + h * 6);
+              ctx.lineTo(sx + 15, sy + 13 + h * 5);
+              ctx.lineTo(sx + 26, sy + 10 + h * 8);
               ctx.stroke();
             }
             break;
           }
           case T.SIDEWALK: {
-            ctx.fillStyle = h < 0.5 ? '#4a4a44' : '#474741';
+            // losas de hormigón: juntas cada 16px + luz biselada + bordillo
+            ctx.fillStyle = h < 0.5 ? '#525249' : '#4f4f46';
             ctx.fillRect(sx, sy, TILE, TILE);
-            ctx.strokeStyle = '#3b3b36';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(sx + 0.5, sy + 0.5, TILE - 1, TILE - 1);
+            ctx.fillStyle = 'rgba(0,0,0,0.17)';   // juntas de las losas
+            ctx.fillRect(sx, sy, TILE, 1);
+            ctx.fillRect(sx, sy + 16, TILE, 1);
+            ctx.fillRect(sx, sy, 1, TILE);
+            ctx.fillRect(sx + 16, sy, 1, TILE);
+            ctx.fillStyle = 'rgba(255,255,255,0.05)'; // luz superior de la losa
+            ctx.fillRect(sx + 1, sy + 1, TILE - 2, 1);
+            if (h > 0.78) {                       // mancha de desgaste
+              ctx.fillStyle = 'rgba(0,0,0,0.10)';
+              ctx.fillRect(sx + 5 + h * 10, sy + 6, 10, 8);
+            }
+            // bordillo en el lado que mira a la calzada
+            ctx.fillStyle = '#3a3a35';
+            if (this.tileAtIdx(tx, ty - 1) === T.ROAD) ctx.fillRect(sx, sy, TILE, 3);
+            if (this.tileAtIdx(tx, ty + 1) === T.ROAD) ctx.fillRect(sx, sy + TILE - 3, TILE, 3);
+            if (this.tileAtIdx(tx - 1, ty) === T.ROAD) ctx.fillRect(sx, sy, 3, TILE);
+            if (this.tileAtIdx(tx + 1, ty) === T.ROAD) ctx.fillRect(sx + TILE - 3, sy, 3, TILE);
             break;
           }
           case T.FLOOR: {
@@ -585,26 +720,31 @@ export class GameMap {
       }
     }
 
-    // marcas de carril
-    ctx.save();
-    ctx.setLineDash([12, 16]);
-    ctx.strokeStyle = 'rgba(200, 170, 60, 0.35)';
-    ctx.lineWidth = 3;
-    for (const m of this.vMarks) {
-      const x = Math.round(m.x - cam.x + cam.offX);
-      const y0 = Math.round(m.y0 - cam.y + cam.offY);
-      const y1 = Math.round(m.y1 - cam.y + cam.offY);
-      if (x < -20 || x > cam.w + 20) continue;
-      ctx.beginPath(); ctx.moveTo(x, Math.max(0, y0)); ctx.lineTo(x, Math.min(cam.h, y1)); ctx.stroke();
+    // pintura vial PRECALCULADA y anclada al mundo: la fase de los guiones
+    // pertenece al asfalto, no a la pantalla → no se desliza con la cámara
+    for (const m of this.roadPaint) {
+      const sx = Math.round(m.x - cam.x + cam.offX);
+      const sy = Math.round(m.y - cam.y + cam.offY);
+      if (sx > cam.w || sy > cam.h || sx + m.w < 0 || sy + m.h < 0) continue;
+      ctx.fillStyle = m.c;
+      ctx.fillRect(sx, sy, m.w, m.h);
     }
-    for (const m of this.hMarks) {
-      const y = Math.round(m.y - cam.y + cam.offY);
-      const x0 = Math.round(m.x0 - cam.x + cam.offX);
-      const x1 = Math.round(m.x1 - cam.x + cam.offX);
-      if (y < -20 || y > cam.h + 20) continue;
-      ctx.beginPath(); ctx.moveTo(Math.max(0, x0), y); ctx.lineTo(Math.min(cam.w, x1), y); ctx.stroke();
+
+    // tapas de alcantarilla
+    for (const m of this.manholes) {
+      const sx = Math.round(m.x - cam.x + cam.offX);
+      const sy = Math.round(m.y - cam.y + cam.offY);
+      if (sx < -12 || sy < -12 || sx > cam.w + 12 || sy > cam.h + 12) continue;
+      ctx.fillStyle = '#1b1b1f';
+      ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fillRect(sx - 4, sy - 1, 8, 2);
     }
-    ctx.restore();
 
     // coches (arte compartido: base bajo la niebla; versión nítida encima)
     for (const car of this.cars) {
