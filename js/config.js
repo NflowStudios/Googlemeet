@@ -23,11 +23,12 @@ export const OPAQUE = new Set([T.WALL, T.DOOR_CLOSED, T.TREE, T.CAR]);
 
 // ---------- Visión (cono + niebla de guerra) ----------
 export const VISION = {
-  range: 250,          // alcance del cono (px)
-  halfAngle: 0.78,     // semiángulo en radianes (~89° de cono total)
-  nearR: 64,           // radio de percepción inmediata a 360°
-  coneRays: 84,        // rayos del cono
-  nearRays: 20,        // rayos del círculo cercano
+  range: 440,          // alcance del cono (px)
+  halfAngle: 0.95,     // semiángulo en radianes (~109° de cono total)
+  nearR: 80,           // radio de percepción inmediata a 360°
+  coneRays: 130,       // rayos del cono
+  nearRays: 28,        // rayos del círculo cercano
+  wallDim: 0.5,        // atenuación máxima de la estructura al borde del cono
 };
 
 // ---------- Jugador ----------

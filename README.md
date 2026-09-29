@@ -1,6 +1,6 @@
 # ZONA CERO — Prototipo de supervivencia zombi 2D
 
-> **Sobrevive. Cada ruido cuenta.** · v0.2
+> **Sobrevive. Cada ruido cuenta.** · v0.3
 
 Videojuego de supervivencia zombi con **vista cenital (top-down)** inspirado en la tensión de *Project Zomboid* y *DayZ*. Programado en **JavaScript vanilla + Canvas 2D** con arquitectura modular por módulos ES, **sin dependencias ni pasos de compilación**: se juega directamente en el navegador.
 
@@ -38,7 +38,7 @@ Luego abre `http://localhost:8000`. (Los módulos ES requieren servidor; no func
 - **Contadores vitales**: Vida, Energía (stamina), Hambre y Sed. Las necesidades críticas drenan vida y entorpecen la recuperación de energía. No hay regeneración natural: solo vendas y botiquines.
 - **Daño e infección**: los zombis reducen tu vida directamente. Las **mordidas** pueden transmitir la infección (barra verde), que progresa sin pausa hasta la muerte. Los antibióticos la curan solo si está incipiente.
 - **Comida y descomposición**: come y bebe para recuperar hambre/sed. La comida **podrida** (etiqueta en el inventario) daña, intoxica y alimenta muy poco.
-- **Visión en tiempo real**: solo ves un **cono frontal** (con raycast: las paredes bloquean, las ventanas dejan ver) más un radio de percepción mínimo junto al cuerpo. **Sin memoria del terreno**: lo que queda a tus espaldas o fuera del cono es negro absoluto — nada se "desbloquea" nunca, así que vigila tu retaguardia girándote. Los zombis fuera de tu visión son invisibles.
+- **Visión en tiempo real**: solo ves un **cono frontal amplio** (~109°, con raycast: las paredes bloquean, las ventanas dejan ver) más un radio de percepción mínimo junto al cuerpo. **Sin memoria del terreno**: lo que queda a tus espaldas o fuera del cono es negro absoluto — nada se "desbloquea" nunca, así que vigila tu retaguardia girándote. Los muros, ventanas y puertas con línea de visión se dibujan **nítidos sobre la niebla** (la estructura se distingue con claridad), pero el **interior de las casas solo se ve por ventanas y puertas abiertas**. Los zombis fuera de tu visión son invisibles.
 - **Propagación de sonido**: correr, atacar, abrir puertas y registrar muebles emite ruido que **atrae a los zombis cercanos**. Camina agachado para reducir tu firma sonora (medidor RUIDO en el HUD).
 - **Inventario por espacios** (sin peso): mochila con slots limitados, contenedores saqueables (neveras, alacenas, armarios, casilleros, botiquines) y objetos apilables.
 - **Ropa con 4 categorías** estéticas y funcionales: **Cabeza** (cascos → reducción de daño), **Accesorios** (máscara de gas / pasamontañas → protección contra mordidas y sigilo), **Torso** (chaleco táctico → blindaje +4 espacios), **Pantalones** (cargo → +2 espacios). Las piezas cambian el aspecto del personaje.

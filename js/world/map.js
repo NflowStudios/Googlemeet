@@ -6,7 +6,7 @@
  * contenedores de botín, árboles, coches abandonados y puntos de aparición.
  */
 
-import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE } from '../config.js';
+import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, VISION } from '../config.js';
 import { Rng } from '../rng.js';
 import { hash2 } from '../utils.js';
 
@@ -466,48 +466,12 @@ export class GameMap {
             if (h > 0.6) ctx.fillRect(sx + Math.floor(h * 24), sy, 2, TILE);
             break;
           }
-          case T.WALL: {
-            ctx.fillStyle = '#4e4639';
-            ctx.fillRect(sx, sy, TILE, TILE);
-            ctx.fillStyle = '#5d5344';
-            ctx.fillRect(sx, sy, TILE, 4);
-            ctx.fillStyle = 'rgba(0,0,0,0.28)';
-            ctx.fillRect(sx, sy + TILE - 4, TILE, 4);
+          case T.WALL:
+          case T.WINDOW:
+          case T.DOOR_CLOSED:
+          case T.DOOR_OPEN:
+            this._drawStructTile(ctx, t, sx, sy, tx, ty);
             break;
-          }
-          case T.WINDOW: {
-            ctx.fillStyle = '#4e4639';
-            ctx.fillRect(sx, sy, TILE, TILE);
-            ctx.fillStyle = '#8fa3ad';
-            ctx.fillRect(sx + 5, sy + 5, TILE - 10, TILE - 10);
-            ctx.strokeStyle = '#33302a';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(sx + 5, sy + 5, TILE - 10, TILE - 10);
-            ctx.fillStyle = 'rgba(255,255,255,0.18)';
-            ctx.fillRect(sx + 7, sy + 7, 8, 5);
-            break;
-          }
-          case T.DOOR_CLOSED: {
-            const horiz = this.tileAtIdx(tx - 1, ty) === T.WALL || this.tileAtIdx(tx - 1, ty) === T.WINDOW ||
-                          this.tileAtIdx(tx + 1, ty) === T.WALL || this.tileAtIdx(tx + 1, ty) === T.WINDOW;
-            ctx.fillStyle = '#6a5840';
-            ctx.fillRect(sx, sy, TILE, TILE);
-            ctx.fillStyle = '#6b4b2c';
-            if (horiz) ctx.fillRect(sx + 1, sy + 9, TILE - 2, TILE - 18);
-            else ctx.fillRect(sx + 9, sy + 1, TILE - 18, TILE - 2);
-            ctx.fillStyle = '#d9c06a';
-            if (horiz) ctx.fillRect(sx + TILE - 9, sy + 14, 3, 3);
-            else ctx.fillRect(sx + 14, sy + TILE - 9, 3, 3);
-            break;
-          }
-          case T.DOOR_OPEN: {
-            ctx.fillStyle = '#6a5840';
-            ctx.fillRect(sx, sy, TILE, TILE);
-            ctx.fillStyle = '#5a3f24';
-            ctx.fillRect(sx, sy, 5, TILE);        // hoja izquierda
-            ctx.fillRect(sx + TILE - 5, sy, 5, TILE); // hoja derecha
-            break;
-          }
           case T.TREE: {
             ctx.fillStyle = '#37432e';
             ctx.fillRect(sx, sy, TILE, TILE);
@@ -597,6 +561,87 @@ export class GameMap {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(c.letter, sx, sy + 1);
+    }
+  }
+
+  /**
+   * Arte de un tile de estructura (muro, ventana, puerta cerrada/abierta).
+   * Compartido por drawGround (bajo la niebla) y drawStructOver (sobre la
+   * niebla, para que la pared visible siempre se distinga con claridad).
+   */
+  _drawStructTile(ctx, t, sx, sy, tx, ty) {
+    switch (t) {
+      case T.WALL: {
+        ctx.fillStyle = '#4e4639';
+        ctx.fillRect(sx, sy, TILE, TILE);
+        ctx.fillStyle = '#5d5344';
+        ctx.fillRect(sx, sy, TILE, 4);
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect(sx, sy + TILE - 4, TILE, 4);
+        break;
+      }
+      case T.WINDOW: {
+        ctx.fillStyle = '#4e4639';
+        ctx.fillRect(sx, sy, TILE, TILE);
+        ctx.fillStyle = '#8fa3ad';
+        ctx.fillRect(sx + 5, sy + 5, TILE - 10, TILE - 10);
+        ctx.strokeStyle = '#33302a';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(sx + 5, sy + 5, TILE - 10, TILE - 10);
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fillRect(sx + 7, sy + 7, 8, 5);
+        break;
+      }
+      case T.DOOR_CLOSED: {
+        const horiz = this.tileAtIdx(tx - 1, ty) === T.WALL || this.tileAtIdx(tx - 1, ty) === T.WINDOW ||
+                      this.tileAtIdx(tx + 1, ty) === T.WALL || this.tileAtIdx(tx + 1, ty) === T.WINDOW;
+        ctx.fillStyle = '#6a5840';
+        ctx.fillRect(sx, sy, TILE, TILE);
+        ctx.fillStyle = '#6b4b2c';
+        if (horiz) ctx.fillRect(sx + 1, sy + 9, TILE - 2, TILE - 18);
+        else ctx.fillRect(sx + 9, sy + 1, TILE - 18, TILE - 2);
+        ctx.fillStyle = '#d9c06a';
+        if (horiz) ctx.fillRect(sx + TILE - 9, sy + 14, 3, 3);
+        else ctx.fillRect(sx + 14, sy + TILE - 9, 3, 3);
+        break;
+      }
+      case T.DOOR_OPEN: {
+        ctx.fillStyle = '#6a5840';
+        ctx.fillRect(sx, sy, TILE, TILE);
+        ctx.fillStyle = '#5a3f24';
+        ctx.fillRect(sx, sy, 5, TILE);            // hoja izquierda
+        ctx.fillRect(sx + TILE - 5, sy, 5, TILE); // hoja derecha
+        break;
+      }
+    }
+  }
+
+  /**
+   * Redibuja la estructura VISIBLE por encima de la niebla de guerra.
+   * La cara frontal de muros/ventanas/puertas ya no queda oscurecida por su
+   * propia sombra: las paredes se distinguen con claridad en todo el cono.
+   * El interior de los edificios sigue oculto — solo entra en wallTiles lo
+   * que tiene línea de visión directa (lo que se ve por ventanas y puertas
+   * abiertas). Atenuación suave con la distancia para fundirse con el cono.
+   */
+  drawStructOver(ctx, cam, game) {
+    const vision = game.vision, p = game.player;
+    if (!vision || !vision.wallTiles || !vision.wallTiles.size) return;
+    for (const idx of vision.wallTiles) {
+      const tx = idx % MAP_W, ty = Math.floor(idx / MAP_W);
+      const sx = Math.round(tx * TILE - cam.x + cam.offX);
+      const sy = Math.round(ty * TILE - cam.y + cam.offY);
+      if (sx > cam.w + TILE || sy > cam.h + TILE || sx + TILE < -TILE || sy + TILE < -TILE) continue;
+      this._drawStructTile(ctx, this.tiles[idx], sx, sy, tx, ty);
+      // atenuación con la distancia: 0 junto al jugador → wallDim en el borde
+      const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2;
+      const k = Math.max(0, Math.min(1,
+        (Math.hypot(cx - p.x, cy - p.y) - VISION.nearR) / (VISION.range - VISION.nearR)));
+      const dim = k * VISION.wallDim;
+      if (dim > 0.01) {
+        ctx.fillStyle = `rgba(3,5,3,${dim.toFixed(3)})`;
+        ctx.fillRect(sx, sy, TILE, TILE);
+      }
     }
   }
 

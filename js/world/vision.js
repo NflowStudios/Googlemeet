@@ -9,9 +9,13 @@
  * - Radio de percepción inmediata a 360° (periferia mínima junto al cuerpo).
  * - Fuera de ambos: negro absoluto, recalculado desde cero CADA frame.
  * - Los zombis y objetos del suelo solo se dibujan si están EN visión actual.
+ * - wallTiles: muros/ventanas/puertas con línea de visión directa AHORA
+ *   (se redibujan nítidos sobre la niebla en map.drawStructOver). Así la
+ *   pared frontal se distingue con claridad, pero el interior de las casas
+ *   solo se ve por lo que se cuela por ventanas y puertas abiertas.
  */
 
-import { VISION } from '../config.js';
+import { VISION, TILE, MAP_W, MAP_H, T } from '../config.js';
 import { angDiff } from '../utils.js';
 
 export class Vision {
@@ -19,6 +23,8 @@ export class Vision {
     this.cone = [];    // polígono del cono (coords de mundo)
     this.near = [];    // polígono del círculo cercano (coords de mundo)
     this.aim = 0;
+    // tiles de estructura (muro/ventana/puerta) visibles en este frame
+    this.wallTiles = new Set();
 
     // Canvas de niebla del tamaño del viewport (se redimensiona)
     this.fog = document.createElement('canvas');
@@ -50,6 +56,40 @@ export class Vision {
       const a = (Math.PI * 2 * i) / m;
       const d = Math.min(map.castRay(px, py, a, VISION.nearR), VISION.nearR);
       this.near.push([px + Math.cos(a) * d, py + Math.sin(a) * d]);
+    }
+
+    // ---- Estructura visible ahora mismo (muros/ventanas/puertas) ----
+    // Un tile de estructura se ve si está dentro del cono (con la holgura de
+    // su tamaño angular, para que el muro no se quede "a trozos" en el borde)
+    // o dentro de la periferia, Y tiene línea de visión directa. El interior
+    // de las casas NO entra aquí: solo lo que se cuela por ventanas / puertas
+    // abiertas llega a verse. Sin memoria: se recalcula desde cero cada frame.
+    this.wallTiles.clear();
+    const R = VISION.range + TILE;
+    const t0x = Math.max(0, Math.floor((px - R) / TILE));
+    const t1x = Math.min(MAP_W - 1, Math.floor((px + R) / TILE));
+    const t0y = Math.max(0, Math.floor((py - R) / TILE));
+    const t1y = Math.min(MAP_H - 1, Math.floor((py + R) / TILE));
+    for (let ty = t0y; ty <= t1y; ty++) {
+      for (let tx = t0x; tx <= t1x; tx++) {
+        const t = map.tileAtIdx(tx, ty);
+        if (t !== T.WALL && t !== T.WINDOW && t !== T.DOOR_CLOSED && t !== T.DOOR_OPEN) continue;
+        // punto del tile más cercano al jugador: el segmento hasta él no
+        // atraviesa el propio tile → lineClear no se auto-bloquea
+        const rx = tx * TILE, ry = ty * TILE;
+        const cx = px < rx ? rx : (px > rx + TILE ? rx + TILE : px);
+        const cy = py < ry ? ry : (py > ry + TILE ? ry + TILE : py);
+        const dx = cx - px, dy = cy - py;
+        const d = Math.hypot(dx, dy);
+        if (d > R) continue;
+        if (d > VISION.nearR) {
+          const a = Math.atan2(dy, dx);
+          const slack = Math.atan2(TILE, Math.max(d, 40)); // tamaño angular del tile
+          if (Math.abs(angDiff(this.aim, a)) > VISION.halfAngle + slack) continue;
+        }
+        if (!map.lineClear(px, py, cx, cy)) continue;
+        this.wallTiles.add(ty * MAP_W + tx);
+      }
     }
   }
 
