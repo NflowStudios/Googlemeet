@@ -5,7 +5,8 @@
  * a tus espaldas y que el juego sea más difícil. NO hay memoria espacial
  * ni revelado progresivo: nada se "desbloquea" mientras ves.
  *
- * - Cono de visión con raycast: solo muros y puertas cerradas tapan la vista.
+ * - Cono de visión con raycast: solo la FRANJA de muros y puertas cerradas
+ *   tapa la vista (paredes delgadas: el suelo a ambos lados es transparente).
  *   Árboles y coches NO ocultan nada al jugador (cámara aérea): el cono pasa
  *   por encima de ellos y se distinguen con nitidez.
  * - Radio de percepción inmediata a 360° (periferia mínima junto al cuerpo).
@@ -63,9 +64,11 @@ export class Vision {
     // ---- Estructura y props visibles ahora mismo ----
     // Un tile de estructura/props se ve si está dentro del cono (con la holgura
     // de su tamaño angular, para que no quede "a trozos" en el borde) o dentro
-    // de la periferia, Y tiene línea de visión directa. El interior de las
-    // casas NO entra aquí: solo lo que se cuela por ventanas / puertas abiertas
-    // llega a verse. Sin memoria: se recalcula desde cero cada frame.
+    // de la periferia, Y tiene línea de visión directa. Con muros delgados el
+    // chequeo apunta a la FRANJA del tile (map.nearestStripPoint): así una
+    // pared oculta tras otra no se redibuja. El interior de las casas NO entra
+    // aquí: solo lo que se cuela por ventanas / puertas abiertas llega a verse.
+    // Sin memoria: se recalcula desde cero cada frame.
     this.wallTiles.clear();
     const R = VISION.range + TILE;
     const t0x = Math.max(0, Math.floor((px - R) / TILE));
@@ -77,11 +80,19 @@ export class Vision {
         const t = map.tileAtIdx(tx, ty);
         if (t !== T.WALL && t !== T.WINDOW && t !== T.DOOR_CLOSED && t !== T.DOOR_OPEN &&
             t !== T.TREE && t !== T.CAR) continue;
-        // punto del tile más cercano al jugador: el segmento hasta él no
-        // atraviesa el propio tile → lineClear no se auto-bloquea
-        const rx = tx * TILE, ry = ty * TILE;
-        const cx = px < rx ? rx : (px > rx + TILE ? rx + TILE : px);
-        const cy = py < ry ? ry : (py > ry + TILE ? ry + TILE : py);
+        let cx, cy;
+        if (t === T.TREE || t === T.CAR) {
+          // punto del tile más cercano al jugador: el segmento hasta él no
+          // atraviesa el propio tile → lineClear no se auto-bloquea
+          const rx = tx * TILE, ry = ty * TILE;
+          cx = px < rx ? rx : (px > rx + TILE ? rx + TILE : px);
+          cy = py < ry ? ry : (py > ry + TILE ? ry + TILE : py);
+        } else {
+          // muro delgado: punto más cercano de la(s) franja(s)
+          const near = map.nearestStripPoint(tx, ty, px, py);
+          if (!near) continue;
+          cx = near.x; cy = near.y;
+        }
         const dx = cx - px, dy = cy - py;
         const d = Math.hypot(dx, dy);
         if (d > R) continue;

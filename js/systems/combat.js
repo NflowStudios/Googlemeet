@@ -31,6 +31,9 @@ export function playerAttack(game) {
     if (d > w.range + z.r) continue;
     const a = Math.atan2(dy, dx);
     if (Math.abs(angDiff(p.angle, a)) > 1.05) continue;
+    // no golpear a través de muros (la franja delgada tapa el golpe;
+    // las ventanas dejan golpear a través del cristal)
+    if (!game.map.lineClear(p.x, p.y, z.x, z.y)) continue;
 
     const dmg = w.dmg * (0.9 + Math.random() * 0.2);
     z.takeDamage(dmg, a, w.kb, game);

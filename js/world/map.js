@@ -1,12 +1,17 @@
 /**
  * map.js — Mapa urbano procedural + colisiones + raycast de visión + decals.
  *
- * Genera: retícula de calles con aceras, manzanas con casas (paredes,
+ * Genera: retícula de calles con aceras, manzanas con casas (paredes DELGADAS,
  * ventanas translúcidas a la visión, puertas abribles, muros interiores),
  * contenedores de botín, árboles, coches abandonados y puntos de aparición.
+ *
+ * Muros delgados (WALL_T): muros/ventanas/puertas son una FRANJA centrada en
+ * el tile que corre a lo largo de la línea de muro; el resto del tile es suelo
+ * real (exterior/interior) transitable y transparente. La colisión, la visión
+ * y el arte comparten esta geometría (ver _runsFor / _inRuns / _drawStructStrips).
  */
 
-import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION } from '../config.js';
+import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T } from '../config.js';
 import { Rng } from '../rng.js';
 import { hash2 } from '../utils.js';
 
@@ -67,27 +72,106 @@ export class GameMap {
     if (tx >= 0 && ty >= 0 && tx < MAP_W && ty < MAP_H) this.tiles[this.idx(tx, ty)] = val;
   }
 
-  isSolidPx(x, y) { return SOLID.has(this.tileAt(x, y)); }
+  isSolidPx(x, y) {
+    if (x < 0 || y < 0 || x >= WORLD_W || y >= WORLD_H) return true;
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    const t = this.tiles[this.idx(tx, ty)];
+    if (t === T.TREE || t === T.CAR) return true;      // tile lleno
+    if (SOLID.has(t)) return this._inRuns(tx, ty, x, y); // franja delgada
+    return false;
+  }
+
   /** forAI=true → usa AI_OPAQUE: árboles/coches tapan la vista de los zombis
-   *  (cobertura de sigilo) pero NO la del jugador, que los ve desde arriba. */
+   *  (cobertura de sigilo) pero NO la del jugador, que los ve desde arriba.
+   *  Muros y puertas cerradas tapan SOLO en su franja delgada: las bandas de
+   *  suelo a ambos lados del muro son transparentes. */
   isOpaquePx(x, y, forAI = false) {
-    return (forAI ? AI_OPAQUE : OPAQUE).has(this.tileAt(x, y));
+    if (x < 0 || y < 0 || x >= WORLD_W || y >= WORLD_H) return true;
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    const t = this.tiles[this.idx(tx, ty)];
+    if (OPAQUE.has(t)) return this._inRuns(tx, ty, x, y); // franja delgada
+    if (forAI && AI_OPAQUE.has(t) && !OPAQUE.has(t)) return true; // árbol/coche
+    return false;
+  }
+
+  // ================== Geometría de muros delgados ==================
+
+  /** ¿El tile (tx, ty) es parte de una línea de muro (muro/ventana/puerta)? */
+  _isStructTile(tx, ty) {
+    if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return false;
+    const t = this.tiles[this.idx(tx, ty)];
+    return t === T.WALL || t === T.WINDOW || t === T.DOOR_CLOSED || t === T.DOOR_OPEN;
+  }
+
+  /** Franjas del tile: {h, v} normalizado. h = el muro corre de izquierda a
+   *  derecha (vecino struct a los lados); v = de arriba a abajo. Un tile
+   * aislado sin vecinos → cruz (ambas). Esquinas/T usan las dos. */
+  _runsFor(tx, ty) {
+    const h = this._isStructTile(tx - 1, ty) || this._isStructTile(tx + 1, ty);
+    const v = this._isStructTile(tx, ty - 1) || this._isStructTile(tx, ty + 1);
+    return { h: h || !v, v: v || !h };
+  }
+
+  /** ¿El punto (px, py) cae dentro de una franja de muro del tile (tx, ty)? */
+  _inRuns(tx, ty, px, py) {
+    const r = this._runsFor(tx, ty);
+    const off = (TILE - WALL_T) / 2;
+    const ox = tx * TILE, oy = ty * TILE;
+    if (r.h && px >= ox && px <= ox + TILE && py >= oy + off && py <= oy + off + WALL_T) return true;
+    if (r.v && px >= ox + off && px <= ox + off + WALL_T && py >= oy && py <= oy + TILE) return true;
+    return false;
+  }
+
+  /** Punto más cercano del jugador a la(s) franja(s) de un tile de estructura
+   *  (para el chequeo de línea de visión de vision.js). Null si no hay franja. */
+  nearestStripPoint(tx, ty, px, py) {
+    const r = this._runsFor(tx, ty);
+    const off = (TILE - WALL_T) / 2;
+    const ox = tx * TILE, oy = ty * TILE;
+    let best = null, bd = Infinity;
+    const cand = (rx, ry, rw, rh) => {
+      const cx = Math.max(rx, Math.min(px, rx + rw));
+      const cy = Math.max(ry, Math.min(py, ry + rh));
+      const d = (cx - px) * (cx - px) + (cy - py) * (cy - py);
+      if (d < bd) { bd = d; best = { x: cx, y: cy }; }
+    };
+    if (r.h) cand(ox, oy + off, TILE, WALL_T);
+    if (r.v) cand(ox + off, oy, WALL_T, TILE);
+    return best;
   }
 
   // ================== Colisión círculo vs tiles ==================
 
+  _circleRectHit(x, y, r, rx, ry, rw, rh) {
+    // punto más cercano del rect al centro del círculo
+    const cx = Math.max(rx, Math.min(x, rx + rw));
+    const cy = Math.max(ry, Math.min(y, ry + rh));
+    const dx = x - cx, dy = y - cy;
+    return dx * dx + dy * dy < r * r;
+  }
+
   circleHitsSolid(x, y, r) {
     const x0 = Math.floor((x - r) / TILE), x1 = Math.floor((x + r) / TILE);
     const y0 = Math.floor((y - r) / TILE), y1 = Math.floor((y + r) / TILE);
+    const off = (TILE - WALL_T) / 2;
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
-        if (!SOLID.has(this.tileAtIdx(tx, ty))) continue;
-        // punto más cercano del rect del tile al centro del círculo
-        const rx = tx * TILE, ry = ty * TILE;
-        const cx = Math.max(rx, Math.min(x, rx + TILE));
-        const cy = Math.max(ry, Math.min(y, ry + TILE));
-        const dx = x - cx, dy = y - cy;
-        if (dx * dx + dy * dy < r * r) return true;
+        const oob = tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H;
+        if (oob) { // fuera del mapa: tile macizo
+          if (this._circleRectHit(x, y, r, tx * TILE, ty * TILE, TILE, TILE)) return true;
+          continue;
+        }
+        const t = this.tiles[this.idx(tx, ty)];
+        if (t === T.TREE || t === T.CAR) { // tile lleno
+          if (this._circleRectHit(x, y, r, tx * TILE, ty * TILE, TILE, TILE)) return true;
+          continue;
+        }
+        if (t !== T.WALL && t !== T.WINDOW && t !== T.DOOR_CLOSED) continue;
+        // muro delgado: colisiona solo la franja
+        const runs = this._runsFor(tx, ty);
+        const ox = tx * TILE, oy = ty * TILE;
+        if (runs.h && this._circleRectHit(x, y, r, ox, oy + off, TILE, WALL_T)) return true;
+        if (runs.v && this._circleRectHit(x, y, r, ox + off, oy, WALL_T, TILE)) return true;
       }
     }
     return false;
@@ -560,56 +644,137 @@ export class GameMap {
     }
   }
 
+  /** Color base de suelo para rellenar las bandas alrededor de un muro. */
+  _groundBase(t, h) {
+    switch (t) {
+      case T.ROAD: return '#26262a';
+      case T.SIDEWALK: return h < 0.5 ? '#4a4a44' : '#474741';
+      case T.FLOOR: return h < 0.5 ? '#6e5c44' : '#6a5840';
+      default: return h < 0.5 ? '#37432e' : '#3a4630'; // hierba
+    }
+  }
+
   /**
-   * Arte de un tile de estructura (muro, ventana, puerta cerrada/abierta).
-   * Compartido por drawGround (bajo la niebla) y drawStructOver (sobre la
-   * niebla, para que la pared visible siempre se distinga con claridad).
+   * Suelo bajo un tile de estructura: exterior alrededor + banda(s) de suelo
+   * interior hacia los vecinos FLOOR. El muro es una franja delgada y el
+   * resto del tile es suelo real (transitable y transparente a la vista).
    */
-  _drawStructTile(ctx, t, sx, sy, tx, ty) {
+  _drawStructGround(ctx, sx, sy, tx, ty, runs) {
+    const hsh = hash2(tx, ty);
+    const below = this.tileAtIdx(tx, ty + 1), above = this.tileAtIdx(tx, ty - 1);
+    const right = this.tileAtIdx(tx + 1, ty), left = this.tileAtIdx(tx - 1, ty);
+
+    // color exterior: el primer vecino cardinal que es suelo exterior
+    let ext = hsh < 0.5 ? '#37432e' : '#3a4630';
+    if (below === T.GRASS || below === T.SIDEWALK || below === T.ROAD) ext = this._groundBase(below, hsh);
+    else if (above === T.GRASS || above === T.SIDEWALK || above === T.ROAD) ext = this._groundBase(above, hsh);
+    else if (left === T.GRASS || left === T.SIDEWALK || left === T.ROAD) ext = this._groundBase(left, hsh);
+    else if (right === T.GRASS || right === T.SIDEWALK || right === T.ROAD) ext = this._groundBase(right, hsh);
+    ctx.fillStyle = ext;
+    ctx.fillRect(sx, sy, TILE, TILE);
+
+    // bandas de interior (suelo) hacia los lados con FLOOR
+    const off = (TILE - WALL_T) / 2;
+    const band = TILE - off - WALL_T;
+    const flr = hsh < 0.5 ? '#6e5c44' : '#6a5840';
+    ctx.fillStyle = flr;
+    if (runs.h && !runs.v) {
+      if (below === T.FLOOR) ctx.fillRect(sx, sy + off + WALL_T, TILE, band);
+      if (above === T.FLOOR) ctx.fillRect(sx, sy, TILE, off);
+    } else if (runs.v && !runs.h) {
+      if (right === T.FLOOR) ctx.fillRect(sx + off + WALL_T, sy, band, TILE);
+      if (left === T.FLOOR) ctx.fillRect(sx, sy, off, TILE);
+    } else if (runs.h && runs.v) {
+      // esquina / unión en T: cuadrantes hacia los FLOOR diagonales
+      if (this.tileAtIdx(tx + 1, ty + 1) === T.FLOOR) ctx.fillRect(sx + off + WALL_T, sy + off + WALL_T, band, band);
+      if (this.tileAtIdx(tx - 1, ty + 1) === T.FLOOR) ctx.fillRect(sx, sy + off + WALL_T, band, band);
+      if (this.tileAtIdx(tx + 1, ty - 1) === T.FLOOR) ctx.fillRect(sx + off + WALL_T, sy, band, band);
+      if (this.tileAtIdx(tx - 1, ty - 1) === T.FLOOR) ctx.fillRect(sx, sy, band, band);
+    }
+  }
+
+  /**
+   * Arte de la franja de muro/ventana/puerta dentro de su rect (x, y, w, h).
+   * horiz=true → el muro corre de izquierda a derecha (franja horizontal).
+   */
+  _drawStripArt(ctx, t, x, y, w, h, horiz, tx, ty) {
     switch (t) {
       case T.WALL: {
         ctx.fillStyle = '#4e4639';
-        ctx.fillRect(sx, sy, TILE, TILE);
-        ctx.fillStyle = '#5d5344';
-        ctx.fillRect(sx, sy, TILE, 4);
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
-        ctx.fillRect(sx, sy + TILE - 4, TILE, 4);
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = '#5d5344';                     // luz superior/izquierda
+        if (horiz) ctx.fillRect(x, y, w, 3); else ctx.fillRect(x, y, 3, h);
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';            // sombra inferior/derecha
+        if (horiz) ctx.fillRect(x, y + h - 3, w, 3); else ctx.fillRect(x + w - 3, y, 3, h);
         break;
       }
       case T.WINDOW: {
-        ctx.fillStyle = '#4e4639';
-        ctx.fillRect(sx, sy, TILE, TILE);
-        ctx.fillStyle = '#8fa3ad';
-        ctx.fillRect(sx + 5, sy + 5, TILE - 10, TILE - 10);
+        ctx.fillStyle = '#4e4639';                     // marco
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = '#8fa3ad';                     // cristal
+        if (horiz) ctx.fillRect(x + 1, y + 2, w - 2, h - 4);
+        else ctx.fillRect(x + 2, y + 1, w - 4, h - 2);
         ctx.strokeStyle = '#33302a';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(sx + 5, sy + 5, TILE - 10, TILE - 10);
-        ctx.fillStyle = 'rgba(255,255,255,0.18)';
-        ctx.fillRect(sx + 7, sy + 7, 8, 5);
+        ctx.lineWidth = 1;
+        if (horiz) ctx.strokeRect(x + 1.5, y + 2.5, w - 3, h - 5);
+        else ctx.strokeRect(x + 2.5, y + 1.5, w - 5, h - 3);
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';      // reflejo
+        if (horiz) ctx.fillRect(x + 3, y + 3, 6, 3); else ctx.fillRect(x + 3, y + 3, 3, 6);
+        ctx.fillStyle = '#33302a';                     // travesaño central
+        if (horiz) ctx.fillRect(x + w / 2 - 0.5, y + 2, 1, h - 4);
+        else ctx.fillRect(x + 2, y + h / 2 - 0.5, w - 4, 1);
         break;
       }
       case T.DOOR_CLOSED: {
-        const horiz = this.tileAtIdx(tx - 1, ty) === T.WALL || this.tileAtIdx(tx - 1, ty) === T.WINDOW ||
-                      this.tileAtIdx(tx + 1, ty) === T.WALL || this.tileAtIdx(tx + 1, ty) === T.WINDOW;
-        ctx.fillStyle = '#6a5840';
-        ctx.fillRect(sx, sy, TILE, TILE);
-        ctx.fillStyle = '#6b4b2c';
-        if (horiz) ctx.fillRect(sx + 1, sy + 9, TILE - 2, TILE - 18);
-        else ctx.fillRect(sx + 9, sy + 1, TILE - 18, TILE - 2);
-        ctx.fillStyle = '#d9c06a';
-        if (horiz) ctx.fillRect(sx + TILE - 9, sy + 14, 3, 3);
-        else ctx.fillRect(sx + 14, sy + TILE - 9, 3, 3);
+        ctx.fillStyle = '#6a5840';                     // umbral
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = '#6b4b2c';                     // hoja
+        if (horiz) ctx.fillRect(x + 1, y + 2, w - 2, h - 4);
+        else ctx.fillRect(x + 2, y + 1, w - 4, h - 2);
+        ctx.fillStyle = '#d9c06a';                     // pomo
+        if (horiz) ctx.fillRect(x + w - 7, y + h / 2 - 1.5, 3, 3);
+        else ctx.fillRect(x + w / 2 - 1.5, y + h - 7, 3, 3);
         break;
       }
       case T.DOOR_OPEN: {
-        ctx.fillStyle = '#6a5840';
-        ctx.fillRect(sx, sy, TILE, TILE);
+        ctx.fillStyle = '#75634a';                     // umbral practicable
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';            // jambas marcadas
+        if (horiz) { ctx.fillRect(x, y, 2, h); ctx.fillRect(x + w - 2, y, 2, h); }
+        else { ctx.fillRect(x, y, w, 2); ctx.fillRect(x, y + h - 2, w, 2); }
+        // hoja abierta tumbada contra el lado interior del muro
+        const below = this.tileAtIdx(tx, ty + 1) === T.FLOOR;
+        const above = this.tileAtIdx(tx, ty - 1) === T.FLOOR;
+        const right = this.tileAtIdx(tx + 1, ty) === T.FLOOR;
+        const left = this.tileAtIdx(tx - 1, ty) === T.FLOOR;
         ctx.fillStyle = '#5a3f24';
-        ctx.fillRect(sx, sy, 5, TILE);            // hoja izquierda
-        ctx.fillRect(sx + TILE - 5, sy, 5, TILE); // hoja derecha
+        if (horiz) {
+          if (below) ctx.fillRect(x, y + h, w, 4);
+          else if (above) ctx.fillRect(x, y - 4, w, 4);
+        } else {
+          if (right) ctx.fillRect(x + w, y, 4, h);
+          else if (left) ctx.fillRect(x - 4, y, 4, h);
+        }
         break;
       }
     }
+  }
+
+  /** Dibuja las franjas (h y/o v) de un tile de estructura en pantalla. */
+  _drawStructStrips(ctx, t, sx, sy, tx, ty, runs) {
+    const off = (TILE - WALL_T) / 2;
+    if (runs.h) this._drawStripArt(ctx, t, sx, sy + off, TILE, WALL_T, true, tx, ty);
+    if (runs.v) this._drawStripArt(ctx, t, sx + off, sy, WALL_T, TILE, false, tx, ty);
+  }
+
+  /**
+   * Tile de estructura completo (para drawGround, bajo la niebla): suelo
+   * alrededor de la franja + arte del muro/ventana/puerta delgado.
+   */
+  _drawStructTile(ctx, t, sx, sy, tx, ty) {
+    const runs = this._runsFor(tx, ty);
+    this._drawStructGround(ctx, sx, sy, tx, ty, runs);
+    this._drawStructStrips(ctx, t, sx, sy, tx, ty, runs);
   }
 
   /**
@@ -688,6 +853,9 @@ export class GameMap {
    * Redibuja la estructura Y los props VISIBLES por encima de la niebla.
    * La cara frontal de muros/ventanas/puertas ya no queda oscurecida por su
    * propia sombra: las paredes se distinguen con claridad en todo el cono.
+   * Muros DELGADOS: aquí solo se redibuja la FRANJA (el suelo de las bandas
+   * ya quedó iluminado por el cono bajo la niebla) y la atenuación por
+   * distancia se aplica solo a la franja, no al suelo de alrededor.
    * Árboles y coches no tapan la visión del jugador y también se redibujan
    * NÍTIDOS (atenuación menor que los muros) cuando hay línea de visión.
    * El interior de los edificios sigue oculto — solo entra en wallTiles lo
@@ -700,6 +868,7 @@ export class GameMap {
 
     const canopyTiles = [];
     const drawnCars = new Set();
+    const off = (TILE - WALL_T) / 2;
 
     // pasada 1: muros/ventanas/puertas + coches (a nivel de suelo)
     for (const idx of vision.wallTiles) {
@@ -728,15 +897,18 @@ export class GameMap {
       const sx = Math.round(tx * TILE - cam.x + cam.offX);
       const sy = Math.round(ty * TILE - cam.y + cam.offY);
       if (sx > cam.w + TILE || sy > cam.h + TILE || sx + TILE < -TILE || sy + TILE < -TILE) continue;
-      this._drawStructTile(ctx, t, sx, sy, tx, ty);
-      // atenuación con la distancia: 0 junto al jugador → wallDim en el borde
+      // solo la franja delgada: el suelo alrededor queda como lo dejó el cono
+      const runs = this._runsFor(tx, ty);
+      this._drawStructStrips(ctx, t, sx, sy, tx, ty, runs);
+      // atenuación con la distancia (solo sobre la franja): 0 junto al jugador
       const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2;
       const k = Math.max(0, Math.min(1,
         (Math.hypot(cx - p.x, cy - p.y) - VISION.nearR) / (VISION.range - VISION.nearR)));
       const dim = k * VISION.wallDim;
       if (dim > 0.01) {
         ctx.fillStyle = `rgba(3,5,3,${dim.toFixed(3)})`;
-        ctx.fillRect(sx, sy, TILE, TILE);
+        if (runs.h) ctx.fillRect(sx, sy + off, TILE, WALL_T);
+        if (runs.v) ctx.fillRect(sx + off, sy, WALL_T, TILE);
       }
     }
 

@@ -5,6 +5,10 @@
 
 // ---------- Mundo ----------
 export const TILE = 32;
+// Grosor de muros, ventanas y puertas (px). Las paredes son DELGADAS: ocupan
+// una franja centrada en el tile (WALL_T de alto/ancho) que corre a lo largo
+// de la línea de muro; el resto del tile es suelo transitable (exterior/interior).
+export const WALL_T = 10;
 export const MAP_W = 100;   // tiles
 export const MAP_H = 80;
 export const WORLD_W = MAP_W * TILE;
@@ -16,10 +20,13 @@ export const T = {
   DOOR_CLOSED: 5, TREE: 6, WINDOW: 7, DOOR_OPEN: 8, CAR: 9,
 };
 
-// Tiles sólidos (bloquean movimiento)
+// Tiles sólidos (bloquean movimiento). Muros/ventanas/puertas cerradas son
+// sólidos SOLO en su franja delgada (ver map._inRuns); árboles y coches ocupan
+// el tile completo.
 export const SOLID = new Set([T.WALL, T.DOOR_CLOSED, T.TREE, T.WINDOW, T.CAR]);
-// Tiles opacos para la VISIÓN DEL JUGADOR: solo muros y puertas cerradas tapan.
-// Árboles y coches NO tapan la vista (cámara aérea: se ve por encima de ellos).
+// Tiles opacos para la VISIÓN DEL JUGADOR: solo la franja de muros y puertas
+// cerradas tapan. Árboles y coches NO tapan la vista (cámara aérea) y las
+// bandas de suelo junto al muro son transparentes.
 export const OPAQUE = new Set([T.WALL, T.DOOR_CLOSED]);
 // Tiles que tapan la vista de los ZOMBIS: árboles y coches siguen dando
 // COBERTURA — el jugador puede verlos desde arriba, pero esconderse detrás.
