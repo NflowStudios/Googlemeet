@@ -1,0 +1,112 @@
+/**
+ * hud.js — HUD principal: barras vitales, medidor de ruido, chips de estado,
+ * estadísticas de partida y prompt de interacción.
+ */
+
+import { SURV } from '../config.js';
+import { fmtTime } from '../utils.js';
+
+export class HUD {
+  constructor(game) {
+    this.game = game;
+    this.el = document.getElementById('hud');
+    this.bars = {};
+    this.vals = {};
+    for (const name of ['health', 'stamina', 'hunger', 'thirst']) {
+      const row = document.querySelector(`.statbar[data-bar="${name}"]`);
+      this.bars[name] = row.querySelector('.fill');
+      this.vals[name] = row.querySelector('.bv');
+    }
+    const infRow = document.querySelector('.statbar[data-bar="infection"]');
+    this.bars.infection = infRow.querySelector('.fill');
+    this.vals.infection = infRow.querySelector('.bv');
+    this.infectionRow = infRow;
+
+    this.chips = document.getElementById('status-chips');
+    this.promptEl = document.getElementById('prompt');
+    this.noiseTicks = document.querySelectorAll('#noise-meter .nm-ticks i');
+    this.statTime = document.getElementById('stat-time');
+    this.statKills = document.getElementById('stat-kills');
+    this.statSearch = document.getElementById('stat-search');
+    this.eqWeapon = document.getElementById('eq-weapon');
+    this.eqArmor = document.getElementById('eq-armor');
+    this.eqSlots = document.getElementById('eq-slots');
+    this.hintEl = document.getElementById('controls-hint');
+    this.dmgFlash = 0;
+    this._hintTimer = 0;
+  }
+
+  show() { this.el.classList.remove('hidden'); }
+  hide() { this.el.classList.add('hidden'); }
+
+  flashDamage(d) { this.dmgFlash = Math.max(this.dmgFlash, d); }
+
+  update(g) {
+    const s = g.survival;
+    if (!s) return;
+
+    this._setBar('health', s.health, 100);
+    this._setBar('stamina', s.stamina, s.maxStamina);
+    this._setBar('hunger', s.hunger, 100);
+    this._setBar('thirst', s.thirst, 100);
+
+    // infección
+    if (s.infected) {
+      this.infectionRow.classList.remove('hidden');
+      this._setBar('infection', s.infection, 100);
+    } else {
+      this.infectionRow.classList.add('hidden');
+    }
+
+    // crítico → parpadeo
+    document.querySelector('.statbar[data-bar="health"]').classList.toggle('crit', s.health < 30);
+    document.querySelector('.statbar[data-bar="hunger"]').classList.toggle('crit', s.hunger < SURV.critLevel);
+    document.querySelector('.statbar[data-bar="thirst"]').classList.toggle('crit', s.thirst < SURV.critLevel);
+    document.querySelector('.statbar[data-bar="stamina"]').classList.toggle('crit', s.stamina < 15);
+
+    // top
+    this.statTime.textContent = fmtTime(g.time);
+    this.statKills.textContent = 'BAJAS ' + g.kills;
+    this.statSearch.textContent = 'REGISTRADO ' + g.searchedCount;
+
+    // ruido
+    const lvl = Math.min(4, g.noise ? g.noise.lastLevel : 0);
+    this.noiseTicks.forEach((t, i) => t.classList.toggle('on', i < lvl));
+
+    // chips de estado
+    let chips = '';
+    if (g.player.sneak) chips += '<span class="chip sneak">AGACHADO</span>';
+    if (g.player.exhausted) chips += '<span class="chip warn">AGOTADO</span>';
+    if (s.intoxicated > 0) chips += '<span class="chip bad">INTOXICADO</span>';
+    if (s.infected) chips += '<span class="chip bad">INFECTADO</span>';
+    if (s.healEffects.length > 0) chips += '<span class="chip heal">VENDADO</span>';
+    this.chips.innerHTML = chips;
+
+    // equipo rápido
+    const p = g.player;
+    this.eqWeapon.textContent = p.weaponDef().name.toUpperCase();
+    this.eqArmor.textContent = 'BLINDAJE ' + Math.round(p.damageReduction() * 100) + '%';
+    this.eqSlots.textContent = 'MOCHILA ' + p.inventory.used() + '/' + p.capacity();
+
+    // prompt de interacción
+    const target = g.interactTarget();
+    if (target) {
+      this.promptEl.textContent = '[E] ' + target.label;
+      this.promptEl.classList.remove('hidden');
+    } else {
+      this.promptEl.classList.add('hidden');
+    }
+
+    // pista de controles inicial
+    this._hintTimer += 1 / 60;
+    if (this._hintTimer > 18) this.hintEl.classList.add('fade');
+
+    this.dmgFlash = Math.max(0, this.dmgFlash - 1 / 60);
+  }
+
+  _setBar(name, v, max) {
+    const ratio = Math.max(0, Math.min(1, v / max));
+    this.bars[name].style.width = (ratio * 100).toFixed(1) + '%';
+    this.vals[name].textContent = Math.ceil(Math.max(0, v));
+  }
+}

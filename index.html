@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZONA CERO — Supervivencia Zombi</title>
+<meta name="description" content="Prototipo de supervivencia zombi 2D con vista cenital: sigilo, hambre, sed, infección y saqueo.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23c8341f'/%3E%3Ccircle cx='11' cy='13' r='3' fill='%23120b09'/%3E%3Ccircle cx='21' cy='13' r='3' fill='%23120b09'/%3E%3Crect x='11' y='21' width='10' height='3' fill='%23120b09'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- ==================== HUD ==================== -->
+<div id="hud" class="hidden">
+  <div id="hud-top">
+    <span id="stat-time">00:00</span><span class="sep">·</span>
+    <span id="stat-kills">BAJAS 0</span><span class="sep">·</span>
+    <span id="stat-search">REGISTRADO 0</span>
+  </div>
+
+  <div id="hud-left">
+    <div class="statbar" data-bar="health"><div class="fill"></div><span class="bl">VIDA</span><span class="bv">100</span></div>
+    <div class="statbar" data-bar="stamina"><div class="fill"></div><span class="bl">ENERGÍA</span><span class="bv">100</span></div>
+    <div class="statbar" data-bar="hunger"><div class="fill"></div><span class="bl">HAMBRE</span><span class="bv">100</span></div>
+    <div class="statbar" data-bar="thirst"><div class="fill"></div><span class="bl">SED</span><span class="bv">100</span></div>
+    <div class="statbar hidden" data-bar="infection"><div class="fill"></div><span class="bl">INFECCIÓN</span><span class="bv">0</span></div>
+    <div id="status-chips"></div>
+  </div>
+
+  <div id="hud-right">
+    <div id="noise-meter">
+      <span class="nm-label">RUIDO</span>
+      <div class="nm-ticks"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div id="equip-quick">
+      <div id="eq-weapon">PUÑOS</div>
+      <div id="eq-armor">BLINDAJE 0%</div>
+      <div id="eq-slots">MOCHILA 2/10</div>
+    </div>
+  </div>
+
+  <div id="prompt" class="hidden"></div>
+  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · E interactuar · TAB inventario · P pausa · M audio</div>
+  <div id="toasts"></div>
+</div>
+
+<!-- ==================== INVENTARIO ==================== -->
+<div id="inv-modal" class="hidden">
+  <div class="inv-panel">
+    <header>
+      <h2>INVENTARIO</h2>
+      <span id="inv-cap">0 / 10</span>
+      <span class="inv-hint">TAB / ESC para cerrar</span>
+    </header>
+    <div class="inv-body">
+      <aside id="inv-equip">
+        <h3>EQUIPADO</h3>
+        <div class="eq-slot" data-eq="cabeza"><label>CABEZA</label><div class="eq-item">— vacío —</div></div>
+        <div class="eq-slot" data-eq="accesorios"><label>ACCESORIOS</label><div class="eq-item">— vacío —</div></div>
+        <div class="eq-slot" data-eq="torso"><label>TORSO</label><div class="eq-item">— vacío —</div></div>
+        <div class="eq-slot" data-eq="pantalones"><label>PANTALONES</label><div class="eq-item">— vacío —</div></div>
+        <div class="eq-slot" data-eq="arma"><label>ARMA</label><div class="eq-item">— vacío —</div></div>
+        <div id="inv-stats">
+          <div>Reducción de daño: <b id="st-armor">0%</b></div>
+          <div>Prot. infección: <b id="st-infect">0%</b></div>
+          <div>Ruido de pasos: <b id="st-noise">100%</b></div>
+        </div>
+        <p class="eq-note">Clic en una pieza equipada para guardarla en la mochila.</p>
+      </aside>
+
+      <section id="inv-grid-wrap">
+        <h3>MOCHILA</h3>
+        <div id="inv-grid"></div>
+        <div id="action-bar" class="hidden"></div>
+      </section>
+
+      <section id="inv-cont-wrap" class="hidden">
+        <h3 id="cont-name">CONTENEDOR</h3>
+        <div id="cont-grid"></div>
+        <p class="cont-hint">Clic en un objeto para tomarlo.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MENÚ PRINCIPAL ==================== -->
+<div id="menu">
+  <div class="menu-inner">
+    <h1>ZONA<em>CERO</em></h1>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.1</span></p>
+    <div class="menu-controls">
+      <div><kbd>W A S D</kbd><span>Moverse</span></div>
+      <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
+      <div><kbd>C</kbd><span>Agacharse (sigilo)</span></div>
+      <div><kbd>RATÓN</kbd><span>Apuntar</span></div>
+      <div><kbd>CLIC / F</kbd><span>Atacar</span></div>
+      <div><kbd>E</kbd><span>Interactuar · puertas · botín</span></div>
+      <div><kbd>TAB / I</kbd><span>Inventario y equipo</span></div>
+      <div><kbd>P</kbd><span>Pausa</span> <kbd>M</kbd><span>Audio</span></div>
+    </div>
+    <button id="btn-play">JUGAR</button>
+    <p class="menu-tip">Consejo: los zombis oyen tus pasos. Camina agachado con <b>C</b> y usa las esquinas.</p>
+  </div>
+</div>
+
+<!-- ==================== MUERTE ==================== -->
+<div id="deathscreen" class="hidden">
+  <div class="menu-inner">
+    <h1 class="death-title">HAS MUERTO</h1>
+    <p id="death-cause"></p>
+    <div class="death-stats">
+      <div><span>SOBREVIVIDO</span><b id="ds-time">00:00</b></div>
+      <div><span>ZOMBIS ELIMINADOS</span><b id="ds-kills">0</b></div>
+      <div><span>CONTENEDORES</span><b id="ds-search">0</b></div>
+    </div>
+    <button id="btn-retry">REINTENTAR</button>
+  </div>
+</div>
+
+<!-- ==================== PAUSA ==================== -->
+<div id="pausescreen" class="hidden">
+  <div class="menu-inner">
+    <h1 class="pause-title">PAUSA</h1>
+    <p>El mundo espera… por ahora.</p>
+    <button id="btn-resume">CONTINUAR (P)</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
