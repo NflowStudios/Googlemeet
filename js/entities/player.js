@@ -25,14 +25,18 @@ export class Player {
     this.stepAcc = 0;
     this.hurtFlash = 0;
 
-    // Equipo vestible (instancias de objetos o null)
+    // Equipo vestible (instancias de objetos o null) — DOS ranuras de
+    // accesorio: cualquier accesorio (incluidas fundas) puede ir en cualquiera
     this.equipment = {
       cabeza: null,
       accesorios: null,
+      accesorios2: null,
       torso: makeItem('playera'),
       pantalones: makeItem('jeans'),
       arma: null,
     };
+    this.reloading = null;   // {left,total,gun,kind,...} mientras se recarga
+    this.recoil = 0;         // retroceso acumulado (aumenta la dispersión)
     this.inventory = new Inventory(BASE_SLOTS);
     this.inventory.add(makeItem('agua'));
     this.inventory.add(makeItem('lata_frijoles'));
@@ -83,22 +87,64 @@ export class Player {
     return b;
   }
 
+  /** Modificador de tiempo de desenfunde de pistola según la funda equipada. */
+  pistolDrawMod() {
+    for (const s of ['accesorios', 'accesorios2']) {
+      const f = this.equipment[s];
+      if (f && f.def.pistolDrawMod) return f.def.pistolDrawMod;
+    }
+    return 1;
+  }
+
+  /** Modificador de tiempo de recarga de pistola según la funda equipada. */
+  pistolReloadMod() {
+    for (const s of ['accesorios', 'accesorios2']) {
+      const f = this.equipment[s];
+      if (f && f.def.pistolReloadMod) return f.def.pistolReloadMod;
+    }
+    return 1;
+  }
+
+  /** ¿Lleva una funda puesta? */
+  hasHolster() {
+    return !!(this.equipment.accesorios && this.equipment.accesorios.def.pistolDrawMod) ||
+           !!(this.equipment.accesorios2 && this.equipment.accesorios2.def.pistolDrawMod);
+  }
+
   capacity() { return BASE_SLOTS + this.slotsBonus(); }
 
   /**
    * Equipa un objeto de ropa/arma; el anterior vuelve a la mochila.
-   * Devuelve true si se equipó.
+   * Los accesorios (lentes, pasamontañas, máscaras, fundas…) pueden ocupar
+   * cualquiera de las DOS ranuras de accesorio (se usa la primera libre).
+   * Al desenfundar un arma de fuego hay un pequeño tiempo de "sacar"
+   // (la funda de pistola lo acorta).
    */
   equip(item) {
     if (item.def.cat === 'arma') {
       const old = this.equipment.arma;
       this.equipment.arma = item;
       if (old) this.inventory.add(old);
+      if (old !== item) {
+        this.reloading = null; // cambiar de arma cancela la recarga
+        this.recoil = 0;
+        if (item.def.ranged && item.def.draw) {
+          let draw = item.def.draw;
+          if (item.def.gunClass === 'pistola') draw *= this.pistolDrawMod();
+          this.cooldown = Math.max(this.cooldown, draw);
+        }
+      }
       return true;
     }
     if (item.def.cat === 'ropa' && item.def.slot) {
-      const old = this.equipment[item.def.slot];
-      this.equipment[item.def.slot] = item;
+      let slot = item.def.slot;
+      if (slot === 'accesorios' || slot === 'accesorios2') {
+        // cualquiera de las dos ranuras vale: primera libre
+        if (this.equipment.accesorios && !this.equipment.accesorios2) slot = 'accesorios2';
+        else slot = 'accesorios';
+      }
+      const old = this.equipment[slot];
+      this.equipment[slot] = item;
       if (old) this.inventory.add(old);
       return true;
     }
@@ -160,6 +206,7 @@ export class Player {
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.swingT = Math.max(0, this.swingT - dt);
     this.hurtFlash = Math.max(0, this.hurtFlash - dt);
+    this.recoil = Math.max(0, (this.recoil || 0) - dt * 1.4);
   }
 
   // ---------- Render ----------
@@ -185,7 +232,8 @@ export class Player {
     const torso = this.equipment.torso ? this.equipment.torso.def.color : '#3d5a73';
     const pants = this.equipment.pantalones ? this.equipment.pantalones.def.color : '#3a4a6a';
     const headGear = this.equipment.cabeza ? this.equipment.cabeza.def.color : null;
-    const acc = this.equipment.accesorios;
+    const acc1 = this.equipment.accesorios;
+    const acc2 = this.equipment.accesorios2;
 
     // "piernas": media luna inferior del color del pantalón
     ctx.fillStyle = pants;
@@ -199,23 +247,53 @@ export class Player {
     ctx.beginPath(); ctx.arc(s.x, s.y, R, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
 
-    // arma (dibujada detrás de las manos al golpear)
+    // funda en la cadera (lado izquierdo) — con la pistola guardada dentro
+    // si llevas una en la mochila
+    if (this.hasHolster()) {
+      const hAng = a + Math.PI / 2;
+      const hx = s.x + Math.cos(hAng) * (R + 1);
+      const hy = s.y + Math.sin(hAng) * (R + 1);
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(a);
+      const f = this.equipment.accesorios?.def.pistolDrawMod ? this.equipment.accesorios
+        : this.equipment.accesorios2;
+      ctx.fillStyle = f.def.color;
+      ctx.fillRect(-4, -2.5, 8, 6);
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-4, -2.5, 8, 6);
+      // pistola enfundada (empuñadura asomando)
+      const pistola = this.inventory.slots.find(
+        (it) => it && it.def.gunClass === 'pistola');
+      if (pistola) {
+        ctx.fillStyle = '#20242a';
+        ctx.fillRect(-1.5, -1.5, 5, 3);
+      }
+      ctx.restore();
+    }
+
+    // arma en las manos
     const wDef = this.weaponDef();
     const swinging = this.swingT > 0;
     const wAng = swinging
       ? a - 1.15 + 2.3 * (1 - this.swingT / this.swingDur)
       : a + 0.55;
     if (wDef !== FISTS || swinging) {
-      ctx.save();
-      ctx.translate(s.x, s.y);
-      ctx.rotate(wAng);
-      ctx.strokeStyle = wDef.color || '#9aa0a6';
-      ctx.lineWidth = wDef === FISTS ? 3 : 5;
-      ctx.beginPath();
-      ctx.moveTo(R * 0.4, 0);
-      ctx.lineTo(R + (wDef.range || 34) * 0.55, 0);
-      ctx.stroke();
-      ctx.restore();
+      if (wDef.ranged) {
+        this._drawGun(ctx, s, a, wDef, R);
+      } else {
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(wAng);
+        ctx.strokeStyle = wDef.color || '#9aa0a6';
+        ctx.lineWidth = wDef === FISTS ? 3 : 5;
+        ctx.beginPath();
+        ctx.moveTo(R * 0.4, 0);
+        ctx.lineTo(R + (wDef.range || 34) * 0.55, 0);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
 
     // estela del golpe
@@ -244,8 +322,9 @@ export class Player {
     ctx.beginPath(); ctx.arc(hx, hy, R * 0.62, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; ctx.stroke();
 
-    // accesorios sobre la cabeza
-    if (acc) {
+    // accesorios sobre la cabeza (ambas ranuras)
+    for (const acc of [acc1, acc2]) {
+      if (!acc) continue;
       if (acc.id === 'mascara_gas') {
         ctx.fillStyle = '#4a5a3a';
         ctx.beginPath(); ctx.arc(hx, hy, R * 0.5, hAng - 1.2, hAng + 1.2); ctx.fill();
@@ -268,5 +347,48 @@ export class Player {
     ctx.beginPath();
     ctx.arc(s.x + Math.cos(a) * R * 0.95, s.y + Math.sin(a) * R * 0.95, 1.6, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  /** Silueta de arma de fuego en las manos, apuntada hacia el ratón. */
+  _drawGun(ctx, s, a, wDef, R) {
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(a);
+    const L = wDef.gunLen || 17;
+    const body = wDef.color || '#3a3f46';
+
+    // retroceso: el arma "patina" hacia atrás al disparar
+    const kick = (this.recoil || 0) * 3;
+    ctx.translate(-kick, 0);
+
+    if (wDef.gunClass === 'pistola') {
+      // corredera + cañón corto + empuñadura
+      ctx.fillStyle = body;
+      ctx.fillRect(R * 0.55, -2.2, L, 4.4);
+      ctx.fillRect(R * 0.55 + L - 2, -1.4, 3.5, 2.8);       // boca del cañón
+      ctx.fillStyle = '#22262c';
+      ctx.fillRect(R * 0.3, 0.5, 4, 5.5);                    // empuñadura
+    } else if (wDef.gunClass === 'escopeta') {
+      // tubo largo + bomba de corredera + culata
+      ctx.fillStyle = body;
+      ctx.fillRect(R * 0.5, -1.8, L + 6, 3.6);               // cañón
+      ctx.fillStyle = '#2a2e24';
+      ctx.fillRect(R * 0.5 + 5, -2.6, 7, 5.2);               // corredera
+      ctx.fillStyle = '#5a4632';
+      ctx.fillRect(R * 0.1, -2, 5, 4);                        // culata
+    } else {
+      // rifle: cuerpo + cargador curvo + cañón
+      ctx.fillStyle = body;
+      ctx.fillRect(R * 0.45, -2.4, L + 4, 4.8);              // cuerpo
+      ctx.fillRect(R * 0.45 + L + 4, -1.2, 4, 2.4);           // cañón
+      ctx.fillStyle = '#20262a';
+      ctx.fillRect(R * 0.55 + 4, 1.5, 4.5, 6);                // cargador
+      ctx.fillStyle = '#171b16';
+      ctx.fillRect(R * 0.2, -1.6, 5.5, 3.2);                  // culata
+    }
+    // brillo de la parte superior
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(R * 0.55, -2.2, L, 1.2);
+    ctx.restore();
   }
 }

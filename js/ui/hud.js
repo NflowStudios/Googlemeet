@@ -5,6 +5,7 @@
 
 import { SURV } from '../config.js';
 import { fmtTime } from '../utils.js';
+import { gunRounds } from '../systems/inventory.js';
 
 export class HUD {
   constructor(game) {
@@ -31,6 +32,7 @@ export class HUD {
     this.eqWeapon = document.getElementById('eq-weapon');
     this.eqArmor = document.getElementById('eq-armor');
     this.eqSlots = document.getElementById('eq-slots');
+    this.eqAmmo = document.getElementById('eq-ammo');
     this.hintEl = document.getElementById('controls-hint');
     this.dmgFlash = 0;
     this._hintTimer = 0;
@@ -77,6 +79,7 @@ export class HUD {
     let chips = '';
     if (g.player.sneak) chips += '<span class="chip sneak">AGACHADO</span>';
     if (g.player.exhausted) chips += '<span class="chip warn">AGOTADO</span>';
+    if (g.player.reloading) chips += '<span class="chip reload">RECARGANDO</span>';
     if (s.intoxicated > 0) chips += '<span class="chip bad">INTOXICADO</span>';
     if (s.infected) chips += '<span class="chip bad">INFECTADO</span>';
     if (s.healEffects.length > 0) chips += '<span class="chip heal">VENDADO</span>';
@@ -87,6 +90,31 @@ export class HUD {
     this.eqWeapon.textContent = p.weaponDef().name.toUpperCase();
     this.eqArmor.textContent = 'BLINDAJE ' + Math.round(p.damageReduction() * 100) + '%';
     this.eqSlots.textContent = 'MOCHILA ' + p.inventory.used() + '/' + p.capacity();
+
+    // munición del arma de fuego equipada (o nada si es melee)
+    const gun = p.equipment.arma;
+    if (gun && gun.def.ranged && this.eqAmmo) {
+      let reserve = 0;
+      for (const st of p.inventory.slots) {
+        if (st && st.id === gun.def.ammo) reserve += st.count;
+      }
+      let txt;
+      if (p.reloading) {
+        const pct = Math.round((1 - p.reloading.left / p.reloading.total) * 100);
+        txt = 'RECARGANDO ' + pct + '%';
+      } else if (gun.def.magType) {
+        txt = gun.mag
+          ? gun.mag.rounds + '/' + gun.mag.def.cap + ' · reserva ' + reserve
+          : 'SIN CARGADOR · reserva ' + reserve;
+      } else {
+        txt = (gun.tube || 0) + '/' + gun.def.tubeCap + ' · reserva ' + reserve;
+      }
+      this.eqAmmo.textContent = txt;
+      this.eqAmmo.classList.remove('hidden');
+      this.eqAmmo.classList.toggle('empty', gunRounds(gun) === 0 && !p.reloading);
+    } else if (this.eqAmmo) {
+      this.eqAmmo.classList.add('hidden');
+    }
 
     // prompt de interacción
     const target = g.interactTarget();

@@ -139,6 +139,12 @@ export class InventoryUI {
     if (it.def.cat === 'comida' || it.def.cat === 'bebida') mk('Consumir', () => this.consume(this.selected));
     if (it.def.cat === 'medico') mk('Usar', () => this.consume(this.selected));
     if (it.def.cat === 'arma' || it.def.cat === 'ropa') mk('Equipar', () => this.equipItem(this.selected));
+    if (it.def.cat === 'municion') {
+      const n = document.createElement('span');
+      n.className = 'action-note';
+      n.textContent = 'Rellena sola tus cargadores compatibles';
+      bar.appendChild(n);
+    }
     if (this.container) mk('Guardar', () => this.store(this.selected));
     mk('Soltar', () => this.drop(this.selected));
   }
@@ -195,9 +201,12 @@ export class InventoryUI {
       c.items.splice(ci, 1);
       g.audio.pickup();
       g.toasts.push('Tomado: ' + itemLabel(it));
+      // la munición tomada rellena sola los cargadores compatibles
+      if (it.def.cat === 'municion') g.refillMags();
     } else if (it.count < before) {
       g.audio.pickup();
       g.toasts.push('Tomado parcialmente — mochila llena', 'warn');
+      if (it.def.cat === 'municion') g.refillMags();
     } else {
       g.toasts.push('Mochila llena', 'warn');
     }

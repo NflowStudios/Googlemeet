@@ -39,13 +39,14 @@
     </div>
     <div id="equip-quick">
       <div id="eq-weapon">PUÑOS</div>
+      <div id="eq-ammo" class="hidden">—</div>
       <div id="eq-armor">BLINDAJE 0%</div>
       <div id="eq-slots">MOCHILA 2/10</div>
     </div>
   </div>
 
   <div id="prompt" class="hidden"></div>
-  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · E interactuar · TAB inventario · P pausa · M audio</div>
+  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar · E interactuar · TAB inventario · P pausa · M audio</div>
   <div id="toasts"></div>
 </div>
 
@@ -61,7 +62,8 @@
       <aside id="inv-equip">
         <h3>EQUIPADO</h3>
         <div class="eq-slot" data-eq="cabeza"><label>CABEZA</label><div class="eq-item">— vacío —</div></div>
-        <div class="eq-slot" data-eq="accesorios"><label>ACCESORIOS</label><div class="eq-item">— vacío —</div></div>
+        <div class="eq-slot" data-eq="accesorios"><label>ACCESORIO 1</label><div class="eq-item">— vacío —</div></div>
+        <div class="eq-slot" data-eq="accesorios2"><label>ACCESORIO 2</label><div class="eq-item">— vacío —</div></div>
         <div class="eq-slot" data-eq="torso"><label>TORSO</label><div class="eq-item">— vacío —</div></div>
         <div class="eq-slot" data-eq="pantalones"><label>PANTALONES</label><div class="eq-item">— vacío —</div></div>
         <div class="eq-slot" data-eq="arma"><label>ARMA</label><div class="eq-item">— vacío —</div></div>
@@ -70,7 +72,7 @@
           <div>Prot. infección: <b id="st-infect">0%</b></div>
           <div>Ruido de pasos: <b id="st-noise">100%</b></div>
         </div>
-        <p class="eq-note">Clic en una pieza equipada para guardarla en la mochila.</p>
+        <p class="eq-note">Clic en una pieza equipada para guardarla en la mochila. Los accesorios pueden ir en cualquiera de las dos ranuras.</p>
       </aside>
 
       <section id="inv-grid-wrap">
@@ -92,19 +94,20 @@
 <div id="menu">
   <div class="menu-inner">
     <h1>ZONA<em>CERO</em></h1>
-    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.6</span></p>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.7</span></p>
     <div class="menu-controls">
       <div><kbd>W A S D</kbd><span>Moverse</span></div>
       <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
       <div><kbd>C</kbd><span>Agacharse (sigilo)</span></div>
       <div><kbd>RATÓN</kbd><span>Apuntar</span></div>
-      <div><kbd>CLIC / F</kbd><span>Atacar</span></div>
+      <div><kbd>CLIC / F</kbd><span>Atacar / disparar</span></div>
+      <div><kbd>R</kbd><span>Recargar el arma de fuego</span></div>
       <div><kbd>E</kbd><span>Interactuar · puertas · botín</span></div>
       <div><kbd>TAB / I</kbd><span>Inventario y equipo</span></div>
       <div><kbd>P</kbd><span>Pausa</span> <kbd>M</kbd><span>Audio</span></div>
     </div>
     <button id="btn-play">JUGAR</button>
-    <p class="menu-tip">Consejo: los zombis oyen tus pasos. Camina agachado con <b>C</b> y usa las esquinas.</p>
+    <p class="menu-tip">Consejo: un disparo se oye a cientos de metros. Los zombis vendrán — ten la vía de escape lista.</p>
   </div>
 </div>
 

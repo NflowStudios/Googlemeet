@@ -15,8 +15,8 @@ import { GameMap } from './world/map.js';
 import { Vision } from './world/vision.js';
 import { NoiseSystem } from './systems/noise.js';
 import { Survival } from './systems/survival.js';
-import { Inventory, makeItem, fillContainer, itemLabel } from './systems/inventory.js';
-import { playerAttack, zombieHit } from './systems/combat.js';
+import { Inventory, makeItem, fillContainer, itemLabel, refillMagazines } from './systems/inventory.js';
+import { playerAttack, zombieHit, reloadRanged, finishReload } from './systems/combat.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
 import { HUD } from './ui/hud.js';
@@ -48,6 +48,10 @@ class Game {
     this.uiOpen = false;
     this.zombies = [];
     this.groundItems = [];
+    // efectos de disparo (coordenadas de mundo, decaen en update)
+    this.tracers = [];   // trazadoras {x1,y1,x2,y2,t,life}
+    this.flashes = [];   // fogonazos {x,y,a,t,life,big}
+    this.impacts = [];   // impactos en muro {x,y,t,life}
     this.time = 0;
     this.kills = 0;
     this.searchedCount = 0;
@@ -117,6 +121,12 @@ class Game {
     this.groundItems = [];
     this._placeStartingLoot();
 
+    // efectos de disparo limpios
+    this.tracers.length = 0;
+    this.flashes.length = 0;
+    this.impacts.length = 0;
+    this._dryToastT = 0;
+
     this.time = 0;
     this.kills = 0;
     this.searchedCount = 0;
@@ -135,6 +145,16 @@ class Game {
     this.toasts.push('Sobrevive. Hazte con un arma y busca suministros.', 'info');
   }
 
+  /** Auto-relleno de cargadores con la munición que llevas (toasts incluidos). */
+  refillMags() {
+    if (!this.player) return [];
+    const filled = refillMagazines(this.player);
+    for (const [mag, got] of filled) {
+      this.toasts.push(mag.def.name + ' rellenado (+' + got + ')');
+    }
+    return filled;
+  }
+
   _placeStartingLoot() {
     const s = this.map.spawn;
     // tubo de acero cerca del punto de aparición
@@ -146,6 +166,18 @@ class Game {
     // bate de béisbol en la casa más cercana
     const indoor = this.map.nearestIndoorFree(s.x, s.y);
     if (indoor) this.groundItems.push({ x: indoor.x, y: indoor.y, item: makeItem('bate'), visibleNow: true });
+
+    // pistola de arranque cerca del spawn (con cargador puesto) para estrenar
+    // el sistema de armas de fuego desde el primer minuto
+    const gun = makeItem('pistola_vibora');
+    gun.mag = makeItem('cargador_9mm');
+    gun.mag.rounds = 7;
+    const gp = this.map.randomOutdoor(s, 110) || { x: s.x + 5 * TILE, y: s.y };
+    this.groundItems.push({ x: gp.x, y: gp.y, item: gun, visibleNow: true });
+    const ammo = makeItem('bala_9mm');
+    ammo.count = 14;
+    const ap = this.map.randomOutdoor(s, 130) || { x: s.x - 4 * TILE, y: s.y };
+    this.groundItems.push({ x: ap.x, y: ap.y, item: ammo, visibleNow: true });
 
     // suministros dispersos
     const scatter = ['agua', 'papas', 'manzana', 'venda', 'refresco', 'chocolate', 'lata_atun', 'venda'];
@@ -176,6 +208,7 @@ class Game {
     switch (name) {
       case 'interact': this.interact(); break;
       case 'inventory': this.invUI.openUI(null); break;
+      case 'reload': reloadRanged(this); break;
       case 'sneak': {
         this.player.sneak = !this.player.sneak;
         this.toasts.push(this.player.sneak ? 'Modo sigilo: más lento, más silencioso' : 'Sigilo desactivado');
@@ -252,6 +285,8 @@ class Game {
           this.audio.pickup();
           this.toasts.push('Recogido: ' + itemLabel(gi.item));
           this.noise.emit(this.player.x, this.player.y, 30, 'recoger');
+          // la munición recogida rellena sola los cargadores compatibles
+          if (gi.item.def.cat === 'municion') this.refillMags();
         } else if (gi.item.count <= 0) {
           const i = this.groundItems.indexOf(gi);
           if (i >= 0) this.groundItems.splice(i, 1);
@@ -327,6 +362,17 @@ class Game {
     if (this.state !== STATE.PLAYING) return;
 
     this.noise.update(dt);
+
+    // recarga en curso → temporizador y aplicación al terminar
+    if (this.player.reloading) {
+      this.player.reloading.left -= dt;
+      if (this.player.reloading.left <= 0) finishReload(this);
+    }
+
+    // fuego automático: mantener pulsado el botón con un rifle automático
+    const eqGun = this.player.equipment.arma;
+    if (this.input.mouse.down && eqGun && eqGun.def.auto) playerAttack(this);
+
     // Visión puramente en tiempo real: se recalcula cada frame, sin memoria
     this.vision.compute(this);
 
@@ -342,6 +388,23 @@ class Game {
     this.audio.heartbeat(dt, this.survival.health < 25 && this.survival.health > 0);
 
     this.noise.clearFrame();
+
+    // decaimiento de efectos de disparo
+    for (let i = this.tracers.length - 1; i >= 0; i--) {
+      const tr = this.tracers[i];
+      tr.t += dt;
+      if (tr.t >= tr.life) this.tracers.splice(i, 1);
+    }
+    for (let i = this.flashes.length - 1; i >= 0; i--) {
+      const fl = this.flashes[i];
+      fl.t += dt;
+      if (fl.t >= fl.life) this.flashes.splice(i, 1);
+    }
+    for (let i = this.impacts.length - 1; i >= 0; i--) {
+      const im = this.impacts[i];
+      im.t += dt;
+      if (im.t >= im.life) this.impacts.splice(i, 1);
+    }
   }
 
   // ================== Render ==================

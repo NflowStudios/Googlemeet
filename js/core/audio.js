@@ -140,6 +140,52 @@ export class AudioFX {
 
   door() { this._tone('sawtooth', 150, 85, 0.25, 0.2); this._noise(0.1, 'lowpass', 250, 0.15); }
 
+  // ---------- Armas de fuego (procedurales) ----------
+
+  /** Disparo según el arma: pistola / escopeta / rifle. */
+  gunshot(kind) {
+    if (kind === 'escopeta') {
+      // trueno grave con cola
+      this._noise(0.16, 'lowpass', 420, 0.95);
+      this._tone('sine', 120, 36, 0.26, 0.85);
+      this._noise(0.34, 'lowpass', 150, 0.6);
+      this._noise(0.05, 'highpass', 1800, 0.4);
+    } else if (kind === 'rifle') {
+      // latigazo agudo y seco
+      this._noise(0.06, 'highpass', 1400, 0.8);
+      this._tone('square', 520, 70, 0.07, 0.5);
+      this._noise(0.2, 'lowpass', 240, 0.5);
+    } else {
+      // pistola: chasquido contenido
+      this._noise(0.09, 'highpass', 900, 0.75);
+      this._tone('square', 420, 60, 0.08, 0.55);
+      this._noise(0.22, 'lowpass', 180, 0.45);
+    }
+  }
+
+  /** Accionar la corredera de la escopeta tras disparar. */
+  pump() {
+    this._tone('square', 260, 180, 0.05, 0.18);
+    setTimeout(() => this._tone('square', 200, 140, 0.05, 0.2), 110);
+    setTimeout(() => this._noise(0.06, 'bandpass', 700, 0.22, 0, 3), 115);
+  }
+
+  /** Gatillo en vacío: clic metálico. */
+  dryFire() { this._tone('square', 950, 720, 0.035, 0.22); }
+
+  /** Inicio de recarga: clic del cargador saliendo. */
+  reloadStart() {
+    this._noise(0.06, 'bandpass', 620, 0.3, 0, 3);
+    this._tone('square', 300, 220, 0.05, 0.16);
+  }
+
+  /** Fin de recarga: cargador entra y corredera acciona. */
+  reloadEnd() {
+    this._tone('square', 240, 180, 0.06, 0.24);
+    setTimeout(() => this._noise(0.07, 'bandpass', 800, 0.35, 0, 3), 90);
+    setTimeout(() => this._tone('square', 330, 240, 0.05, 0.2), 130);
+  }
+
   heal() { this._tone('sine', 480, 720, 0.25, 0.16); }
 
   uiClick() { this._tone('square', 440, 520, 0.05, 0.1); }

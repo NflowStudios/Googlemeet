@@ -3,9 +3,14 @@
  *
  * Los objetos son instancias {id, def, count, rotten}. La comida generada
  * en neveras/alacenas puede estar PODRIDA: alimenta poco, daña e intoxica.
+ *
+ * Armas de fuego: item.mag = cargador insertado (cat 'cargador', guarda
+ * item.rounds) o item.tube para la escopeta. La munición (cat 'municion')
+ * es apilable y RELLENA SOLO los cargadores compatibles que lleves
+ * (refillMagazines): el sobrante queda como pila suelta en la mochila.
  */
 
-import { ITEMS, LOOT, ROTTEN_CHANCE, CONTAINER_DEFS } from '../config.js';
+import { ITEMS, LOOT, ROTTEN_CHANCE, CONTAINER_DEFS, GUN_FOUND_FULL_CHANCE } from '../config.js';
 
 let uidCounter = 1;
 
@@ -16,9 +21,52 @@ export function makeItem(id, rotten = false) {
   return { uid: uidCounter++, id, def, count: 1, rotten };
 }
 
-/** ¿Es apilable? (comida/bebida/medico sí; armas y ropa no) */
+/** ¿Es apilable? (comida/bebida/medico/munición sí; armas, ropa y cargadores no) */
 function stackable(item) {
-  return ['comida', 'bebida', 'medico'].includes(item.def.cat);
+  return ['comida', 'bebida', 'medico', 'municion'].includes(item.def.cat);
+}
+
+/** Cantidad de balas dentro de un arma (cargador insertado o tubo). */
+export function gunRounds(gun) {
+  if (!gun || !gun.def.ranged) return 0;
+  if (gun.def.magType) return gun.mag ? gun.mag.rounds : 0;
+  return gun.tube || 0;
+}
+
+/** Capacidad de un arma (la del cargador insertado, o el tubo). */
+export function gunCapacity(gun) {
+  if (!gun || !gun.def.ranged) return 0;
+  if (gun.def.magType) return gun.mag ? gun.mag.def.cap : 0;
+  return gun.def.tubeCap || 0;
+}
+
+/** Rellena un cargador nuevo con balas (lleno o parcial — nunca vacío). */
+function _fillMag(mag, rng) {
+  const cap = mag.def.cap;
+  mag.rounds = rng.chance(GUN_FOUND_FULL_CHANCE)
+    ? cap
+    : rng.int(Math.ceil(cap * 0.3), Math.max(1, Math.floor(cap * 0.95)));
+  return mag;
+}
+
+/** Prepara un objeto recién generado según su categoría. */
+function _setupLootItem(item, rng) {
+  const def = item.def;
+  if (def.cat === 'municion') {
+    // pila de munición con cantidad variable
+    item.count = rng.int(def.lootMin || 5, def.lootMax || 15);
+  } else if (def.cat === 'cargador') {
+    _fillMag(item, rng);
+  } else if (def.cat === 'arma' && def.ranged) {
+    // un arma hallada SIEMPRE trae algo dentro:
+    // cargador insertado con balas (pistola/rifle) o tubo cargado (escopeta)
+    if (def.magType) {
+      item.mag = _fillMag(makeItem(def.magType), rng);
+    } else {
+      item.tube = rng.int(Math.max(2, Math.floor(def.tubeCap * 0.3)), def.tubeCap);
+    }
+  }
+  return item;
 }
 
 /** Rellena un contenedor con botín de su tabla. */
@@ -39,7 +87,9 @@ export function fillContainer(container, rng) {
     const def = ITEMS[picked];
     const isFood = def.cat === 'comida' || def.cat === 'bebida';
     const item = makeItem(picked, isFood && rng.chance(rottenP));
-    if (stackable(item) && rng.chance(0.25)) item.count = 2;
+    _setupLootItem(item, rng);
+    // doble apilado solo para consumibles (la munición ya trae su cantidad)
+    if (stackable(item) && item.def.cat !== 'municion' && rng.chance(0.25)) item.count = 2;
     container.items.push(item);
   }
 }
@@ -96,8 +146,56 @@ export class Inventory {
   isFull() { return this.slots.indexOf(null) === -1; }
 }
 
-/** Etiqueta legible de un objeto (con estado de descomposición). */
+/** Etiqueta legible de un objeto (con estado de descomposición y munición). */
 export function itemLabel(item) {
-  if (item.def.cat !== 'comida' && item.def.cat !== 'bebida') return item.def.name;
-  return item.rotten ? item.def.name + ' (podrida)' : item.def.name;
+  const d = item.def;
+  let n = d.name;
+  if (d.cat === 'cargador') n += ` (${item.rounds}/${d.cap})`;
+  else if (d.cat === 'arma' && d.ranged) {
+    if (d.magType) n += item.mag ? ` [${item.mag.rounds}/${item.mag.def.cap}]` : ' [sin cargador]';
+    else n += ` [${item.tube || 0}/${d.tubeCap}]`;
+  }
+  if (d.cat === 'comida' || d.cat === 'bebida') {
+    return item.rotten ? n + ' (podrida)' : n;
+  }
+  return n;
+}
+
+/**
+ * Auto-relleno de cargadores: la munición suelta de la mochila pasa
+ * SOLA a los cargadores compatibles (los de la mochila, los insertados
+ * en armas de la mochila y el del arma equipada). El sobrante queda
+ * como pila en el inventario. Devuelve [ [cargador, balas], ... ].
+ */
+export function refillMagazines(player) {
+  const inv = player.inventory;
+  const holders = []; // cargadores a rellenar
+  for (const s of inv.slots) {
+    if (!s) continue;
+    if (s.def.cat === 'cargador') holders.push(s);
+    else if (s.def.cat === 'arma' && s.def.ranged && s.mag) holders.push(s.mag);
+  }
+  const eq = player.equipment.arma;
+  if (eq && eq.def.ranged && eq.mag) holders.push(eq.mag);
+
+  const filled = [];
+  for (const mag of holders) {
+    if (mag.rounds >= mag.def.cap) continue;
+    const need = mag.def.cap - mag.rounds;
+    let got = 0;
+    for (let i = 0; i < inv.slots.length && got < need; i++) {
+      const st = inv.slots[i];
+      if (st && st.id === mag.def.ammo && st.count > 0) {
+        const take = Math.min(need - got, st.count);
+        st.count -= take;
+        got += take;
+        if (st.count <= 0) inv.slots[i] = null;
+      }
+    }
+    if (got > 0) {
+      mag.rounds += got;
+      filled.push([mag, got]);
+    }
+  }
+  return filled;
 }

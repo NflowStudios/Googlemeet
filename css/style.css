@@ -134,6 +134,7 @@ canvas#game {
 .chip.warn { color: #d9c34a; border-color: #8a7a24; }
 .chip.bad { color: #e05a4f; border-color: #8a2a22; animation: critPulse 1.1s infinite; }
 .chip.heal { color: #d8d5cc; }
+.chip.reload { color: #7ab0d8; border-color: #3a5a74; animation: critPulse 1.4s infinite; }
 
 /* derecha: ruido + equipo */
 #hud-right {
@@ -176,6 +177,15 @@ canvas#game {
 }
 #eq-weapon { font-size: 16px; font-weight: 700; letter-spacing: 1.5px; color: var(--text); }
 #eq-armor, #eq-slots { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: var(--text-dim); }
+#eq-ammo {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #d8b45a;
+  font-variant-numeric: tabular-nums;
+}
+#eq-ammo.empty { color: #e05a4f; }
+.action-note { align-self: center; font-size: 11px; color: var(--text-dim); letter-spacing: 0.5px; }
 
 /* prompt de interacción */
 #prompt {
@@ -364,6 +374,8 @@ canvas#game {
 .slot.cat-medico { border-left: 3px solid #d8d5cc; }
 .slot.cat-arma { border-left: 3px solid #e05a4f; }
 .slot.cat-ropa { border-left: 3px solid #9a7ab8; }
+.slot.cat-municion { border-left: 3px solid #d8a94f; }
+.slot.cat-cargador { border-left: 3px solid #6a9ac8; }
 .slot.rotten { background: #171d12; }
 .slot.rotten .slot-name::after {
   content: 'PODRIDA';

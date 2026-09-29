@@ -6,7 +6,6 @@
 export function renderGame(ctx, game) {
   const cam = game.cam;
   const w = cam.w, h = cam.h;
-
   // suelo, marcas, coches, decals, contenedores
   game.map.drawGround(ctx, cam);
 
@@ -51,9 +50,74 @@ export function renderGame(ctx, game) {
   // ventanas/puertas abiertas. Árboles y coches no tapan la vista.
   game.map.drawStructOver(ctx, cam, game);
 
+  // efectos de disparo: trazadoras, fogonazos e impactos (siempre visibles
+  // dentro del cono; ocurren delante del jugador)
+  drawGunFX(ctx, game);
+
   // ---- espacio de pantalla ----
   drawCrosshair(ctx, game);
   drawVignettes(ctx, game);
+}
+
+/** Trazadoras, fogonazos y polvo de impacto de las armas de fuego. */
+function drawGunFX(ctx, game) {
+  const cam = game.cam;
+
+  // trazadoras: líneas brillantes que se apagan en ~75 ms
+  if (game.tracers && game.tracers.length) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const tr of game.tracers) {
+      const k = 1 - tr.t / tr.life;
+      const x1 = tr.x1 - cam.x + cam.offX, y1 = tr.y1 - cam.y + cam.offY;
+      const x2 = tr.x2 - cam.x + cam.offX, y2 = tr.y2 - cam.y + cam.offY;
+      ctx.strokeStyle = `rgba(255, 238, 180, ${0.75 * k})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // fogonazos: destello aditivo en la boca del cañón
+  if (game.flashes && game.flashes.length) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const fl of game.flashes) {
+      const k = 1 - fl.t / fl.life;
+      const x = fl.x - cam.x + cam.offX, y = fl.y - cam.y + cam.offY;
+      const R = (fl.big ? 26 : 18) * (0.7 + 0.3 * k);
+      // halo
+      const g = ctx.createRadialGradient(x, y, 1, x, y, R);
+      g.addColorStop(0, `rgba(255, 210, 120, ${0.55 * k})`);
+      g.addColorStop(1, 'rgba(255, 160, 60, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill();
+      // lengüeta de fuego
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(fl.a);
+      ctx.fillStyle = `rgba(255, 240, 190, ${0.9 * k})`;
+      ctx.beginPath();
+      const L = fl.big ? 16 : 11;
+      ctx.moveTo(0, -3.2); ctx.lineTo(L, 0); ctx.lineTo(0, 3.2); ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // impactos en muro: puff de polvo que se expande
+  if (game.impacts && game.impacts.length) {
+    for (const im of game.impacts) {
+      const k = im.t / im.life;
+      const x = im.x - cam.x + cam.offX, y = im.y - cam.y + cam.offY;
+      ctx.fillStyle = `rgba(200, 195, 180, ${0.5 * (1 - k)})`;
+      ctx.beginPath(); ctx.arc(x, y, 2.5 + k * 7, 0, Math.PI * 2); ctx.fill();
+      // chispa
+      ctx.fillStyle = `rgba(255, 230, 160, ${0.8 * Math.max(0, 1 - k * 3)})`;
+      ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
 }
 
 function drawCrosshair(ctx, game) {

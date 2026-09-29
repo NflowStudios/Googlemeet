@@ -31,7 +31,7 @@ export class Input {
       const map = {
         'KeyE': 'interact', 'Tab': 'inventory', 'KeyI': 'inventory',
         'KeyC': 'sneak', 'KeyP': 'pause', 'KeyM': 'mute',
-        'KeyF': 'attack', 'Escape': 'escape', 'Enter': 'enter',
+        'KeyF': 'attack', 'KeyR': 'reload', 'Escape': 'escape', 'Enter': 'enter',
       };
       const action = map[e.code] || map[code];
       if (action && this.onAction) this.onAction(action);
