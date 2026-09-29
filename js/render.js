@@ -45,9 +45,10 @@ export function renderGame(ctx, game) {
   // niebla de guerra (solo visión en tiempo real: la espalda queda oculta)
   game.vision.render(ctx, game);
 
-  // Estructura con línea de visión (muros/ventanas/puertas) redibujada NÍTIDA
-  // por encima de la niebla: las paredes se distinguen con claridad en todo
-  // el cono, pero el interior sigue oculto salvo por ventanas/puertas abiertas
+  // Estructura y props (muros/ventanas/puertas/árboles/coches) con línea de
+  // visión redibujados NÍTIDOS por encima de la niebla: se distinguen con
+  // claridad en todo el cono, pero el interior sigue oculto salvo por
+  // ventanas/puertas abiertas. Árboles y coches no tapan la vista.
   game.map.drawStructOver(ctx, cam, game);
 
   // ---- espacio de pantalla ----

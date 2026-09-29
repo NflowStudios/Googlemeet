@@ -18,8 +18,12 @@ export const T = {
 
 // Tiles sólidos (bloquean movimiento)
 export const SOLID = new Set([T.WALL, T.DOOR_CLOSED, T.TREE, T.WINDOW, T.CAR]);
-// Tiles opacos (bloquean la visión; las ventanas dejan ver, no pasar)
-export const OPAQUE = new Set([T.WALL, T.DOOR_CLOSED, T.TREE, T.CAR]);
+// Tiles opacos para la VISIÓN DEL JUGADOR: solo muros y puertas cerradas tapan.
+// Árboles y coches NO tapan la vista (cámara aérea: se ve por encima de ellos).
+export const OPAQUE = new Set([T.WALL, T.DOOR_CLOSED]);
+// Tiles que tapan la vista de los ZOMBIS: árboles y coches siguen dando
+// COBERTURA — el jugador puede verlos desde arriba, pero esconderse detrás.
+export const AI_OPAQUE = new Set([T.WALL, T.DOOR_CLOSED, T.TREE, T.CAR]);
 
 // ---------- Visión (cono + niebla de guerra) ----------
 export const VISION = {
@@ -29,6 +33,7 @@ export const VISION = {
   coneRays: 130,       // rayos del cono
   nearRays: 28,        // rayos del círculo cercano
   wallDim: 0.5,        // atenuación máxima de la estructura al borde del cono
+  propDim: 0.3,        // atenuación máxima de árboles/coches (más nítidos que los muros)
 };
 
 // ---------- Jugador ----------

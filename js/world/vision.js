@@ -5,14 +5,16 @@
  * a tus espaldas y que el juego sea más difícil. NO hay memoria espacial
  * ni revelado progresivo: nada se "desbloquea" mientras ves.
  *
- * - Cono de visión con raycast contra paredes/árboles (las ventanas dejan ver).
+ * - Cono de visión con raycast: solo muros y puertas cerradas tapan la vista.
+ *   Árboles y coches NO ocultan nada al jugador (cámara aérea): el cono pasa
+ *   por encima de ellos y se distinguen con nitidez.
  * - Radio de percepción inmediata a 360° (periferia mínima junto al cuerpo).
  * - Fuera de ambos: negro absoluto, recalculado desde cero CADA frame.
  * - Los zombis y objetos del suelo solo se dibujan si están EN visión actual.
- * - wallTiles: muros/ventanas/puertas con línea de visión directa AHORA
- *   (se redibujan nítidos sobre la niebla en map.drawStructOver). Así la
- *   pared frontal se distingue con claridad, pero el interior de las casas
- *   solo se ve por lo que se cuela por ventanas y puertas abiertas.
+ * - wallTiles: muros/ventanas/puertas/ÁRBOLES/COCHES con línea de visión
+ *   directa AHORA (se redibujan nítidos sobre la niebla en map.drawStructOver).
+ *   Así la pared frontal se distingue con claridad, pero el interior de las
+ *   casas solo se ve por lo que se cuela por ventanas y puertas abiertas.
  */
 
 import { VISION, TILE, MAP_W, MAP_H, T } from '../config.js';
@@ -23,7 +25,7 @@ export class Vision {
     this.cone = [];    // polígono del cono (coords de mundo)
     this.near = [];    // polígono del círculo cercano (coords de mundo)
     this.aim = 0;
-    // tiles de estructura (muro/ventana/puerta) visibles en este frame
+    // tiles de estructura/props (muro/ventana/puerta/árbol/coche) visibles en este frame
     this.wallTiles = new Set();
 
     // Canvas de niebla del tamaño del viewport (se redimensiona)
@@ -58,12 +60,12 @@ export class Vision {
       this.near.push([px + Math.cos(a) * d, py + Math.sin(a) * d]);
     }
 
-    // ---- Estructura visible ahora mismo (muros/ventanas/puertas) ----
-    // Un tile de estructura se ve si está dentro del cono (con la holgura de
-    // su tamaño angular, para que el muro no se quede "a trozos" en el borde)
-    // o dentro de la periferia, Y tiene línea de visión directa. El interior
-    // de las casas NO entra aquí: solo lo que se cuela por ventanas / puertas
-    // abiertas llega a verse. Sin memoria: se recalcula desde cero cada frame.
+    // ---- Estructura y props visibles ahora mismo ----
+    // Un tile de estructura/props se ve si está dentro del cono (con la holgura
+    // de su tamaño angular, para que no quede "a trozos" en el borde) o dentro
+    // de la periferia, Y tiene línea de visión directa. El interior de las
+    // casas NO entra aquí: solo lo que se cuela por ventanas / puertas abiertas
+    // llega a verse. Sin memoria: se recalcula desde cero cada frame.
     this.wallTiles.clear();
     const R = VISION.range + TILE;
     const t0x = Math.max(0, Math.floor((px - R) / TILE));
@@ -73,7 +75,8 @@ export class Vision {
     for (let ty = t0y; ty <= t1y; ty++) {
       for (let tx = t0x; tx <= t1x; tx++) {
         const t = map.tileAtIdx(tx, ty);
-        if (t !== T.WALL && t !== T.WINDOW && t !== T.DOOR_CLOSED && t !== T.DOOR_OPEN) continue;
+        if (t !== T.WALL && t !== T.WINDOW && t !== T.DOOR_CLOSED && t !== T.DOOR_OPEN &&
+            t !== T.TREE && t !== T.CAR) continue;
         // punto del tile más cercano al jugador: el segmento hasta él no
         // atraviesa el propio tile → lineClear no se auto-bloquea
         const rx = tx * TILE, ry = ty * TILE;

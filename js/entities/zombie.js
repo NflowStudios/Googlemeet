@@ -50,7 +50,9 @@ export class Zombie {
     let detectR = p.sneak ? Z.detectSneak : Z.detectRadius;
     if (p.running) detectR = Math.max(detectR, Z.detectRun);
     if (d > detectR) return false;
-    return game.map.lineClear(this.x, this.y, p.x, p.y);
+    // forAI=true: árboles y coches tapan la vista del zombi → cobertura.
+    // El jugador los ve desde arriba, pero puede esconderse detrás de ellos.
+    return game.map.lineClear(this.x, this.y, p.x, p.y, true);
   }
 
   update(dt, game) {

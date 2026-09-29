@@ -6,7 +6,7 @@
  * contenedores de botín, árboles, coches abandonados y puntos de aparición.
  */
 
-import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, VISION } from '../config.js';
+import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION } from '../config.js';
 import { Rng } from '../rng.js';
 import { hash2 } from '../utils.js';
 
@@ -30,6 +30,8 @@ export class GameMap {
     this.tiles = new Uint8Array(MAP_W * MAP_H); // GRASS por defecto (0)
     this.trees = [];        // {x, y, r} (centro px, radio de copa)
     this.cars = [];         // {x, y, w, h, color}
+    this.treeByTile = new Map(); // idx de tile → objeto árbol (redraw nítido)
+    this.carByTile = new Map();  // idx de tile (2 por coche) → objeto coche
     this.containers = [];   // {type, name, x, y, color, letter, searched}
     this.buildings = [];    // {x0, y0, x1, y1, cx, cy}
     this.doors = [];        // {tx, ty}
@@ -66,7 +68,11 @@ export class GameMap {
   }
 
   isSolidPx(x, y) { return SOLID.has(this.tileAt(x, y)); }
-  isOpaquePx(x, y) { return OPAQUE.has(this.tileAt(x, y)); }
+  /** forAI=true → usa AI_OPAQUE: árboles/coches tapan la vista de los zombis
+   *  (cobertura de sigilo) pero NO la del jugador, que los ve desde arriba. */
+  isOpaquePx(x, y, forAI = false) {
+    return (forAI ? AI_OPAQUE : OPAQUE).has(this.tileAt(x, y));
+  }
 
   // ================== Colisión círculo vs tiles ==================
 
@@ -127,15 +133,15 @@ export class GameMap {
     return maxDist;
   }
 
-  /** ¿Línea recta despejada entre dos puntos? */
-  lineClear(x1, y1, x2, y2) {
+  /** ¿Línea recta despejada entre dos puntos? (forAI → árboles/coches tapan) */
+  lineClear(x1, y1, x2, y2, forAI = false) {
     const d = Math.hypot(x2 - x1, y2 - y1);
     if (d < 1) return true;
     const step = 6;
     const n = Math.ceil(d / step);
     for (let i = 1; i < n; i++) {
       const t = i / n;
-      if (this.isOpaquePx(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)) return false;
+      if (this.isOpaquePx(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, forAI)) return false;
     }
     return true;
   }
@@ -262,7 +268,9 @@ export class GameMap {
       }
       if (close) continue;
       this.setTile(tx, ty, T.TREE);
-      this.trees.push({ x: px, y: py, r: rng.range(15, 23) });
+      const tr = { x: px, y: py, r: rng.range(15, 23) };
+      this.trees.push(tr);
+      this.treeByTile.set(this.idx(tx, ty), tr);
     }
 
     // --- Coches abandonados en la calle ---
@@ -277,7 +285,10 @@ export class GameMap {
       if (Math.hypot(cx - this.spawn.x, cy - this.spawn.y) < 220) continue;
       this.setTile(tx, ty, T.CAR);
       this.setTile(tx + 1, ty, T.CAR);
-      this.cars.push({ x: cx, y: cy, w: 58, h: 26, color: rng.pick(carColors) });
+      const car = { x: cx, y: cy, w: 58, h: 26, color: rng.pick(carColors) };
+      this.cars.push(car);
+      this.carByTile.set(this.idx(tx, ty), car);
+      this.carByTile.set(this.idx(tx + 1, ty), car);
     }
 
     // --- Listas de tiles caminables (spawns) ---
@@ -511,27 +522,12 @@ export class GameMap {
     }
     ctx.restore();
 
-    // coches
+    // coches (arte compartido: base bajo la niebla; versión nítida encima)
     for (const car of this.cars) {
       const sx = Math.round(car.x - cam.x + cam.offX - car.w / 2);
       const sy = Math.round(car.y - cam.y + cam.offY - car.h / 2);
       if (sx > cam.w + 40 || sy > cam.h + 40 || sx + car.w < -40 || sy + car.h < -40) continue;
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.fillRect(sx + 3, sy + 4, car.w, car.h);
-      ctx.fillStyle = car.color;
-      ctx.fillRect(sx, sy, car.w, car.h);
-      ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.fillRect(sx, sy, car.w, 5);
-      ctx.fillStyle = '#1e2630';   // parabrisas
-      ctx.fillRect(sx + car.w * 0.62, sy + 4, car.w * 0.2, car.h - 8);
-      ctx.fillStyle = '#15181c';   // ventanas laterales
-      ctx.fillRect(sx + 6, sy + 3, car.w * 0.28, 4);
-      ctx.fillRect(sx + 6, sy + car.h - 7, car.w * 0.28, 4);
-      ctx.fillStyle = '#111';
-      ctx.fillRect(sx + 8, sy - 3, 12, 5);
-      ctx.fillRect(sx + car.w - 20, sy - 3, 12, 5);
-      ctx.fillRect(sx + 8, sy + car.h - 2, 12, 5);
-      ctx.fillRect(sx + car.w - 20, sy + car.h - 2, 12, 5);
+      this._drawCarArt(ctx, sx, sy, car);
     }
 
     // decals de sangre/cadáveres
@@ -617,22 +613,122 @@ export class GameMap {
   }
 
   /**
-   * Redibuja la estructura VISIBLE por encima de la niebla de guerra.
+   * Arte de coche abandonado — compartido por la base bajo la niebla
+   * (drawGround) y el redibujado NÍTIDO sobre la niebla (drawStructOver).
+   * Contorno definido, techo con brillo, parabrisas con reflejo y faros.
+   */
+  _drawCarArt(ctx, sx, sy, car) {
+    const w = car.w, h = car.h;
+    // sombra proyectada
+    ctx.fillStyle = 'rgba(0,0,0,0.38)';
+    ctx.fillRect(sx + 3, sy + 4, w, h);
+    // carrocería
+    ctx.fillStyle = car.color;
+    ctx.fillRect(sx, sy, w, h);
+    // techo/capó con brillo direccional
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(sx + 2, sy + 2, w * 0.56, h - 4);
+    // parabrisas + reflejo
+    ctx.fillStyle = '#1e2630';
+    ctx.fillRect(sx + w * 0.62, sy + 4, w * 0.2, h - 8);
+    ctx.fillStyle = 'rgba(140,180,200,0.30)';
+    ctx.fillRect(sx + w * 0.62, sy + 5, w * 0.2, 3);
+    // ventanas laterales
+    ctx.fillStyle = '#15181c';
+    ctx.fillRect(sx + 6, sy + 3, w * 0.28, 4);
+    ctx.fillRect(sx + 6, sy + h - 7, w * 0.28, 4);
+    // ruedas
+    ctx.fillStyle = '#111';
+    ctx.fillRect(sx + 8, sy - 3, 12, 5);
+    ctx.fillRect(sx + w - 20, sy - 3, 12, 5);
+    ctx.fillRect(sx + 8, sy + h - 2, 12, 5);
+    ctx.fillRect(sx + w - 20, sy + h - 2, 12, 5);
+    // faros delanteros (morro a la derecha) y luces traseras
+    ctx.fillStyle = '#d9cfa0';
+    ctx.fillRect(sx + w - 3, sy + 5, 3, 4);
+    ctx.fillRect(sx + w - 3, sy + h - 9, 3, 4);
+    ctx.fillStyle = '#7a2020';
+    ctx.fillRect(sx, sy + 5, 3, 4);
+    ctx.fillRect(sx, sy + h - 9, 3, 4);
+    // contorno nítido
+    ctx.strokeStyle = 'rgba(10,12,14,0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(sx + 0.5, sy + 0.5, w - 1, h - 1);
+  }
+
+  /**
+   * Arte de árbol — compartido por drawOverhead (bajo la niebla) y el
+   * redibujado NÍTIDO sobre la niebla (drawStructOver). Copa por capas con
+   * toque de luz y contorno definido; tronco asomando al pie.
+   */
+  _drawTreeArt(ctx, sx, sy, r) {
+    // sombra proyectada
+    ctx.fillStyle = 'rgba(24, 34, 20, 0.4)';
+    ctx.beginPath(); ctx.arc(sx + 3, sy + 4, r, 0, Math.PI * 2); ctx.fill();
+    // tronco asomando al pie (leve sensación de altura)
+    ctx.fillStyle = '#4a3b28';
+    ctx.beginPath(); ctx.arc(sx + r * 0.45, sy + r * 0.5, 4.5, 0, Math.PI * 2); ctx.fill();
+    // copa por capas
+    ctx.fillStyle = '#2c4023';
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#35502a';
+    ctx.beginPath(); ctx.arc(sx - r * 0.2, sy - r * 0.25, r * 0.72, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#416034';
+    ctx.beginPath(); ctx.arc(sx - r * 0.3, sy - r * 0.35, r * 0.4, 0, Math.PI * 2); ctx.fill();
+    // toque de luz
+    ctx.fillStyle = 'rgba(120, 165, 95, 0.4)';
+    ctx.beginPath(); ctx.arc(sx - r * 0.38, sy - r * 0.42, r * 0.16, 0, Math.PI * 2); ctx.fill();
+    // contorno nítido
+    ctx.strokeStyle = 'rgba(16, 26, 12, 0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  /**
+   * Redibuja la estructura Y los props VISIBLES por encima de la niebla.
    * La cara frontal de muros/ventanas/puertas ya no queda oscurecida por su
    * propia sombra: las paredes se distinguen con claridad en todo el cono.
+   * Árboles y coches no tapan la visión del jugador y también se redibujan
+   * NÍTIDOS (atenuación menor que los muros) cuando hay línea de visión.
    * El interior de los edificios sigue oculto — solo entra en wallTiles lo
-   * que tiene línea de visión directa (lo que se ve por ventanas y puertas
-   * abiertas). Atenuación suave con la distancia para fundirse con el cono.
+   * que tiene línea de visión directa (ventanas y puertas abiertas).
+   * Las copas van al final: son lo más alto de la escena.
    */
   drawStructOver(ctx, cam, game) {
     const vision = game.vision, p = game.player;
     if (!vision || !vision.wallTiles || !vision.wallTiles.size) return;
+
+    const canopyTiles = [];
+    const drawnCars = new Set();
+
+    // pasada 1: muros/ventanas/puertas + coches (a nivel de suelo)
     for (const idx of vision.wallTiles) {
       const tx = idx % MAP_W, ty = Math.floor(idx / MAP_W);
+      const t = this.tiles[idx];
+      if (t === T.TREE) { canopyTiles.push(idx); continue; }
+
+      if (t === T.CAR) {
+        const car = this.carByTile.get(idx);
+        if (!car || drawnCars.has(car)) continue; // 2 tiles → 1 solo coche
+        drawnCars.add(car);
+        const csx = Math.round(car.x - cam.x + cam.offX - car.w / 2);
+        const csy = Math.round(car.y - cam.y + cam.offY - car.h / 2);
+        if (csx > cam.w + 40 || csy > cam.h + 40 || csx + car.w < -40 || csy + car.h < -40) continue;
+        this._drawCarArt(ctx, csx, csy, car);
+        const kc = Math.max(0, Math.min(1,
+          (Math.hypot(car.x - p.x, car.y - p.y) - VISION.nearR) / (VISION.range - VISION.nearR)));
+        const dimC = kc * VISION.propDim;
+        if (dimC > 0.01) {
+          ctx.fillStyle = `rgba(3,5,3,${dimC.toFixed(3)})`;
+          ctx.fillRect(csx, csy, car.w, car.h);
+        }
+        continue;
+      }
+
       const sx = Math.round(tx * TILE - cam.x + cam.offX);
       const sy = Math.round(ty * TILE - cam.y + cam.offY);
       if (sx > cam.w + TILE || sy > cam.h + TILE || sx + TILE < -TILE || sy + TILE < -TILE) continue;
-      this._drawStructTile(ctx, this.tiles[idx], sx, sy, tx, ty);
+      this._drawStructTile(ctx, t, sx, sy, tx, ty);
       // atenuación con la distancia: 0 junto al jugador → wallDim en el borde
       const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2;
       const k = Math.max(0, Math.min(1,
@@ -643,6 +739,24 @@ export class GameMap {
         ctx.fillRect(sx, sy, TILE, TILE);
       }
     }
+
+    // pasada 2: copas de árboles — por encima de muros y entidades
+    for (const idx of canopyTiles) {
+      const tr = this.treeByTile.get(idx);
+      if (!tr) continue;
+      const tsx = tr.x - cam.x + cam.offX;
+      const tsy = tr.y - cam.y + cam.offY;
+      if (tsx < -40 || tsy < -40 || tsx > cam.w + 40 || tsy > cam.h + 40) continue;
+      this._drawTreeArt(ctx, tsx, tsy, tr.r);
+      // atenuación suave: círculo que cubre toda la copa
+      const kt = Math.max(0, Math.min(1,
+        (Math.hypot(tr.x - p.x, tr.y - p.y) - VISION.nearR) / (VISION.range - VISION.nearR)));
+      const dimT = kt * VISION.propDim;
+      if (dimT > 0.01) {
+        ctx.fillStyle = `rgba(3,5,3,${dimT.toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(tsx, tsy, tr.r + 2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
   }
 
   drawOverhead(ctx, cam) {
@@ -651,14 +765,7 @@ export class GameMap {
       const sx = t.x - cam.x + cam.offX;
       const sy = t.y - cam.y + cam.offY;
       if (sx < -40 || sy < -40 || sx > cam.w + 40 || sy > cam.h + 40) continue;
-      ctx.fillStyle = 'rgba(24, 34, 20, 0.35)';
-      ctx.beginPath(); ctx.arc(sx + 3, sy + 4, t.r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#2c4023';
-      ctx.beginPath(); ctx.arc(sx, sy, t.r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#35502a';
-      ctx.beginPath(); ctx.arc(sx - t.r * 0.2, sy - t.r * 0.25, t.r * 0.72, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#416034';
-      ctx.beginPath(); ctx.arc(sx - t.r * 0.3, sy - t.r * 0.35, t.r * 0.4, 0, Math.PI * 2); ctx.fill();
+      this._drawTreeArt(ctx, sx, sy, t.r);
     }
   }
 }
