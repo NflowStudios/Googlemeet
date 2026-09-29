@@ -42,7 +42,7 @@ export function renderGame(ctx, game) {
   // ondas de ruido tenues
   game.noise.draw(ctx, cam);
 
-  // niebla de guerra (cono + memoria)
+  // niebla de guerra (solo visión en tiempo real: la espalda queda oculta)
   game.vision.render(ctx, game);
 
   // ---- espacio de pantalla ----

@@ -327,8 +327,8 @@ class Game {
     if (this.state !== STATE.PLAYING) return;
 
     this.noise.update(dt);
+    // Visión puramente en tiempo real: se recalcula cada frame, sin memoria
     this.vision.compute(this);
-    this.vision.update(dt, this);
 
     // visibilidad de entidades (para render y lógica de "solo lo que ves")
     for (const z of this.zombies) z.visibleNow = this.vision.isVisible(z.x, z.y, this);

@@ -1,9 +1,13 @@
 /**
- * vision.js — Campo de visión en cono + niebla de guerra con memoria espacial.
+ * vision.js — Campo de visión en cono, EN TIEMPO REAL.
+ *
+ * Diseño (a pedido del jugador): la vista existe para OCULTAR lo que está
+ * a tus espaldas y que el juego sea más difícil. NO hay memoria espacial
+ * ni revelado progresivo: nada se "desbloquea" mientras ves.
  *
  * - Cono de visión con raycast contra paredes/árboles (las ventanas dejan ver).
- * - Radio de percepción inmediata a 360° alrededor del jugador.
- * - Memoria: las zonas ya vistas quedan tenuemente recordadas (estilo PZ).
+ * - Radio de percepción inmediata a 360° (periferia mínima junto al cuerpo).
+ * - Fuera de ambos: negro absoluto, recalculado desde cero CADA frame.
  * - Los zombis y objetos del suelo solo se dibujan si están EN visión actual.
  */
 
@@ -15,13 +19,6 @@ export class Vision {
     this.cone = [];    // polígono del cono (coords de mundo)
     this.near = [];    // polígono del círculo cercano (coords de mundo)
     this.aim = 0;
-    this._memTimer = 0;
-
-    // Canvas de memoria a 1/4 de resolución de mundo
-    this.mem = document.createElement('canvas');
-    this.mem.width = Math.ceil(3200 / 4);
-    this.mem.height = Math.ceil(2560 / 4);
-    this.mctx = this.mem.getContext('2d');
 
     // Canvas de niebla del tamaño del viewport (se redimensiona)
     this.fog = document.createElement('canvas');
@@ -68,35 +65,10 @@ export class Vision {
     return map.lineClear(player.x, player.y, x, y);
   }
 
-  /** Estampa la visión actual en la memoria (llamada throttled). */
-  stampMemory(game) {
-    const { player } = game;
-    const c = this.mctx;
-    c.setTransform(0.25, 0, 0, 0.25, 0, 0);
-    c.fillStyle = 'rgba(255,255,255,0.5)';
-    // cono
-    c.beginPath();
-    c.moveTo(player.x, player.y);
-    for (const p of this.cone) c.lineTo(p[0], p[1]);
-    c.closePath();
-    c.fill();
-    // círculo cercano
-    c.beginPath();
-    c.moveTo(player.x, player.y);
-    for (const p of this.near) c.lineTo(p[0], p[1]);
-    c.closePath();
-    c.fill();
-  }
-
-  update(dt, game) {
-    this._memTimer -= dt;
-    if (this._memTimer <= 0) {
-      this._memTimer = 0.15;
-      this.stampMemory(game);
-    }
-  }
-
-  /** Compone la niebla sobre el frame actual. */
+  /**
+   * Compone la niebla sobre el frame actual: SOLO visión en tiempo real.
+   * Sin memoria: lo que no ves AHORA (tu espalda, lo oculto) queda en negro.
+   */
   render(ctx, game) {
     const { cam, player } = game;
     const f = this.fctx;
@@ -106,26 +78,18 @@ export class Vision {
     f.globalCompositeOperation = 'source-over';
     f.globalAlpha = 1;
     f.clearRect(0, 0, w, h);
-    f.fillStyle = 'rgba(4, 6, 4, 0.985)';
+    // Oscuridad casi total: lo no visto queda oculto, sin "recuerdo" alguno
+    f.fillStyle = 'rgba(3, 5, 3, 0.99)';
     f.fillRect(0, 0, w, h);
 
     f.globalCompositeOperation = 'destination-out';
 
-    // 1) Memoria espacial: zonas ya vistas, ligeramente reveladas
-    f.globalAlpha = 0.42;
-    f.drawImage(
-      this.mem,
-      (cam.x - cam.offX) / 4, (cam.y - cam.offY) / 4, w / 4, h / 4,
-      0, 0, w, h
-    );
-
-    // 2) Visión actual: cono con caída radial
-    f.globalAlpha = 1;
+    // 1) Visión actual: cono frontal con caída radial
     const ps = cam.worldToScreen(player.x, player.y);
     const grad = f.createRadialGradient(ps.x, ps.y, 12, ps.x, ps.y, VISION.range);
-    grad.addColorStop(0, 'rgba(0,0,0,0.95)');
-    grad.addColorStop(0.72, 'rgba(0,0,0,0.85)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.45)');
+    grad.addColorStop(0, 'rgba(0,0,0,0.97)');
+    grad.addColorStop(0.72, 'rgba(0,0,0,0.88)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.5)');
     f.fillStyle = grad;
     f.beginPath();
     f.moveTo(ps.x, ps.y);
@@ -136,10 +100,10 @@ export class Vision {
     f.closePath();
     f.fill();
 
-    // 3) Percepción inmediata a 360°
+    // 2) Percepción inmediata a 360° (periferia mínima)
     const g2 = f.createRadialGradient(ps.x, ps.y, 2, ps.x, ps.y, VISION.nearR);
-    g2.addColorStop(0, 'rgba(0,0,0,0.9)');
-    g2.addColorStop(1, 'rgba(0,0,0,0.15)');
+    g2.addColorStop(0, 'rgba(0,0,0,0.95)');
+    g2.addColorStop(1, 'rgba(0,0,0,0.3)');
     f.fillStyle = g2;
     f.beginPath();
     f.moveTo(ps.x, ps.y);
