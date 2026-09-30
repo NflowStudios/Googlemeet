@@ -121,7 +121,8 @@ export class Vision {
 
   /**
    * Compone la niebla sobre el frame actual: SOLO visión en tiempo real.
-   * Sin memoria: lo que no ves AHORA (tu espalda, lo oculto) queda en negro.
+   * Sin memoria: lo que no ves AHORA (tu espalda, lo oculto) queda a oscuras
+   * (85% de opacidad — se intuye el terreno, no se "recuerda").
    */
   render(ctx, game) {
     const { cam, player } = game;
@@ -132,8 +133,9 @@ export class Vision {
     f.globalCompositeOperation = 'source-over';
     f.globalAlpha = 1;
     f.clearRect(0, 0, w, h);
-    // Oscuridad casi total: lo no visto queda oculto, sin "recuerdo" alguno
-    f.fillStyle = 'rgba(3, 5, 3, 0.99)';
+    // Oscuridad al 85% (petición v0.8): lo no visto queda oculto pero se
+    // intuye el terreno debajo; sin "recuerdo" alguno, recalculado por frame
+    f.fillStyle = `rgba(3, 5, 3, ${VISION.fogAlpha})`;
     f.fillRect(0, 0, w, h);
 
     f.globalCompositeOperation = 'destination-out';

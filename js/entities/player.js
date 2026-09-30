@@ -37,6 +37,10 @@ export class Player {
     };
     this.reloading = null;   // {left,total,gun,kind,...} mientras se recarga
     this.recoil = 0;         // retroceso acumulado (aumenta la dispersión)
+    // Barra rápida (teclas 1·2·3): [arma a distancia, arma melee, objeto].
+    // Guarda REFERENCIAS a objetos de la mochila (o empuñados); se asigna
+    // desde el inventario y se vacía sola si el objeto deja de estar contigo.
+    this.hotbar = [null, null, null];
     this.inventory = new Inventory(BASE_SLOTS);
     this.inventory.add(makeItem('agua'));
     this.inventory.add(makeItem('lata_frijoles'));

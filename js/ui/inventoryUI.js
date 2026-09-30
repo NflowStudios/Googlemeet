@@ -5,6 +5,7 @@
 
 import { EQUIP_SLOTS, EQUIP_LABELS } from '../config.js';
 import { itemLabel } from '../systems/inventory.js';
+import { hotbarAssign, hotbarClear, hotbarSlotFor } from '../systems/hotbar.js';
 
 export class InventoryUI {
   constructor(game) {
@@ -34,6 +35,19 @@ export class InventoryUI {
             g.toasts.push('Mochila llena', 'warn');
           }
         }
+      });
+    });
+
+    // clic en una ranura de la BARRA RÁPIDA → quitar la asignación
+    document.querySelectorAll('#inv-hb-row .ihb-slot').forEach(el => {
+      el.addEventListener('click', () => {
+        const g = this.game;
+        const i = +el.dataset.ihb;
+        const it = g.player.hotbar[i];
+        if (!it) return;
+        hotbarClear(g.player, i);
+        g.toasts.push('Quitada de la barra: ' + it.def.name);
+        this.render();
       });
     });
   }
@@ -98,6 +112,25 @@ export class InventoryUI {
       this.gridEl.appendChild(d);
     });
 
+    // barra rápida: estado de las 3 ranuras
+    document.querySelectorAll('#inv-hb-row .ihb-slot').forEach(el => {
+      const i = +el.dataset.ihb;
+      const it = p.hotbar[i];
+      const itemEl = el.querySelector('.ihb-item');
+      el.classList.toggle('filled', !!it);
+      if (it) {
+        let n = itemLabel(it);
+        if (p.equipment.arma === it) n += ' · EN MANO';
+        itemEl.textContent = n;
+        itemEl.classList.remove('empty');
+        el.title = it.def.desc || '';
+      } else {
+        itemEl.textContent = '— vacía —';
+        itemEl.classList.add('empty');
+        el.title = '';
+      }
+    });
+
     // contenedor abierto
     if (this.container) {
       this.contName.textContent = this.container.name.toUpperCase();
@@ -139,6 +172,10 @@ export class InventoryUI {
     if (it.def.cat === 'comida' || it.def.cat === 'bebida') mk('Consumir', () => this.consume(this.selected));
     if (it.def.cat === 'medico') mk('Usar', () => this.consume(this.selected));
     if (it.def.cat === 'arma' || it.def.cat === 'ropa') mk('Equipar', () => this.equipItem(this.selected));
+    {
+      const slot = hotbarSlotFor(it);
+      mk('A la barra (' + (slot + 1) + ')', () => this.toHotbar(this.selected));
+    }
     if (it.def.cat === 'municion') {
       const n = document.createElement('span');
       n.className = 'action-note';
@@ -173,6 +210,18 @@ export class InventoryUI {
     g.audio.pickup();
     g.toasts.push('Equipado: ' + itemLabel(it));
     this.selected = -1;
+    this.render();
+  }
+
+  /** Asigna el objeto seleccionado a su ranura de la barra rápida. */
+  toHotbar(i) {
+    const g = this.game, inv = g.player.inventory;
+    const it = inv.slots[i];
+    if (!it) return;
+    const slot = hotbarAssign(g.player, it);
+    g.audio.pickup();
+    g.toasts.push('Barra rápida ' + (slot + 1) + ': ' + it.def.name);
+    if (g.hud) g.hud.renderHotbar(g);
     this.render();
   }
 

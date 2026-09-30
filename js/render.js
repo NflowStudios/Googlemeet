@@ -1,6 +1,7 @@
 /**
  * render.js — Composición del frame: mundo → entidades → copas → ruido →
- * niebla de guerra → estructura iluminada → retícula → viñetas de estado.
+ * niebla de guerra (85%) → estructura iluminada → TECHOS → retícula →
+ * viñetas de estado.
  */
 
 export function renderGame(ctx, game) {
@@ -41,14 +42,20 @@ export function renderGame(ctx, game) {
   // ondas de ruido tenues
   game.noise.draw(ctx, cam);
 
-  // niebla de guerra (solo visión en tiempo real: la espalda queda oculta)
+  // niebla de guerra (85%): solo visión en tiempo real, la espalda oculta
   game.vision.render(ctx, game);
 
   // Estructura y props (muros/ventanas/puertas/árboles/coches) con línea de
   // visión redibujados NÍTIDOS por encima de la niebla: se distinguen con
-  // claridad en todo el cono, pero el interior sigue oculto salvo por
-  // ventanas/puertas abiertas. Árboles y coches no tapan la vista.
+  // claridad en todo el cono. Árboles y coches no tapan la vista.
   game.map.drawStructOver(ctx, cam, game);
+
+  // TECHOS por encima de todo lo estructural — solo de los edificios dentro
+  // del cono actual (filosofía de visión estricta: a tu espalda, oscuridad).
+  // El techo es la superficie visible del edificio: tapa muros e interior
+  // desde lejos, se atenúa al acercarse (se ve por las ventanas) y desaparece
+  // mientras estás DENTRO.
+  game.map.drawRoofs(ctx, cam, game);
 
   // efectos de disparo: trazadoras, fogonazos e impactos (siempre visibles
   // dentro del cono; ocurren delante del jugador)

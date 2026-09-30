@@ -202,6 +202,134 @@ canvas#game {
   letter-spacing: 1px;
 }
 
+/* barra rápida (1·2·3): arma de fuego / melee / objeto */
+#hotbar {
+  position: absolute;
+  bottom: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 7px;
+  pointer-events: none;
+}
+.hb-slot {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hb-slot.filled { border-style: solid; background: rgba(16, 19, 16, 0.92); }
+.hb-slot.active {
+  border-color: #9fc37a;
+  box-shadow: 0 0 0 1px #9fc37a, 0 0 12px rgba(159, 195, 122, 0.35);
+}
+.hb-key {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(8, 10, 8, 0.85);
+  border: 1px solid #444a3e;
+  padding: 0 4px;
+  line-height: 14px;
+}
+.hb-tag {
+  position: absolute;
+  bottom: 2px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: var(--text-dim);
+}
+.hb-item { position: relative; width: 100%; height: 100%; }
+.hb-letter {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -58%);
+  width: 24px;
+  height: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #101210;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.18);
+}
+.hb-count {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #9fc37a;
+}
+.hb-ammo {
+  position: absolute;
+  top: 20px;
+  right: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #d8b45a;
+  font-variant-numeric: tabular-nums;
+}
+
+/* panel de barra rápida dentro del inventario */
+#inv-hotbar { margin-top: 16px; }
+#inv-hb-row { display: flex; gap: 7px; }
+.ihb-slot {
+  flex: 1;
+  min-width: 0;
+  border: 1px dashed #33362c;
+  background: #131611;
+  padding: 5px 7px 4px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  position: relative;
+}
+.ihb-slot:hover { border-color: #6a705a; }
+.ihb-slot.filled { border-style: solid; }
+.ihb-slot .ihb-key {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  background: #1a1e18;
+  border: 1px solid #444a3e;
+  border-bottom-width: 2px;
+  padding: 0 5px;
+  margin-right: 6px;
+}
+.ihb-slot .ihb-tag {
+  display: block;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+  margin-top: 3px;
+}
+.ihb-slot .ihb-item {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.ihb-slot .ihb-item.empty { color: #6d6f64; font-weight: 500; }
+
 #controls-hint {
   position: absolute;
   bottom: 14px;

@@ -46,7 +46,15 @@
   </div>
 
   <div id="prompt" class="hidden"></div>
-  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar · E interactuar · TAB inventario · P pausa · M audio</div>
+
+  <!-- Barra rápida: 1 = arma a distancia · 2 = arma melee · 3 = objeto -->
+  <div id="hotbar">
+    <div class="hb-slot" data-hb="0"><span class="hb-key">1</span><span class="hb-tag">FUEGO</span><div class="hb-item"></div></div>
+    <div class="hb-slot" data-hb="1"><span class="hb-key">2</span><span class="hb-tag">MELEE</span><div class="hb-item"></div></div>
+    <div class="hb-slot" data-hb="2"><span class="hb-key">3</span><span class="hb-tag">OBJETO</span><div class="hb-item"></div></div>
+  </div>
+
+  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar · 1·2·3 barra rápida · E interactuar · TAB inventario · P pausa · M audio</div>
   <div id="toasts"></div>
 </div>
 
@@ -78,6 +86,15 @@
       <section id="inv-grid-wrap">
         <h3>MOCHILA</h3>
         <div id="inv-grid"></div>
+        <div id="inv-hotbar">
+          <h3>BARRA RÁPIDA — 1 · 2 · 3</h3>
+          <div id="inv-hb-row">
+            <div class="ihb-slot" data-ihb="0"><span class="ihb-key">1</span><span class="ihb-tag">ARMA FUEGO</span><div class="ihb-item">— vacía —</div></div>
+            <div class="ihb-slot" data-ihb="1"><span class="ihb-key">2</span><span class="ihb-tag">ARMA MELEE</span><div class="ihb-item">— vacía —</div></div>
+            <div class="ihb-slot" data-ihb="2"><span class="ihb-key">3</span><span class="ihb-tag">OBJETO</span><div class="ihb-item">— vacía —</div></div>
+          </div>
+          <p class="cont-hint">Selecciona un objeto de la mochila y pulsa «A la barra» para asignarlo aquí; clic en una ranura llena para quitarla. Teclas 1·2·3 para usarlas en partida.</p>
+        </div>
         <div id="action-bar" class="hidden"></div>
       </section>
 
@@ -94,7 +111,7 @@
 <div id="menu">
   <div class="menu-inner">
     <h1>ZONA<em>CERO</em></h1>
-    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.7</span></p>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.8</span></p>
     <div class="menu-controls">
       <div><kbd>W A S D</kbd><span>Moverse</span></div>
       <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
@@ -102,6 +119,7 @@
       <div><kbd>RATÓN</kbd><span>Apuntar</span></div>
       <div><kbd>CLIC / F</kbd><span>Atacar / disparar</span></div>
       <div><kbd>R</kbd><span>Recargar el arma de fuego</span></div>
+      <div><kbd>1 · 2 · 3</kbd><span>Barra rápida: arma de fuego / melee / objeto</span></div>
       <div><kbd>E</kbd><span>Interactuar · puertas · botín</span></div>
       <div><kbd>TAB / I</kbd><span>Inventario y equipo</span></div>
       <div><kbd>P</kbd><span>Pausa</span> <kbd>M</kbd><span>Audio</span></div>

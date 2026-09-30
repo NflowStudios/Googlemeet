@@ -17,6 +17,7 @@ import { NoiseSystem } from './systems/noise.js';
 import { Survival } from './systems/survival.js';
 import { Inventory, makeItem, fillContainer, itemLabel, refillMagazines } from './systems/inventory.js';
 import { playerAttack, zombieHit, reloadRanged, finishReload } from './systems/combat.js';
+import { hotbarUse, hotbarValidate } from './systems/hotbar.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
 import { HUD } from './ui/hud.js';
@@ -209,6 +210,9 @@ class Game {
       case 'interact': this.interact(); break;
       case 'inventory': this.invUI.openUI(null); break;
       case 'reload': reloadRanged(this); break;
+      case 'hot1': hotbarUse(this, 0); break;
+      case 'hot2': hotbarUse(this, 1); break;
+      case 'hot3': hotbarUse(this, 2); break;
       case 'sneak': {
         this.player.sneak = !this.player.sneak;
         this.toasts.push(this.player.sneak ? 'Modo sigilo: más lento, más silencioso' : 'Sigilo desactivado');
@@ -375,6 +379,9 @@ class Game {
 
     // Visión puramente en tiempo real: se recalcula cada frame, sin memoria
     this.vision.compute(this);
+
+    // barra rápida: vacía las ranuras cuyo objeto ya no llevas
+    hotbarValidate(this.player);
 
     // visibilidad de entidades (para render y lógica de "solo lo que ves")
     for (const z of this.zombies) z.visibleNow = this.vision.isVisible(z.x, z.y, this);

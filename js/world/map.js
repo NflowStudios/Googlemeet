@@ -11,9 +11,9 @@
  * y el arte comparten esta geometría (ver _runsFor / _inRuns / _drawStructStrips).
  */
 
-import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T } from '../config.js';
+import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T, ROOF } from '../config.js';
 import { Rng } from '../rng.js';
-import { hash2 } from '../utils.js';
+import { hash2, angDiff } from '../utils.js';
 
 const V_ROADS = [[16, 19], [46, 49], [74, 77]]; // bandas verticales [ini, fin] inclusive
 const H_ROADS = [[14, 17], [42, 45], [64, 67]]; // bandas horizontales
@@ -564,7 +564,92 @@ export class GameMap {
       x0, y0, x1, y1,
       cx: (x0 + x1) / 2 * TILE + TILE / 2,
       cy: (y0 + y1) / 2 * TILE + TILE / 2,
+      roof: this._buildRoofCanvas(x0, y0, x1, y1),
+      roofW: (x1 - x0 + 1) * TILE,
+      roofH: (y1 - y0 + 1) * TILE,
     });
+  }
+
+  /**
+   * Pre-renderiza el TECHO de un edificio a un canvas propio (una sola vez
+   * por partida): tejas/shingles por filas con juntas escalonadas, parches
+   * de desgaste, bisel de luz/sombra en los bordes, cumbrera y chimenea.
+   * Se compone encima de todo con alpha según la distancia del jugador
+   * (ver drawRoofs).
+   */
+  _buildRoofCanvas(x0, y0, x1, y1) {
+    const rng = this.rng;
+    const w = (x1 - x0 + 1) * TILE, h = (y1 - y0 + 1) * TILE;
+    const rc = document.createElement('canvas');
+    rc.width = w; rc.height = h;
+    const c = rc.getContext('2d');
+
+    // paleta por edificio (base / sombra / luz)
+    const palettes = [
+      ['#46413a', '#39352f', '#524c43'],   // madera oscura
+      ['#3f4448', '#33373b', '#4b5055'],   // pizarra
+      ['#4a3a33', '#3b2e29', '#57453c'],   // teja de barro
+      ['#3a4238', '#2e352d', '#465043'],   // verde musgo
+      ['#43413c', '#35332f', '#4f4d47'],   // grava gris
+    ];
+    const pal = palettes[rng.index(palettes.length)];
+
+    // base
+    c.fillStyle = pal[0];
+    c.fillRect(0, 0, w, h);
+
+    // filas de tejas con juntas verticales escalonadas (patrón fijo por fila)
+    c.fillStyle = pal[1];
+    for (let y = 0; y < h; y += 8) {
+      c.fillRect(0, y, w, 1);
+      const row = y / 8;
+      const stag = (row % 3) * 11;
+      for (let x = stag; x < w; x += 22) c.fillRect(x, y + 1, 1, 7);
+    }
+
+    // parches de desgaste (manchas de musgo/humedad)
+    c.fillStyle = 'rgba(0,0,0,0.12)';
+    const patches = Math.max(3, Math.floor((w * h) / 1100));
+    for (let i = 0; i < patches; i++) {
+      c.fillRect(rng.int(0, Math.max(1, w - 22)), rng.int(0, Math.max(1, h - 14)),
+        rng.int(8, 22), rng.int(6, 12));
+    }
+    c.fillStyle = 'rgba(122,184,72,0.05)';  // musgo sutil
+    for (let i = 0; i < patches; i++) {
+      c.fillRect(rng.int(0, Math.max(1, w - 16)), rng.int(0, Math.max(1, h - 10)),
+        rng.int(6, 16), rng.int(4, 9));
+    }
+
+    // bisel: luz arriba/izquierda, sombra abajo/derecha (sensación de altura)
+    c.fillStyle = pal[2];
+    c.fillRect(0, 0, w, 3);
+    c.fillRect(0, 0, 3, h);
+    c.fillStyle = 'rgba(0,0,0,0.32)';
+    c.fillRect(0, h - 3, w, 3);
+    c.fillRect(w - 3, 0, 3, h);
+
+    // cumbrera a lo largo del eje mayor
+    c.fillStyle = 'rgba(255,255,255,0.10)';
+    if (w >= h) c.fillRect(0, Math.floor(h / 2) - 1, w, 2);
+    else c.fillRect(Math.floor(w / 2) - 1, 0, 2, h);
+
+    // chimenea (posición determinista por edificio)
+    if (w > 96 && h > 96) {
+      const chx = rng.int(Math.floor(w * 0.25), Math.floor(w * 0.75));
+      const chy = rng.int(Math.floor(h * 0.25), Math.floor(h * 0.75));
+      c.fillStyle = 'rgba(0,0,0,0.30)';
+      c.fillRect(chx - 4, chy - 2, 12, 12);   // sombra proyectada
+      c.fillStyle = '#2b2b28';
+      c.fillRect(chx - 5, chy - 5, 10, 10);
+      c.fillStyle = '#3a3a36';
+      c.fillRect(chx - 6, chy - 6, 12, 3);   // remate
+    }
+
+    // contorno
+    c.strokeStyle = 'rgba(8,10,8,0.8)';
+    c.lineWidth = 2;
+    c.strokeRect(1, 1, w - 2, h - 2);
+    return rc;
   }
 
   _addContainer(type, tx, ty) {
@@ -754,10 +839,24 @@ export class GameMap {
       this._drawCarArt(ctx, sx, sy, car);
     }
 
-    // decals de sangre/cadáveres
-    const dx = Math.round(-cam.x + cam.offX) / 2;
-    const dy = Math.round(-cam.y + cam.offY) / 2;
-    ctx.drawImage(this.decalCanvas, dx, dy, WORLD_W / 2, WORLD_H / 2);
+    // decals de sangre/cadáveres: el canvas vive a MEDIA resolución (u = x/2),
+    // así que se dibuja a 2x ANCLADO AL MUNDO (u → pantalla = 2u - cam.x + offX).
+    // FIX v0.8: antes se pintaba a escala 1:1 con el offset partido a la mitad,
+    // con lo que la sangre quedaba pegada a una posición fija de pantalla que
+    // "seguía" al jugador. Ahora queda donde cayó, como debe ser.
+    // Solo se arrastra la región visible (recorte fuente → destino 2x).
+    {
+      const dvx = cam.x - cam.offX, dvy = cam.y - cam.offY; // esquina visible en mundo
+      const sx0 = Math.max(0, Math.floor(dvx / 2) - 4);
+      const sy0 = Math.max(0, Math.floor(dvy / 2) - 4);
+      const sw = Math.min(this.decalCanvas.width - sx0, Math.ceil((cam.w + 16) / 2));
+      const sh = Math.min(this.decalCanvas.height - sy0, Math.ceil((cam.h + 16) / 2));
+      if (sw > 0 && sh > 0) {
+        ctx.drawImage(this.decalCanvas,
+          sx0, sy0, sw, sh,
+          sx0 * 2 - cam.x + cam.offX, sy0 * 2 - cam.y + cam.offY, sw * 2, sh * 2);
+      }
+    }
 
     // contenedores
     for (const c of this.containers) {
@@ -1068,6 +1167,53 @@ export class GameMap {
         ctx.fillStyle = `rgba(3,5,3,${dimT.toFixed(3)})`;
         ctx.beginPath(); ctx.arc(tsx, tsy, tr.r + 2, 0, Math.PI * 2); ctx.fill();
       }
+    }
+  }
+
+  /**
+   * TECHOS: se dibujan POR ENCIMA de la niebla y de la estructura redibujada,
+   * de modo que el techo ES la superficie visible del edificio y tapa muros e
+   * interior desde fuera. Solo se dibuja el techo de edificios DENTRO del cono
+   * de visión actual (tu espalda los mantiene a oscuras, como al resto del
+   * mundo — misma filosofía que muros y copas). Reglas pedidas:
+   *  - Desde fuera y lejos → opaco (bloquea la visión del interior).
+   *  - Al acercarse → se atenúa poco a poco y deja ver por las ventanas
+   *    (alpha mínima ~0.14 pegado al muro).
+   *  - Al ENTRAR en el edificio → no se dibuja; al SALIR → regresa.
+   */
+  drawRoofs(ctx, cam, game) {
+    const p = game.player;
+    if (!p) return;
+    const px = p.x, py = p.y;
+    for (const b of this.buildings) {
+      if (!b.roof) continue;
+      const rx = b.x0 * TILE, ry = b.y0 * TILE;
+      const rw = b.roofW, rh = b.roofH;
+      const sx = rx - cam.x + cam.offX;
+      const sy = ry - cam.y + cam.offY;
+      if (sx > cam.w + 8 || sy > cam.h + 8 || sx + rw < -8 || sy + rh < -8) continue;
+      // dentro del edificio → techo eliminado (regresa al salir)
+      if (px > rx && px < rx + rw && py > ry && py < ry + rh) continue;
+      // distancia del jugador al rect del edificio
+      const nx = Math.max(rx, Math.min(px, rx + rw));
+      const ny = Math.max(ry, Math.min(py, ry + rh));
+      const d = Math.hypot(px - nx, py - ny);
+      // ¿el edificio cae en la visión actual? (punto más cercano dentro del
+      // cono, con la holgura angular del tamaño del edificio, o periferia)
+      const diag = Math.hypot(rw, rh);
+      if (d >= VISION.nearR) {
+        if (d >= VISION.range + diag) continue;
+        const ang = Math.atan2(ny - py, nx - px);
+        const slack = Math.atan2(diag, Math.max(d, 30));
+        if (Math.abs(angDiff(p.angle, ang)) > VISION.halfAngle + slack) continue;
+      }
+      // rampa de atenuación por distancia
+      const t = Math.max(0, Math.min(1, (d - ROOF.near) / (ROOF.far - ROOF.near)));
+      const alpha = ROOF.minAlpha + (1 - ROOF.minAlpha) * t;
+      if (alpha < 0.04) continue;
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(b.roof, Math.round(sx), Math.round(sy));
+      ctx.globalAlpha = 1;
     }
   }
 

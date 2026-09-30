@@ -33,6 +33,8 @@ export class HUD {
     this.eqArmor = document.getElementById('eq-armor');
     this.eqSlots = document.getElementById('eq-slots');
     this.eqAmmo = document.getElementById('eq-ammo');
+    this.hbEls = Array.from(document.querySelectorAll('#hotbar .hb-slot'));
+    this._hbSig = '';
     this.hintEl = document.getElementById('controls-hint');
     this.dmgFlash = 0;
     this._hintTimer = 0;
@@ -43,9 +45,47 @@ export class HUD {
 
   flashDamage(d) { this.dmgFlash = Math.max(this.dmgFlash, d); }
 
+  /**
+   * Barra rápida (1·2·3): solo re-pinta el DOM cuando algo cambia (firma).
+   *  - ranura resaltada = su arma está actualmente EN LA MANO
+   *  - armas de fuego muestran las balas listas (cargador o tubo)
+   */
+  renderHotbar(g) {
+    const p = g.player;
+    if (!p || !p.hotbar || !this.hbEls.length) return;
+    let sig = '';
+    for (let i = 0; i < 3; i++) {
+      const it = p.hotbar[i];
+      sig += (it ? it.uid + ':' + (it.count || 1) + ':' + (p.equipment.arma === it ? 1 : 0) : '-') + '|';
+    }
+    if (sig === this._hbSig) return;
+    this._hbSig = sig;
+    for (let i = 0; i < this.hbEls.length; i++) {
+      const el = this.hbEls[i];
+      const it = p.hotbar[i];
+      const itemEl = el.querySelector('.hb-item');
+      el.classList.toggle('filled', !!it);
+      el.classList.toggle('active', !!it && p.equipment.arma === it);
+      if (!it) {
+        el.title = 'Ranura ' + (i + 1) + ' — asígnala desde el inventario (TAB)';
+        itemEl.innerHTML = '';
+        continue;
+      }
+      const d = it.def;
+      el.title = d.name + (d.desc ? ' — ' + d.desc : '');
+      let html = `<span class="hb-letter" style="background:${d.color || '#8a8a8a'}">${d.name.charAt(0)}</span>`;
+      if (it.count > 1) html += `<span class="hb-count">×${it.count}</span>`;
+      if (d.ranged && d.magType) html += `<span class="hb-ammo">${it.mag ? it.mag.rounds : 0}</span>`;
+      else if (d.ranged) html += `<span class="hb-ammo">${it.tube || 0}</span>`;
+      itemEl.innerHTML = html;
+    }
+  }
+
   update(g) {
     const s = g.survival;
     if (!s) return;
+
+    this.renderHotbar(g);
 
     this._setBar('health', s.health, 100);
     this._setBar('stamina', s.stamina, s.maxStamina);

@@ -41,6 +41,17 @@ export const VISION = {
   nearRays: 28,        // rayos del círculo cercano
   wallDim: 0.5,        // atenuación máxima de la estructura al borde del cono
   propDim: 0.3,        // atenuación máxima de árboles/coches (más nítidos que los muros)
+  fogAlpha: 0.85,      // opacidad de la niebla fuera del campo de visión (85%)
+};
+
+// ---------- Techos de los edificios ----------
+// Bloquean la visión del interior desde fuera. Al acercarse se atenuan
+// (dejan ver el interior por las ventanas); al ENTRAR desaparecen y al
+// salir vuelven a dibujarse. Distancias en px desde el rect del edificio.
+export const ROOF = {
+  near: 56,            // a esta distancia (o menos) el techo queda en su alpha mínimo
+  far: 250,            // a partir de aquí es totalmente opaco
+  minAlpha: 0.14,      // alpha residual pegado al edificio (fantasma sutil)
 };
 
 // ---------- Jugador ----------
