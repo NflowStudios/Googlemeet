@@ -1,6 +1,6 @@
 # ZONA CERO — Prototipo de supervivencia zombi 2D
 
-> **Sobrevive. Cada ruido cuenta.** · v0.8
+> **Sobrevive. Cada ruido cuenta.** · v0.9
 
 Videojuego de supervivencia zombi con **vista cenital (top-down)** inspirado en la tensión de *Project Zomboid* y *DayZ*. Programado en **JavaScript vanilla + Canvas 2D** con arquitectura modular por módulos ES, **sin dependencias ni pasos de compilación**: se juega directamente en el navegador.
 
@@ -30,7 +30,7 @@ Luego abre `http://localhost:8000`. (Los módulos ES requieren servidor; no func
 | `R` | **Recargar** el arma de fuego (cargador o cartuchos) |
 | `SHIFT` (mantener) | Correr — gasta energía y **hace mucho ruido** |
 | `C` | Agacharse (sigilo) — lento pero casi silencioso |
-| `E` | Interactuar: puertas, contenedores, recoger objetos |
+| `E` | Interactuar: puertas, contenedores, recoger objetos, **subir/bajar escaleras** |
 | `TAB / I` | Inventario y equipo (pausa el mundo) |
 | `1 · 2 · 3` | **Barra rápida**: arma de fuego / arma melee / objeto |
 | `P` | Pausa · `M` audio on/off |
@@ -40,6 +40,7 @@ Luego abre `http://localhost:8000`. (Los módulos ES requieren servidor; no func
 - **Contadores vitales**: Vida, Energía (stamina), Hambre y Sed. Las necesidades críticas drenan vida y entorpecen la recuperación de energía. No hay regeneración natural: solo vendas y botiquines.
 - **Daño e infección**: los zombis reducen tu vida directamente. Las **mordidas** pueden transmitir la infección (barra verde), que progresa sin pausa hasta la muerte. Los antibióticos la curan solo si está incipiente.
 - **Comida y descomposición**: come y bebe para recuperar hambre/sed. La comida **podrida** (etiqueta en el inventario) daña, intoxica y alimenta muy poco.
+- **Casas con 2º piso o sótano**: algunas casas generan una planta extra (nunca ambas) con una **escalera interior** que conecta con la planta baja — misma posición de mundo en ambas plantas. Mecánica visual gemela a la de los techos: **en planta baja no se ve la otra planta**; mientras subes/bajas las escaleras la planta destino **va apareciendo con un fundido progresivo** (cada peldaño más nítida); al llegar, la capa de tu planta es opaca y tapa lo que hay debajo. El 2º piso es madera clara con alfombra, armarios y ventanas (con buhardillas asomando en el tejado: pista visual desde la calle); el sótano es hormigón agrietado sin ventanas, con casilleros de mejor botín. Colisión, visión y combate **despachan por planta**: los zombis viven en la planta baja — no te ven ni te muerden a través del suelo, y tus balas desde el 2º piso vuelan sobre la calle. Tampoco puedes registrar un armario del piso de arriba desde abajo, ni coger objetos del suelo a través del techo.
 - **Visión en tiempo real**: solo ves un **cono frontal amplio** (~109°, con raycast: las paredes bloquean, las ventanas dejan ver) más un radio de percepción mínimo junto al cuerpo. **Sin memoria del terreno**: lo que queda a tus espaldas o fuera del cono se hunde en una **oscuridad del 85%** — intuyes el terreno pero no lo ves. **Paredes delgadas** (muros, ventanas y puertas son una franja fina sobre la línea de muro; el suelo a ambos lados es transitable): los muros, ventanas, puertas, **árboles y coches** con línea de visión se dibujan **nítidos sobre la niebla**, pero el **interior de las casas solo se ve por ventanas y puertas abiertas**. **Árboles y coches no tapan tu visión** (cámara aérea), aunque sí la de los zombis: úsalos como cobertura para esconderte. Los zombis fuera de tu visión son invisibles y no puedes golpear a través de los muros — ni ellos a ti (el cristal de las ventanas deja pasar los golpes en ambos sentidos).
 - **Techos**: los edificios están cubiertos y el techo **bloquea la visión del interior** desde fuera. Al acercarte **se atenuan** y dejan ver el interior **por las ventanas**; al **entrar** desaparecen por completo y al **salir vuelven**. La sangre y los cadáveres quedan **anclados al mundo** (no a la pantalla): donde cayó la mancha, se queda.
 - **Propagación de sonido**: correr, atacar, abrir puertas y registrar muebles emite ruido que **atrae a los zombis cercanos**. Camina agachado para reducir tu firma sonora (medidor RUIDO en el HUD).
@@ -70,6 +71,7 @@ js/
 
 ## Historial de versiones
 
+- **v0.9** — **Casas con 2º piso o sótano**: plantas extra con escalera interior y mecánica visual gemela a la de los techos — en planta baja la otra planta es invisible, mientras subes/bajas se revela con un fundido y al llegar es opaca. Contenedores y reparto interior propios por planta; despacho de colisión/visión/combate por planta (los zombis no cruzan techos); filtros de interacción por planta.
 - **v0.8** — **Techos y barra rápida**: los edificios tienen techo que bloquea la visión del interior (se atenúa al acercarse y deja ver por las ventanas, desaparece al entrar y vuelve al salir). Oscuridad fuera del cono de visión al **85%** (antes 99%). **FIX sangre**: los decals estaban mal anclados a la pantalla — la mancha roja que "seguía" al jugador desaparece; ahora la sangre queda donde cayó. **Barra rápida de 3 ranuras** (arma de fuego / melee / objeto) asignable desde el inventario con las teclas 1·2·3.
 - **v0.7** — **Armas a distancia**: Víbora VP-9 (pistola 9mm), Guardián 12 (escopeta de corredera) y Cóndor AR-56 (rifle de asalto automático), con munición apilable, cargadores con estado propio y auto-relleno al recoger balas. Recarga con `R`. Segunda ranura de accesorio + fundas de pistola (3 variantes) que aceleran desenfunde y recarga. Trazadoras, fogonazos, impactos en pared y disparos que atraen a los zombis desde cientos de metros.
 - **v0.6** — Hitbox de ataque de zombis con línea de visión (no golpean a través de muros; el cristal de las ventanas sí deja pasar el golpe, como tu melee). Pintura vial precalculada y anclada al mundo: se acabó el "deslizamiento" de las líneas de la calle. Línea central discontinua ahora en el centro real de la calzada, líneas de borde, pasos de cebra en los 4 accesos de cada cruce, aceras de losas con juntas y bordillo, asfalto con grano/remiendos/grietas y tapas de alcantarilla.

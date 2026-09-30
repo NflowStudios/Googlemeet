@@ -44,12 +44,15 @@ export class Vision {
     const { player, map } = game;
     const px = player.x, py = player.y;
     this.aim = player.angle;
+    // planta de visión: si está subiendo/bajando, la del destino (al llegar
+    // coincide; los muros perimetrales son iguales en todas las plantas)
+    const vz = player.climb ? player.climb.to : (player.z || 0);
 
     this.cone.length = 0;
     const n = VISION.coneRays;
     for (let i = 0; i <= n; i++) {
       const a = this.aim - VISION.halfAngle + (2 * VISION.halfAngle * i) / n;
-      const d = map.castRay(px, py, a, VISION.range);
+      const d = map.castRayZ(px, py, a, VISION.range, vz);
       this.cone.push([px + Math.cos(a) * d, py + Math.sin(a) * d]);
     }
 
@@ -57,7 +60,7 @@ export class Vision {
     const m = VISION.nearRays;
     for (let i = 0; i <= m; i++) {
       const a = (Math.PI * 2 * i) / m;
-      const d = Math.min(map.castRay(px, py, a, VISION.nearR), VISION.nearR);
+      const d = Math.min(map.castRayZ(px, py, a, VISION.nearR, vz), VISION.nearR);
       this.near.push([px + Math.cos(a) * d, py + Math.sin(a) * d]);
     }
 
@@ -77,7 +80,7 @@ export class Vision {
     const t1y = Math.min(MAP_H - 1, Math.floor((py + R) / TILE));
     for (let ty = t0y; ty <= t1y; ty++) {
       for (let tx = t0x; tx <= t1x; tx++) {
-        const t = map.tileAtIdx(tx, ty);
+        const t = map.tileAtZ(tx, ty, vz);
         if (t !== T.WALL && t !== T.WINDOW && t !== T.DOOR_CLOSED && t !== T.DOOR_OPEN &&
             t !== T.TREE && t !== T.CAR) continue;
         let cx, cy;
@@ -89,7 +92,7 @@ export class Vision {
           cy = py < ry ? ry : (py > ry + TILE ? ry + TILE : py);
         } else {
           // muro delgado: punto más cercano de la(s) franja(s)
-          const near = map.nearestStripPoint(tx, ty, px, py);
+          const near = map.nearestStripPointZ(tx, ty, px, py, vz);
           if (!near) continue;
           cx = near.x; cy = near.y;
         }
@@ -101,7 +104,7 @@ export class Vision {
           const slack = Math.atan2(TILE, Math.max(d, 40)); // tamaño angular del tile
           if (Math.abs(angDiff(this.aim, a)) > VISION.halfAngle + slack) continue;
         }
-        if (!map.lineClear(px, py, cx, cy)) continue;
+        if (!map.lineClearZ(px, py, cx, cy, vz)) continue;
         this.wallTiles.add(ty * MAP_W + tx);
       }
     }
@@ -110,13 +113,14 @@ export class Vision {
   /** ¿Está este punto (mundo) visible ahora mismo? */
   isVisible(x, y, game) {
     const { player, map } = game;
+    const vz = player.climb ? player.climb.to : (player.z || 0);
     const dx = x - player.x, dy = y - player.y;
     const d = Math.hypot(dx, dy);
-    if (d < VISION.nearR) return map.lineClear(player.x, player.y, x, y);
+    if (d < VISION.nearR) return map.lineClearZ(player.x, player.y, x, y, vz);
     if (d > VISION.range + 12) return false;
     const a = Math.atan2(dy, dx);
     if (Math.abs(angDiff(this.aim, a)) > VISION.halfAngle + 0.14) return false;
-    return map.lineClear(player.x, player.y, x, y);
+    return map.lineClearZ(player.x, player.y, x, y, vz);
   }
 
   /**

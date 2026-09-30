@@ -5,7 +5,7 @@
  * efectos: reducción de daño, protección contra mordidas, ruido y espacio.
  */
 
-import { PLAYER_CFG, FISTS, ITEMS, EQUIP_SLOTS, BASE_SLOTS } from '../config.js';
+import { PLAYER_CFG, FISTS, ITEMS, EQUIP_SLOTS, BASE_SLOTS, FLOORS } from '../config.js';
 import { Inventory, makeItem } from '../systems/inventory.js';
 import { clamp, angDiff } from '../utils.js';
 
@@ -37,6 +37,12 @@ export class Player {
     };
     this.reloading = null;   // {left,total,gun,kind,...} mientras se recarga
     this.recoil = 0;         // retroceso acumulado (aumenta la dispersión)
+    // Planta actual: 0 = calle/planta baja, 1 = 2º piso, -1 = sótano.
+    // climb = {from, to, t, dur, k} mientras sube/baja escaleras (fundido
+    // de la capa de planta en render).
+    this.z = 0;
+    this.climb = null;
+    this._climbStepAcc = 0;
     // Barra rápida (teclas 1·2·3): [arma a distancia, arma melee, objeto].
     // Guarda REFERENCIAS a objetos de la mochila (o empuñados); se asigna
     // desde el inventario y se vacía sola si el objeto deja de estar contigo.
@@ -173,39 +179,62 @@ export class Player {
   update(dt, game) {
     const inp = game.input;
     const surv = game.survival;
-    const axis = inp.moveAxis();
 
-    // correr / agotamiento
-    const wantRun = (inp.isDown('ShiftLeft') || inp.isDown('ShiftRight')) && !this.sneak;
-    if (surv.stamina <= 0.5) this.exhausted = true;
-    if (surv.stamina >= PLAYER_CFG.exhaustedFloor) this.exhausted = false;
-    const running = wantRun && !this.exhausted;
-
-    const speed = this.sneak ? PLAYER_CFG.sneak : (running ? PLAYER_CFG.run : PLAYER_CFG.walk);
-    const k = 1 - Math.pow(0.0001, dt);
-    this.vx += (axis.x * speed - this.vx) * k;
-    this.vy += (axis.y * speed - this.vy) * k;
-
-    const ox = this.x, oy = this.y;
-    game.map.moveCircle(this, this.vx * dt, this.vy * dt);
-    const moved = Math.hypot(this.x - ox, this.y - oy);
-    this.moving = moved > 0.05;
-    this.running = running && this.moving;
-
-    // pasos → ruido + sonido
-    if (this.moving) {
-      this.stepAcc += moved;
-      if (this.stepAcc >= PLAYER_CFG.stepDist) {
-        this.stepAcc = 0;
-        const base = this.sneak ? PLAYER_CFG.noiseSneak : (running ? PLAYER_CFG.noiseRun : PLAYER_CFG.noiseWalk);
-        game.noise.emit(this.x, this.y, base * this.noiseMultiplier(), 'paso');
-        game.audio.step(this.sneak ? 0.35 : running ? 1 : 0.65);
-      }
-    }
-
-    // apuntado
+    // apuntado (siempre, incluso escalando)
     const mw = game.cam.screenToWorld(inp.mouse.x, inp.mouse.y);
     this.angle = Math.atan2(mw.y - this.y, mw.x - this.x);
+
+    // ---- escalando escaleras: movimiento bloqueado, avance del fundido ----
+    if (this.climb) {
+      this.climb.t += dt;
+      const raw = Math.min(1, this.climb.t / this.climb.dur);
+      this.climb.k = raw * raw * (3 - 2 * raw);   // suavizado
+      this.vx = 0; this.vy = 0;
+      this.moving = false;
+      this.running = false;
+      this._climbStepAcc += dt;
+      if (this._climbStepAcc >= FLOORS.stepEvery) {
+        this._climbStepAcc = 0;
+        game.audio.step(0.5);                      // pasos de escalera
+        game.noise.emit(this.x, this.y, 40, 'escalera');
+      }
+      if (this.climb.t >= this.climb.dur) {
+        this.z = this.climb.to;
+        this.climb = null;
+        game.toasts.push(this.z === 1 ? '2º piso' : this.z === -1 ? 'Sótano' : 'Planta baja');
+        game.noise.emit(this.x, this.y, 60, 'escalera');
+      }
+    } else {
+      const axis = inp.moveAxis();
+
+      // correr / agotamiento
+      const wantRun = (inp.isDown('ShiftLeft') || inp.isDown('ShiftRight')) && !this.sneak;
+      if (surv.stamina <= 0.5) this.exhausted = true;
+      if (surv.stamina >= PLAYER_CFG.exhaustedFloor) this.exhausted = false;
+      const running = wantRun && !this.exhausted;
+
+      const speed = this.sneak ? PLAYER_CFG.sneak : (running ? PLAYER_CFG.run : PLAYER_CFG.walk);
+      const k = 1 - Math.pow(0.0001, dt);
+      this.vx += (axis.x * speed - this.vx) * k;
+      this.vy += (axis.y * speed - this.vy) * k;
+
+      const ox = this.x, oy = this.y;
+      game.map.moveCircle(this, this.vx * dt, this.vy * dt, this.z);
+      const moved = Math.hypot(this.x - ox, this.y - oy);
+      this.moving = moved > 0.05;
+      this.running = running && this.moving;
+
+      // pasos → ruido + sonido
+      if (this.moving) {
+        this.stepAcc += moved;
+        if (this.stepAcc >= PLAYER_CFG.stepDist) {
+          this.stepAcc = 0;
+          const base = this.sneak ? PLAYER_CFG.noiseSneak : (running ? PLAYER_CFG.noiseRun : PLAYER_CFG.noiseWalk);
+          game.noise.emit(this.x, this.y, base * this.noiseMultiplier(), 'paso');
+          game.audio.step(this.sneak ? 0.35 : running ? 1 : 0.65);
+        }
+      }
+    }
 
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.swingT = Math.max(0, this.swingT - dt);

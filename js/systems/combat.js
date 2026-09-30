@@ -17,7 +17,9 @@ import { gunRounds } from './inventory.js';
 
 /** Entrada única del ataque: enruta a melee o a disparo según el arma. */
 export function playerAttack(game) {
-  const it = game.player.equipment.arma;
+  const p = game.player;
+  if (p.climb) return false;   // en mitad de la escalera no se combate
+  const it = p.equipment.arma;
   if (it && it.def.ranged) return fireRanged(game);
   return meleeAttack(game);
 }
@@ -45,6 +47,7 @@ function meleeAttack(game) {
 
   let hits = 0;
   for (const z of game.zombies) {
+    if ((z.z || 0) !== p.z) continue;   // nada de golpear a través del suelo
     const dx = z.x - p.x, dy = z.y - p.y;
     const d = Math.hypot(dx, dy);
     if (d > w.range + z.r) continue;
@@ -52,7 +55,7 @@ function meleeAttack(game) {
     if (Math.abs(angDiff(p.angle, a)) > 1.05) continue;
     // no golpear a través de muros (la franja delgada tapa el golpe;
     // las ventanas dejan golpear a través del cristal)
-    if (!game.map.lineClear(p.x, p.y, z.x, z.y)) continue;
+    if (!game.map.lineClearZ(p.x, p.y, z.x, z.y, p.z)) continue;
 
     const dmg = w.dmg * (0.9 + Math.random() * 0.2);
     z.takeDamage(dmg, a, w.kb, game);
@@ -130,14 +133,18 @@ export function fireRanged(game) {
  */
 function hitscan(game, x, y, ang, range, dmg, kb) {
   const map = game.map;
+  const p = game.player;
+  const pz = p.climb ? p.climb.from : (p.z || 0);
   const dx = Math.cos(ang), dy = Math.sin(ang);
 
-  // distancia hasta el primer muro/puerta cerrada (el cristal pasa)
-  const dWall = map.castRay(x, y, ang, range);
+  // distancia hasta el primer muro/puerta cerrada de TU planta (el cristal pasa)
+  const dWall = map.castRayZ(x, y, ang, range, pz);
 
-  // zombi más cercano sobre el rayo (intersección rayo-círculo)
+  // zombi más cercano sobre el rayo (intersección rayo-círculo) — SOLO
+  // zombis de tu misma planta: una bala del 2º piso vuela sobre la calle
   let best = null, bestT = Math.min(dWall, range);
   for (const z of game.zombies) {
+    if ((z.z || 0) !== pz) continue;
     const ox = z.x - x, oy = z.y - y;
     const t = ox * dx + oy * dy;            // proyección sobre el rayo
     if (t <= 4 || t >= bestT) continue;      // detrás / más lejos que el muro

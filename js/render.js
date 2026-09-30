@@ -33,6 +33,13 @@ export function renderGame(ctx, game) {
     if (z.visibleNow) z.draw(ctx, cam);
   }
 
+  // PLANTA EXTRA (2º piso / sótano) del edificio en el que está el jugador:
+  // en planta baja es invisible (alpha 0 — no se ve el otro piso), mientras
+  // subes/bajas las escaleras va apareciendo con un fundido progresivo y al
+  // llegar es opaca (tapa lo que hay debajo). Encima de zombis/contenedores
+  // de la planta baja, debajo del jugador y de la niebla.
+  game.map.drawFloorLayer(ctx, cam, game);
+
   // jugador
   if (game.player) game.player.draw(ctx, cam);
 

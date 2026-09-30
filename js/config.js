@@ -18,6 +18,7 @@ export const WORLD_H = MAP_H * TILE;
 export const T = {
   GRASS: 0, ROAD: 1, SIDEWALK: 2, FLOOR: 3, WALL: 4,
   DOOR_CLOSED: 5, TREE: 6, WINDOW: 7, DOOR_OPEN: 8, CAR: 9,
+  STAIRS: 10,
 };
 
 // Tiles sólidos (bloquean movimiento). Muros/ventanas/puertas cerradas son
@@ -52,6 +53,19 @@ export const ROOF = {
   near: 56,            // a esta distancia (o menos) el techo queda en su alpha mínimo
   far: 250,            // a partir de aquí es totalmente opaco
   minAlpha: 0.14,      // alpha residual pegado al edificio (fantasma sutil)
+};
+
+// ---------- Plantas: 2º piso y sótanos ----------
+// Algunas casas tienen una planta extra (nunca las dos): una escalera interior
+// conecta la planta baja con el 2º piso o el sótano. Mecánica visual gemela a
+// la de los techos: en planta baja NO se ve la otra planta; mientras subes/bajas
+// las escaleras la planta destino va apareciendo con un fundido (alpha 0→1);
+// al llegar, la capa de TU planta es opaca y tapa lo que hay debajo.
+export const FLOORS = {
+  upperChance: 0.35,       // probabilidad de que una casa tenga 2º piso
+  basementChance: 0.34,    // si no tiene 2º piso: probabilidad de sótano
+  climbTime: 1.15,         // segundos que toma subir/bajar las escaleras
+  stepEvery: 0.34,         // cadencia de pasos de escalera (sfx)
 };
 
 // ---------- Jugador ----------

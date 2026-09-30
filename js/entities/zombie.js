@@ -15,6 +15,7 @@ export class Zombie {
     this.x = x; this.y = y;
     this.r = Z.radius;
     this.hp = Z.hp;
+    this.z = 0;                 // los zombis viven en la planta baja
     this.state = ST.IDLE;
     this.timer = rng.range(0.5, 3);
     this.dirX = 0; this.dirY = 0;
@@ -46,6 +47,8 @@ export class Zombie {
 
   _seePlayer(game) {
     const p = game.player;
+    // otro plano (2º piso / sótano): ni te ve ni te huele
+    if ((p.z || 0) !== this.z || p.climb) return false;
     const d = dist(this.x, this.y, p.x, p.y);
     let detectR = p.sneak ? Z.detectSneak : Z.detectRadius;
     if (p.running) detectR = Math.max(detectR, Z.detectRun);
@@ -147,11 +150,12 @@ export class Zombie {
         const td = Math.max(1, dist(this.x, this.y, this.lastSeenX, this.lastSeenY));
         mvx = (this.lastSeenX - this.x) / td;
         mvy = (this.lastSeenY - this.y) / td;
-        // ataque — SOLO con línea de visión directa: la franja del muro y las
-        // puertas cerradas bloquean el golpe (mismo criterio que el melee del
-        // jugador; el cristal de las ventanas deja golpear a través).
-        if (d < Z.attackRange + p.r && this.attackCd <= 0 &&
-            map.lineClear(this.x, this.y, p.x, p.y)) {
+        // ataque — SOLO con línea de visión directa Y en la MISMA planta
+        // (nadie muerde a través del techo): la franja del muro y las puertas
+        // cerradas bloquean el golpe (mismo criterio que el melee del jugador;
+        // el cristal de las ventanas deja golpear a través).
+        if (d < Z.attackRange + p.r && this.attackCd <= 0 && (p.z || 0) === this.z &&
+            !p.climb && map.lineClear(this.x, this.y, p.x, p.y)) {
           this.attackCd = Z.attackCd;
           game.combatZombieHit(this);
         }

@@ -6,7 +6,7 @@
  * contenedores) y cableado de todos los sistemas modulares.
  */
 
-import { TILE, T, ZOMBIE_CFG } from './config.js';
+import { TILE, T, ZOMBIE_CFG, FLOORS } from './config.js';
 import { Rng } from './rng.js';
 import { Input } from './core/input.js';
 import { Camera } from './core/camera.js';
@@ -238,29 +238,40 @@ class Game {
   interactTarget() {
     if (this.state !== STATE.PLAYING || this.uiOpen || !this.player) return null;
     const p = this.player;
+    // en mitad de la escalera no hay interacción con el mundo
+    if (p.climb) return null;
+    const pz = p.z || 0;
     let best = null;
 
+    // escaleras al 2º piso / sótano: solo de pie sobre ellas, en TU planta
+    const st = this.map.stairsNear(p);
+    if (st) best = { kind: 'stairs', obj: st, d: 0, label: st.label };
+
     for (const c of this.map.containers) {
+      if (c.z !== pz) continue;   // nada de registrar a través del techo
       const d = Math.hypot(c.x - p.x, c.y - p.y);
       if (d < 46 && (!best || d < best.d)) {
         best = { kind: 'container', obj: c, d, label: 'Registrar ' + c.name };
       }
     }
     for (const gi of this.groundItems) {
+      if (pz !== 0) continue;     // los objetos del suelo están en la baja
       const d = Math.hypot(gi.x - p.x, gi.y - p.y);
       if (d < 38 && (!best || d < best.d)) {
         best = { kind: 'item', obj: gi, d, label: 'Recoger ' + itemLabel(gi.item) };
       }
     }
-    const ptx = Math.floor(p.x / TILE), pty = Math.floor(p.y / TILE);
-    for (let ty = pty - 1; ty <= pty + 1; ty++) {
-      for (let tx = ptx - 1; tx <= ptx + 1; tx++) {
-        const t = this.map.tileAtIdx(tx, ty);
-        if (t === T.DOOR_CLOSED || t === T.DOOR_OPEN) {
-          const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2;
-          const d = Math.hypot(cx - p.x, cy - p.y);
-          if (d < 42 && (!best || d < best.d)) {
-            best = { kind: 'door', obj: { tx, ty, open: t === T.DOOR_OPEN }, d, label: (t === T.DOOR_OPEN ? 'Cerrar' : 'Abrir') + ' puerta' };
+    if (pz === 0) {              // las puertas solo existen en planta baja
+      const ptx = Math.floor(p.x / TILE), pty = Math.floor(p.y / TILE);
+      for (let ty = pty - 1; ty <= pty + 1; ty++) {
+        for (let tx = ptx - 1; tx <= ptx + 1; tx++) {
+          const t = this.map.tileAtIdx(tx, ty);
+          if (t === T.DOOR_CLOSED || t === T.DOOR_OPEN) {
+            const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2;
+            const d = Math.hypot(cx - p.x, cy - p.y);
+            if (d < 42 && (!best || d < best.d)) {
+              best = { kind: 'door', obj: { tx, ty, open: t === T.DOOR_OPEN }, d, label: (t === T.DOOR_OPEN ? 'Cerrar' : 'Abrir') + ' puerta' };
+            }
           }
         }
       }
@@ -272,6 +283,18 @@ class Game {
     const target = this.interactTarget();
     if (!target) return;
     switch (target.kind) {
+      case 'stairs': {
+        // empezar a subir/bajar: el movimiento se bloquea y la capa de la
+        // planta destino va apareciendo con un fundido (climb.k en render)
+        const st = target.obj;
+        this.player.climb = {
+          from: this.player.z || 0, to: st.to,
+          t: 0, dur: FLOORS.climbTime, k: 0,
+        };
+        this.audio.door();   // crujido de madera al pisar la escalera
+        this.noise.emit(this.player.x, this.player.y, 55, 'escalera');
+        break;
+      }
       case 'container': {
         const c = target.obj;
         if (!c.searched) { c.searched = true; this.searchedCount++; }

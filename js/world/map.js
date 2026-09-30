@@ -11,7 +11,7 @@
  * y el arte comparten esta geometría (ver _runsFor / _inRuns / _drawStructStrips).
  */
 
-import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T, ROOF } from '../config.js';
+import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T, ROOF, FLOORS } from '../config.js';
 import { Rng } from '../rng.js';
 import { hash2, angDiff } from '../utils.js';
 
@@ -37,9 +37,11 @@ export class GameMap {
     this.cars = [];         // {x, y, w, h, color}
     this.treeByTile = new Map(); // idx de tile → objeto árbol (redraw nítido)
     this.carByTile = new Map();  // idx de tile (2 por coche) → objeto coche
-    this.containers = [];   // {type, name, x, y, color, letter, searched}
-    this.buildings = [];    // {x0, y0, x1, y1, cx, cy}
+    this.containers = [];   // {type, name, x, y, color, letter, searched, z}
+    this.buildings = [];    // {x0, y0, x1, y1, cx, cy, upper, basement, stairs}
     this.doors = [];        // {tx, ty}
+    // índice rápido tile → edificio (para el despacho por planta z)
+    this._bIdx = new Int16Array(MAP_W * MAP_H).fill(-1);
     // Pintura vial PRECALCULADA en coordenadas de mundo (rects {x, y, w, h, c}):
     // línea central discontinua, líneas de borde y pasos de cebra. Al estar
     // anclada al mundo (no a la pantalla), las marcas NUNCA se deslizan sobre
@@ -181,15 +183,15 @@ export class GameMap {
     return false;
   }
 
-  /** Mueve un círculo con colisión por ejes separados (paso de 1px). */
-  moveCircle(obj, dx, dy) {
+  /** Mueve un círculo con colisión por ejes separados (paso de 1px). z=0 por defecto. */
+  moveCircle(obj, dx, dy, z = 0) {
     if (dx !== 0) {
       const sign = Math.sign(dx);
       let remain = Math.abs(dx);
       while (remain > 0) {
         const step = Math.min(1, remain);
         const nx = obj.x + sign * step;
-        if (this.circleHitsSolid(nx, obj.y, obj.r)) break;
+        if (this.circleHitsSolidZ(nx, obj.y, obj.r, z)) break;
         obj.x = nx;
         remain -= step;
       }
@@ -200,7 +202,7 @@ export class GameMap {
       while (remain > 0) {
         const step = Math.min(1, remain);
         const ny = obj.y + sign * step;
-        if (this.circleHitsSolid(obj.x, ny, obj.r)) break;
+        if (this.circleHitsSolidZ(obj.x, ny, obj.r, z)) break;
         obj.y = ny;
         remain -= step;
       }
@@ -232,6 +234,151 @@ export class GameMap {
       if (this.isOpaquePx(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, forAI)) return false;
     }
     return true;
+  }
+
+  // ================== Plantas (z): 2º piso y sótanos ==================
+  // El jugador tiene una "planta" z: 0 = calle/planta baja, 1 = 2º piso,
+  // -1 = sótano. Dentro de un edificio con planta extra, TODA consulta de
+  // tiles (colisión, visión, arte) se despacha a la rejilla de ESA planta;
+  // fuera del edificio manda la rejilla principal. Los zombis viven en z=0.
+
+  /** Edificio que contiene un tile (o null si no hay edificio ahí). */
+  buildingAtTile(tx, ty) {
+    if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return null;
+    const id = this._bIdx[this.idx(tx, ty)];
+    return id >= 0 ? this.buildings[id] : null;
+  }
+
+  /** Edificio que contiene un punto en px (o null). */
+  buildingAtPx(x, y) {
+    return this.buildingAtTile(Math.floor(x / TILE), Math.floor(y / TILE));
+  }
+
+  /** Tile por COORDS DE REJILLA con despacho de planta. z=0 → rejilla principal. */
+  tileAtZ(tx, ty, z) {
+    if (!z) return this.tileAtIdx(tx, ty);
+    const b = this.buildingAtTile(tx, ty);
+    if (!b) return this.tileAtIdx(tx, ty);
+    const fl = z > 0 ? b.upper : b.basement;
+    if (!fl) return this.tileAtIdx(tx, ty);
+    const lx = tx - b.x0, ly = ty - b.y0;
+    if (lx < 0 || ly < 0 || lx >= fl.w || ly >= fl.h) return T.WALL;
+    return fl.tiles[ly * fl.w + lx];
+  }
+
+  _isStructTileZ(tx, ty, z) {
+    if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return false;
+    const t = this.tileAtZ(tx, ty, z);
+    return t === T.WALL || t === T.WINDOW || t === T.DOOR_CLOSED || t === T.DOOR_OPEN;
+  }
+
+  _runsForZ(tx, ty, z) {
+    const h = this._isStructTileZ(tx - 1, ty, z) || this._isStructTileZ(tx + 1, ty, z);
+    const v = this._isStructTileZ(tx, ty - 1, z) || this._isStructTileZ(tx, ty + 1, z);
+    return { h: h || !v, v: v || !h };
+  }
+
+  _inRunsZ(tx, ty, px, py, z) {
+    const r = this._runsForZ(tx, ty, z);
+    const off = (TILE - WALL_T) / 2;
+    const ox = tx * TILE, oy = ty * TILE;
+    if (r.h && px >= ox && px <= ox + TILE && py >= oy + off && py <= oy + off + WALL_T) return true;
+    if (r.v && px >= ox + off && px <= ox + off + WALL_T && py >= oy && py <= oy + TILE) return true;
+    return false;
+  }
+
+  nearestStripPointZ(tx, ty, px, py, z) {
+    const r = this._runsForZ(tx, ty, z);
+    const off = (TILE - WALL_T) / 2;
+    const ox = tx * TILE, oy = ty * TILE;
+    let best = null, bd = Infinity;
+    const cand = (rx, ry, rw, rh) => {
+      const cx = Math.max(rx, Math.min(px, rx + rw));
+      const cy = Math.max(ry, Math.min(py, ry + rh));
+      const d = (cx - px) * (cx - px) + (cy - py) * (cy - py);
+      if (d < bd) { bd = d; best = { x: cx, y: cy }; }
+    };
+    if (r.h) cand(ox, oy + off, TILE, WALL_T);
+    if (r.v) cand(ox + off, oy, WALL_T, TILE);
+    return best;
+  }
+
+  /** ¿El punto (px, py) está sobre un muro de la planta z? */
+  isOpaquePxZ(x, y, z) {
+    if (x < 0 || y < 0 || x >= WORLD_W || y >= WORLD_H) return true;
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    const t = this.tileAtZ(tx, ty, z);
+    if (OPAQUE.has(t)) return this._inRunsZ(tx, ty, x, y, z);
+    return false;
+  }
+
+  /** Rayo en la planta z (mismo muestreo que castRay). */
+  castRayZ(x, y, ang, maxDist, z) {
+    const step = 4;
+    const c = Math.cos(ang), s = Math.sin(ang);
+    let d = 0;
+    while (d < maxDist) {
+      d += step;
+      if (this.isOpaquePxZ(x + c * d, y + s * d, z)) return d;
+    }
+    return maxDist;
+  }
+
+  /** Línea despejada en la planta z (despacho por punto de muestreo). */
+  lineClearZ(x1, y1, x2, y2, z) {
+    const d = Math.hypot(x2 - x1, y2 - y1);
+    if (d < 1) return true;
+    const step = 6;
+    const n = Math.ceil(d / step);
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      if (this.isOpaquePxZ(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, z)) return false;
+    }
+    return true;
+  }
+
+  circleHitsSolidZ(x, y, r, z) {
+    const x0 = Math.floor((x - r) / TILE), x1 = Math.floor((x + r) / TILE);
+    const y0 = Math.floor((y - r) / TILE), y1 = Math.floor((y + r) / TILE);
+    const off = (TILE - WALL_T) / 2;
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        const oob = tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H;
+        if (oob) {
+          if (this._circleRectHit(x, y, r, tx * TILE, ty * TILE, TILE, TILE)) return true;
+          continue;
+        }
+        const t = this.tileAtZ(tx, ty, z);
+        if (t === T.TREE || t === T.CAR) {
+          if (this._circleRectHit(x, y, r, tx * TILE, ty * TILE, TILE, TILE)) return true;
+          continue;
+        }
+        if (t !== T.WALL && t !== T.WINDOW && t !== T.DOOR_CLOSED) continue;
+        const runs = this._runsForZ(tx, ty, z);
+        const ox = tx * TILE, oy = ty * TILE;
+        if (runs.h && this._circleRectHit(x, y, r, ox, oy + off, TILE, WALL_T)) return true;
+        if (runs.v && this._circleRectHit(x, y, r, ox + off, oy, WALL_T, TILE)) return true;
+      }
+    }
+    return false;
+  }
+
+  /** ¿Hay una escalera bajo los pies del jugador en su planta actual? */
+  stairsNear(p) {
+    const b = this.buildingAtPx(p.x, p.y);
+    if (!b || !b.stairs) return null;
+    const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
+    if (this.tileAtZ(tx, ty, p.z) !== T.STAIRS) return null;
+    let to = 0, label = '';
+    if (p.z === 0) {
+      if (b.upper) { to = 1; label = 'Subir al 2º piso'; }
+      else if (b.basement) { to = -1; label = 'Bajar al sótano'; }
+      else return null;
+    } else {
+      to = 0;
+      label = p.z === 1 ? 'Bajar a la planta baja' : 'Subir a la planta baja';
+    }
+    return { b, to, label, x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 };
   }
 
   // ================== Decals persistentes ==================
@@ -388,6 +535,13 @@ export class GameMap {
 
     // --- Pintura vial (tras coches/árboles para respetar sus tiles) ---
     this._buildRoadPaint();
+
+    // --- Índice tile → edificio (despacho por planta z) ---
+    for (let i = 0; i < this.buildings.length; i++) {
+      const b = this.buildings[i];
+      for (let y = b.y0; y <= b.y1; y++)
+        for (let x = b.x0; x <= b.x1; x++) this._bIdx[this.idx(x, y)] = i;
+    }
   }
 
   /**
@@ -541,7 +695,34 @@ export class GameMap {
       }
     }
 
-    // contenedores: tiles de interior pegados a muro/ventana
+    // ---- plantas extra: 2º piso o sótano (nunca ambos) ----
+    // La escalera se coloca en un tile interior con 4 vecinos FLOOR para
+    // estar lejos de muros; la misma posición de mundo es el hueco de
+    // llegada en la rejilla de la planta extra.
+    let upper = null, basement = null, stairs = null;
+    const stairCands = [];
+    for (let y = y0 + 2; y <= y1 - 2; y++) {
+      for (let x = x0 + 2; x <= x1 - 2; x++) {
+        if (this.tileAtIdx(x, y) !== T.FLOOR) continue;
+        if (this.tileAtIdx(x - 1, y) !== T.FLOOR || this.tileAtIdx(x + 1, y) !== T.FLOOR ||
+            this.tileAtIdx(x, y - 1) !== T.FLOOR || this.tileAtIdx(x, y + 1) !== T.FLOOR) continue;
+        stairCands.push({ x, y });
+      }
+    }
+    if (stairCands.length) {
+      const s = stairCands[rng.index(stairCands.length)];
+      if (rng.chance(FLOORS.upperChance)) {
+        upper = this._buildExtraFloor(x0, y0, x1, y1, 'upper', s);
+      } else if (rng.chance(FLOORS.basementChance)) {
+        basement = this._buildExtraFloor(x0, y0, x1, y1, 'basement', s);
+      }
+      if (upper || basement) {
+        this.setTile(s.x, s.y, T.STAIRS);
+        stairs = { tx: s.x, ty: s.y };
+      }
+    }
+
+    // contenedores: tiles de interior pegados a muro/ventana (planta baja)
     const cands = [];
     for (let y = y0 + 1; y < y1; y++) {
       for (let x = x0 + 1; x < x1; x++) {
@@ -564,10 +745,199 @@ export class GameMap {
       x0, y0, x1, y1,
       cx: (x0 + x1) / 2 * TILE + TILE / 2,
       cy: (y0 + y1) / 2 * TILE + TILE / 2,
-      roof: this._buildRoofCanvas(x0, y0, x1, y1),
+      upper, basement, stairs,
+      roof: this._buildRoofCanvas(x0, y0, x1, y1, !!upper),
       roofW: (x1 - x0 + 1) * TILE,
       roofH: (y1 - y0 + 1) * TILE,
     });
+  }
+
+  /**
+   * Genera la rejilla de una planta extra (2º piso o sótano) con su propio
+   * reparto interior, sus contenedores y su canvas pre-renderizado.
+   * - 2º piso: mismo perímetro que la planta baja (ventanas incluidas, la
+   *   puerta se vuelve muro) + divisorio propio + armario/casillero/botiquín.
+   * - Sótano: perímetro macizo sin ventanas, hormigón, trastero con mejor
+   *   botín (casilleros/alacenas).
+   * La escalera (stairs) ocupa la misma posición de mundo en ambas plantas.
+   */
+  _buildExtraFloor(x0, y0, x1, y1, kind, stairs) {
+    const rng = this.rng;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    const tiles = new Uint8Array(w * h);
+    const set = (lx, ly, v) => { tiles[ly * w + lx] = v; };
+
+    // perímetro: 2º piso copia muros/ventanas de la planta baja (puerta→muro);
+    // sótano todo muro macizo (sin ventanas: está bajo tierra)
+    for (let x = 0; x < w; x++) {
+      const gt = this.tileAtIdx(x0 + x, y0), gb = this.tileAtIdx(x0 + x, y1);
+      set(x, 0, kind === 'upper' && gt === T.WINDOW ? T.WINDOW : T.WALL);
+      set(x, h - 1, kind === 'upper' && gb === T.WINDOW ? T.WINDOW : T.WALL);
+    }
+    for (let y = 0; y < h; y++) {
+      const gl = this.tileAtIdx(x0, y0 + y), gr = this.tileAtIdx(x1, y0 + y);
+      set(0, y, kind === 'upper' && gl === T.WINDOW ? T.WINDOW : T.WALL);
+      set(w - 1, y, kind === 'upper' && gr === T.WINDOW ? T.WINDOW : T.WALL);
+    }
+    for (let y = 1; y < h - 1; y++)
+      for (let x = 1; x < w - 1; x++) set(x, y, T.FLOOR);
+
+    // hueco de la escalera (misma posición de mundo que en planta baja)
+    set(stairs.x - x0, stairs.y - y0, T.STAIRS);
+
+    // divisorio interior propio (solo 2º piso, distinto del de abajo)
+    if (kind === 'upper' && w >= 10 && rng.chance(0.6)) {
+      const wx = rng.int(3, w - 4);
+      const gy = rng.int(2, h - 4);
+      for (let y = 1; y < h - 1; y++) {
+        if (y !== gy && y !== gy + 1 && tiles[y * w + wx] === T.FLOOR) set(wx, y, T.WALL);
+      }
+    }
+
+    // contenedores de la planta: tiles FLOOR pegados a muro/ventana local
+    const cands = [];
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        if (tiles[y * w + x] !== T.FLOOR) continue;
+        const n = [tiles[y * w + x - 1], tiles[y * w + x + 1], tiles[(y - 1) * w + x], tiles[(y + 1) * w + x]];
+        if (n.includes(T.WALL) || n.includes(T.WINDOW)) cands.push({ x, y });
+      }
+    }
+    shuffle(cands, rng);
+    const z = kind === 'upper' ? 1 : -1;
+    const wanted = kind === 'upper'
+      ? ['armario', ...(rng.chance(0.45) ? ['casillero'] : []), ...(rng.chance(0.3) ? ['botiquin_pared'] : [])]
+      : ['casillero', 'alacena', ...(rng.chance(0.5) ? ['casillero'] : []), ...(rng.chance(0.3) ? ['armario'] : [])];
+    const containers = [];
+    for (let i = 0; i < Math.min(wanted.length, cands.length); i++) {
+      containers.push(this._addContainer(wanted[i], x0 + cands[i].x, y0 + cands[i].y, z));
+    }
+
+    const fl = {
+      kind, z, tiles, w, h, x0, y0, containers,
+      stairs: { tx: stairs.x, ty: stairs.y },
+    };
+    fl.canvas = this._buildFloorCanvas(fl);
+    return fl;
+  }
+
+  /** Franjas de muro de una rejilla LOCAL de planta extra. */
+  _runsLocal(fl, lx, ly) {
+    const struct = (x, y) => {
+      if (x < 0 || y < 0 || x >= fl.w || y >= fl.h) return false;
+      const t = fl.tiles[y * fl.w + x];
+      return t === T.WALL || t === T.WINDOW || t === T.DOOR_CLOSED || t === T.DOOR_OPEN;
+    };
+    const hR = struct(lx - 1, ly) || struct(lx + 1, ly);
+    const vR = struct(lx, ly - 1) || struct(lx, ly + 1);
+    return { h: hR || !vR, v: vR || !hR };
+  }
+
+  /**
+   * Pre-renderiza el ARTE de una planta extra a su canvas (una vez por
+   * partida): madera clara para el 2º piso (con alfombra), hormigón agrietado
+   * y manchas de humedad para el sótano. Muros/ventanas con la MISMA franja
+   * delgada del resto del juego. Este canvas es la "capa de planta" que
+   * drawFloorLayer compone con alpha progresivo al subir/bajar escaleras.
+   */
+  _buildFloorCanvas(fl) {
+    const rng = this.rng;
+    const wpx = fl.w * TILE, hpx = fl.h * TILE;
+    const fc = document.createElement('canvas');
+    fc.width = wpx; fc.height = hpx;
+    const c = fc.getContext('2d');
+    const upper = fl.kind === 'upper';
+    const off = (TILE - WALL_T) / 2;
+
+    // suelo tile a tile (madera clara arriba / hormigón abajo)
+    for (let ly = 0; ly < fl.h; ly++) {
+      for (let lx = 0; lx < fl.w; lx++) {
+        const t = fl.tiles[ly * fl.w + lx];
+        const hs = hash2(fl.x0 + lx, fl.y0 + ly);
+        const sx = lx * TILE, sy = ly * TILE;
+        if (t === T.FLOOR || t === T.STAIRS || t === T.WALL || t === T.WINDOW) {
+          if (upper) {
+            c.fillStyle = hs < 0.5 ? '#7d6b50' : '#79674c';
+            c.fillRect(sx, sy, TILE, TILE);
+            c.fillStyle = 'rgba(0,0,0,0.12)';
+            c.fillRect(sx, sy + TILE - 3, TILE, 2);
+            if (hs > 0.62) c.fillRect(sx + Math.floor(hs * 24), sy, 2, TILE);
+          } else {
+            c.fillStyle = hs < 0.5 ? '#4b4b49' : '#474745';
+            c.fillRect(sx, sy, TILE, TILE);
+            c.fillStyle = 'rgba(0,0,0,0.18)';
+            c.fillRect(sx, sy + TILE - 2, TILE, 1);
+            if (hs > 0.66) {                       // grieta del hormigón
+              c.strokeStyle = '#33332f';
+              c.lineWidth = 1;
+              c.beginPath();
+              c.moveTo(sx + 5, sy + 6 + hs * 6);
+              c.lineTo(sx + 15, sy + 14 + hs * 5);
+              c.lineTo(sx + 26, sy + 11 + hs * 8);
+              c.stroke();
+            }
+            if (hs > 0.4 && hs < 0.52) {           // mancha de humedad
+              c.fillStyle = 'rgba(30,42,34,0.20)';
+              c.fillRect(sx + 3, sy + 4, 18, 12);
+            }
+          }
+        }
+        if (t === T.STAIRS) this._drawStairsArt(c, sx, sy);
+        if (t === T.WALL || t === T.WINDOW) {
+          const runs = this._runsLocal(fl, lx, ly);
+          if (runs.h) this._drawStripArt(c, t, sx, sy + off, TILE, WALL_T, true, fl.x0 + lx, fl.y0 + ly);
+          if (runs.v) this._drawStripArt(c, t, sx + off, sy, WALL_T, TILE, false, fl.x0 + lx, fl.y0 + ly);
+        }
+      }
+    }
+
+    if (upper) {
+      // alfombra bajo el centro (toque de dormitorio)
+      if (fl.w >= 7 && fl.h >= 5) {
+        const rx = rng.int(1, Math.max(1, fl.w - 5)), ry = rng.int(1, Math.max(1, fl.h - 4));
+        const rw = rng.int(3, Math.min(4, fl.w - rx - 1)), rh = rng.int(2, Math.min(3, fl.h - ry - 1));
+        let free = true;
+        for (let y = ry; y < ry + rh && free; y++)
+          for (let x = rx; x < rx + rw; x++)
+            if (fl.tiles[y * fl.w + x] !== T.FLOOR) { free = false; break; }
+        if (free) {
+          c.fillStyle = 'rgba(122,72,60,0.5)';
+          c.fillRect(rx * TILE + 4, ry * TILE + 4, rw * TILE - 8, rh * TILE - 8);
+          c.strokeStyle = 'rgba(60,34,28,0.55)';
+          c.lineWidth = 2;
+          c.strokeRect(rx * TILE + 5, ry * TILE + 5, rw * TILE - 10, rh * TILE - 10);
+        }
+      }
+    } else {
+      // sótano: ambiente más cerrado — viñeta oscura en los bordes
+      const g = c.createRadialGradient(wpx / 2, hpx / 2, Math.min(wpx, hpx) * 0.25, wpx / 2, hpx / 2, Math.max(wpx, hpx) * 0.62);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0.30)');
+      c.fillStyle = g;
+      c.fillRect(0, 0, wpx, hpx);
+    }
+
+    // contorno del rect de la planta
+    c.strokeStyle = 'rgba(8,10,8,0.65)';
+    c.lineWidth = 2;
+    c.strokeRect(1, 1, wpx - 2, hpx - 2);
+    return fc;
+  }
+
+  /** Arte de la escalera: pozo oscuro + peldaños de madera con luz. */
+  _drawStairsArt(ctx, sx, sy) {
+    ctx.fillStyle = '#241d15';                       // pozo
+    ctx.fillRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
+    ctx.fillStyle = '#8a7455';                       // peldaños
+    for (let i = 0; i < 5; i++) ctx.fillRect(sx + 4, sy + 5 + i * 5.4, TILE - 8, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';        // luz del primer peldaño
+    ctx.fillRect(sx + 4, sy + 5, TILE - 8, 1);
+    ctx.fillStyle = '#3a3025';                       // zócalos laterales
+    ctx.fillRect(sx + 2, sy + 2, 3, TILE - 4);
+    ctx.fillRect(sx + TILE - 5, sy + 2, 3, TILE - 4);
+    ctx.strokeStyle = 'rgba(8,10,8,0.7)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx + 2.5, sy + 2.5, TILE - 5, TILE - 5);
   }
 
   /**
@@ -577,7 +947,7 @@ export class GameMap {
    * Se compone encima de todo con alpha según la distancia del jugador
    * (ver drawRoofs).
    */
-  _buildRoofCanvas(x0, y0, x1, y1) {
+  _buildRoofCanvas(x0, y0, x1, y1, hasUpper = false) {
     const rng = this.rng;
     const w = (x1 - x0 + 1) * TILE, h = (y1 - y0 + 1) * TILE;
     const rc = document.createElement('canvas');
@@ -645,6 +1015,26 @@ export class GameMap {
       c.fillRect(chx - 6, chy - 6, 12, 3);   // remate
     }
 
+    // buhardillas: las casas con 2º piso asoman ventanas de ático en el
+    // tejado — pista visual desde la calle de que hay piso de arriba
+    if (hasUpper) {
+      const n = w >= h ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        const dx = Math.floor(w * (n === 1 ? 0.5 : 0.3 + 0.4 * i));
+        const dy = Math.floor(h / 2);
+        c.fillStyle = 'rgba(0,0,0,0.35)';
+        c.fillRect(dx - 9, dy - 7, 20, 15);   // sombra
+        c.fillStyle = '#33302a';
+        c.fillRect(dx - 10, dy - 8, 20, 15);  // marco
+        c.fillStyle = '#5d6d72';
+        c.fillRect(dx - 8, dy - 6, 16, 11);   // cristal
+        c.fillStyle = 'rgba(160,190,200,0.35)';
+        c.fillRect(dx - 6, dy - 4, 5, 4);     // reflejo
+        c.fillStyle = '#33302a';
+        c.fillRect(dx - 1, dy - 6, 2, 11);    // parteluz
+      }
+    }
+
     // contorno
     c.strokeStyle = 'rgba(8,10,8,0.8)';
     c.lineWidth = 2;
@@ -652,7 +1042,7 @@ export class GameMap {
     return rc;
   }
 
-  _addContainer(type, tx, ty) {
+  _addContainer(type, tx, ty, z = 0) {
     const defs = {
       nevera: { name: 'Nevera', color: '#aeb6ba', letter: 'N' },
       alacena: { name: 'Alacena', color: '#8a6a42', letter: 'A' },
@@ -661,11 +1051,34 @@ export class GameMap {
       botiquin_pared: { name: 'Botiquín', color: '#d94a4a', letter: '+' },
     };
     const d = defs[type];
-    this.containers.push({
+    const c = {
       type, name: d.name, color: d.color, letter: d.letter,
       x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2,
-      items: [], searched: false,
-    });
+      items: [], searched: false, z,
+    };
+    this.containers.push(c);
+    return c;
+  }
+
+  /** Arte de un contenedor (compartido por planta baja y plantas extra). */
+  _drawContainer(ctx, c, sx, sy) {
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.fillRect(sx - 11, sy - 8, 24, 22);
+    ctx.fillStyle = c.searched ? '#3a3a36' : c.color;
+    ctx.fillRect(sx - 12, sy - 11, 24, 22);
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.fillRect(sx - 12, sy - 11, 24, 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(sx - 12, sy + 7, 24, 4);
+    if (c.searched) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.beginPath(); ctx.moveTo(sx - 12, sy - 11); ctx.lineTo(sx + 12, sy + 11); ctx.stroke();
+    }
+    ctx.fillStyle = c.searched ? '#777' : '#111';
+    ctx.font = 'bold 11px Rajdhani, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(c.letter, sx, sy + 1);
   }
 
   /** Tile de interior libre más cercano a un punto (px). */
@@ -801,6 +1214,9 @@ export class GameMap {
             ctx.fillRect(sx, sy, TILE, TILE);
             break;
           }
+          case T.STAIRS:
+            this._drawStairsArt(ctx, sx, sy);
+            break;
         }
       }
     }
@@ -858,28 +1274,14 @@ export class GameMap {
       }
     }
 
-    // contenedores
+    // contenedores (solo los de la PLANTA BAJA: los de pisos/sótanos los
+    // dibuja drawFloorLayer con su propia capa)
     for (const c of this.containers) {
+      if (c.z) continue;
       const sx = Math.round(c.x - cam.x + cam.offX);
       const sy = Math.round(c.y - cam.y + cam.offY);
       if (sx < -30 || sy < -30 || sx > cam.w + 30 || sy > cam.h + 30) continue;
-      ctx.fillStyle = 'rgba(0,0,0,0.32)';
-      ctx.fillRect(sx - 11, sy - 8, 24, 22);
-      ctx.fillStyle = c.searched ? '#3a3a36' : c.color;
-      ctx.fillRect(sx - 12, sy - 11, 24, 22);
-      ctx.fillStyle = 'rgba(255,255,255,0.16)';
-      ctx.fillRect(sx - 12, sy - 11, 24, 4);
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.fillRect(sx - 12, sy + 7, 24, 4);
-      if (c.searched) {
-        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-        ctx.beginPath(); ctx.moveTo(sx - 12, sy - 11); ctx.lineTo(sx + 12, sy + 11); ctx.stroke();
-      }
-      ctx.fillStyle = c.searched ? '#777' : '#111';
-      ctx.font = 'bold 11px Rajdhani, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(c.letter, sx, sy + 1);
+      this._drawContainer(ctx, c, sx, sy);
     }
   }
 
@@ -1089,6 +1491,49 @@ export class GameMap {
   }
 
   /**
+   * PLANTAS: capa del 2º piso o del sótano, dibujada SOBRE la escena de
+   * planta baja del edificio en el que está el jugador (encima de zombis y
+   * contenedores de abajo, debajo del jugador y de la niebla).
+   *  - En planta baja sin subir: alpha 0 → la otra planta NO se ve.
+   *  - Subiendo/bajando escaleras: alpha progresivo (fundido 0→1 o 1→0):
+   *    la planta destino va apareciendo cada vez más nítidamente.
+   *  - En la planta extra: alpha 1 → opaca, tapa lo que hay debajo.
+   */
+  drawFloorLayer(ctx, cam, game) {
+    const p = game.player;
+    if (!p) return;
+    const b = this.buildingAtPx(p.x, p.y);
+    if (!b) return;
+
+    let fl = null, alpha = 0;
+    if (p.climb) {
+      // fundido durante la escalera: la capa es la planta DESTINO si subes,
+      // o la planta ORIGEN si bajas (se desvanece revelando la baja)
+      const to = p.climb.to;
+      fl = to === 1 ? b.upper : to === -1 ? b.basement
+        : (p.climb.from === 1 ? b.upper : b.basement);
+      alpha = to !== 0 ? p.climb.k : 1 - p.climb.k;
+    } else if (p.z === 1 && b.upper) { fl = b.upper; alpha = 1; }
+    else if (p.z === -1 && b.basement) { fl = b.basement; alpha = 1; }
+
+    if (!fl || alpha <= 0.02) return;
+    const sx = Math.round(b.x0 * TILE - cam.x + cam.offX);
+    const sy = Math.round(b.y0 * TILE - cam.y + cam.offY);
+    if (sx > cam.w + 8 || sy > cam.h + 8 || sx + fl.w * TILE < -8 || sy + fl.h * TILE < -8) return;
+
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(fl.canvas, sx, sy);
+    // contenedores de esa planta (visibles en la misma medida que la capa)
+    for (const c of fl.containers) {
+      const csx = Math.round(c.x - cam.x + cam.offX);
+      const csy = Math.round(c.y - cam.y + cam.offY);
+      if (csx < -30 || csy < -30 || csx > cam.w + 30 || csy > cam.h + 30) continue;
+      this._drawContainer(ctx, c, csx, csy);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /**
    * Redibuja la estructura Y los props VISIBLES por encima de la niebla.
    * La cara frontal de muros/ventanas/puertas ya no queda oscurecida por su
    * propia sombra: las paredes se distinguen con claridad en todo el cono.
@@ -1104,6 +1549,9 @@ export class GameMap {
   drawStructOver(ctx, cam, game) {
     const vision = game.vision, p = game.player;
     if (!vision || !vision.wallTiles || !vision.wallTiles.size) return;
+    // planta del jugador: los muros nítidos son los de TU planta (arriba se
+    // ven los del 2º piso, no los de la baja que quedan debajo)
+    const vz = p.climb ? p.climb.to : (p.z || 0);
 
     const canopyTiles = [];
     const drawnCars = new Set();
@@ -1112,7 +1560,7 @@ export class GameMap {
     // pasada 1: muros/ventanas/puertas + coches (a nivel de suelo)
     for (const idx of vision.wallTiles) {
       const tx = idx % MAP_W, ty = Math.floor(idx / MAP_W);
-      const t = this.tiles[idx];
+      const t = this.tileAtZ(tx, ty, vz);
       if (t === T.TREE) { canopyTiles.push(idx); continue; }
 
       if (t === T.CAR) {
@@ -1137,7 +1585,7 @@ export class GameMap {
       const sy = Math.round(ty * TILE - cam.y + cam.offY);
       if (sx > cam.w + TILE || sy > cam.h + TILE || sx + TILE < -TILE || sy + TILE < -TILE) continue;
       // solo la franja delgada: el suelo alrededor queda como lo dejó el cono
-      const runs = this._runsFor(tx, ty);
+      const runs = this._runsForZ(tx, ty, vz);
       this._drawStructStrips(ctx, t, sx, sy, tx, ty, runs);
       // atenuación con la distancia (solo sobre la franja): 0 junto al jugador
       const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2;
