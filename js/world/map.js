@@ -11,14 +11,15 @@
  * y el arte comparten esta geometría (ver _runsFor / _inRuns / _drawStructStrips).
  */
 
-import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T, ROOF, FLOORS } from '../config.js';
+import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T, ROOF, FLOORS, SPECIALS } from '../config.js';
 import { Rng } from '../rng.js';
 import { hash2, angDiff } from '../utils.js';
 
-const V_ROADS = [[16, 19], [46, 49], [74, 77]]; // bandas verticales [ini, fin] inclusive
-const H_ROADS = [[14, 17], [42, 45], [64, 67]]; // bandas horizontales
-const X_BLOCKS = [[1, 14], [21, 44], [51, 72], [79, 98]];
-const Y_BLOCKS = [[1, 12], [19, 40], [47, 62], [69, 78]];
+// v0.10: mapa ampliado 130×104 → 5 columnas × 4 filas de manzanas útiles
+const V_ROADS = [[16, 19], [46, 49], [76, 79], [106, 109]]; // bandas verticales [ini, fin] inclusive
+const H_ROADS = [[14, 17], [42, 45], [70, 73], [92, 95]];  // bandas horizontales
+const X_BLOCKS = [[1, 14], [21, 44], [51, 74], [81, 104], [111, 128]];
+const Y_BLOCKS = [[1, 12], [19, 40], [47, 68], [75, 90], [99, 102]];
 
 function shuffle(arr, rng) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -445,16 +446,45 @@ export class GameMap {
       }
     }
 
+    // --- Estructuras especiales ÚNICAS: comisaría y tienda ---
+    // Se eligen DOS manzanas distintas lo bastante grandes (nunca la central,
+    // donde aparece el jugador) y se dedican por completo al edificio.
+    const allBlocks = [];
+    for (const [bx0, bx1] of X_BLOCKS)
+      for (const [by0, by1] of Y_BLOCKS)
+        allBlocks.push({ bx0, bx1, by0, by1, bw: bx1 - bx0 + 1, bh: by1 - by0 + 1 });
+    const cTx = Math.floor(MAP_W / 2), cTy = Math.floor(MAP_H / 2);
+    const isCenter = (b) => cTx >= b.bx0 && cTx <= b.bx1 && cTy >= b.by0 && cTy <= b.by1;
+    const bigEnough = (b, w, h) => b.bw >= w + 2 && b.bh >= h + 2;
+    const pool = shuffle(allBlocks.filter((b) => !isCenter(b)), rng);
+    const policeBlock = pool.find((b) => bigEnough(b, SPECIALS.police.w, SPECIALS.police.h)) || null;
+    const storeBlock = pool.find((b) => b !== policeBlock && bigEnough(b, SPECIALS.store.w, SPECIALS.store.h)) || null;
+
     // --- Edificios por manzana ---
     for (const [bx0, bx1] of X_BLOCKS) {
       for (const [by0, by1] of Y_BLOCKS) {
         const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
-        if (bw < 8 || bh < 7) continue;
-        const attempts = Math.max(1, Math.floor((bw * bh) / 170));
         const placed = [];
+
+        // manzana dedicada a una estructura especial → edificiio único + salir
+        const isPolice = policeBlock && policeBlock.bx0 === bx0 && policeBlock.by0 === by0;
+        const isStore = storeBlock && storeBlock.bx0 === bx0 && storeBlock.by0 === by0;
+        if (isPolice || isStore) {
+          const sp = isPolice ? SPECIALS.police : SPECIALS.store;
+          const w = Math.min(sp.w, bw - 2), h = Math.min(sp.h, bh - 2);
+          const x0 = bx0 + 1 + rng.int(0, Math.max(0, bw - 2 - w));
+          const y0 = by0 + 1 + rng.int(0, Math.max(0, bh - 2 - h));
+          placed.push({ x0, y0, x1: x0 + w - 1, y0: y0 + h - 1 });
+          if (isPolice) this._placePoliceStation(x0, y0, x0 + w - 1, y0 + h - 1);
+          else this._placeStore(x0, y0, x0 + w - 1, y0 + h - 1);
+          continue;
+        }
+
+        if (bw < 8 || bh < 7) continue;
+        const attempts = Math.max(1, Math.floor((bw * bh) / 100));
         for (let i = 0; i < attempts; i++) {
-          const w = Math.min(rng.int(9, 14), bw - 2);
-          const h = Math.min(rng.int(8, 12), bh - 2);
+          const w = Math.min(rng.int(8, 12), bw - 2);
+          const h = Math.min(rng.int(7, 10), bh - 2);
           if (w < 7 || h < 6) continue;
           const x0 = rng.int(bx0 + 1, bx1 - 1 - w + 1);
           const y0 = rng.int(by0 + 1, by1 - 1 - h + 1);
@@ -473,7 +503,7 @@ export class GameMap {
     }
 
     // --- Spawn del jugador: cruce central ---
-    let sx = 48, sy = 44;
+    let sx = Math.floor(MAP_W / 2), sy = Math.floor(MAP_H / 2);
     if (this.tileAtIdx(sx, sy) === T.CAR) {
       outer: for (let r = 1; r < 6; r++) {
         for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
@@ -484,7 +514,7 @@ export class GameMap {
     this.spawn = { x: sx * TILE + TILE / 2, y: sy * TILE + TILE / 2 };
 
     // --- Árboles ---
-    const treeTries = 150;
+    const treeTries = 210;
     for (let i = 0; i < treeTries; i++) {
       const tx = rng.int(1, MAP_W - 2), ty = rng.int(1, MAP_H - 2);
       if (this.tileAtIdx(tx, ty) !== T.GRASS) continue;
@@ -509,7 +539,7 @@ export class GameMap {
     // --- Coches abandonados en la calle ---
     const carColors = ['#7a3030', '#3a4a5a', '#6a6a3a', '#54423a', '#42548a'];
     let carTries = 0;
-    while (this.cars.length < 7 && carTries < 300) {
+    while (this.cars.length < 10 && carTries < 400) {
       carTries++;
       const tx = rng.int(2, MAP_W - 4), ty = rng.int(2, MAP_H - 3);
       if (this.tileAtIdx(tx, ty) !== T.ROAD || this.tileAtIdx(tx + 1, ty) !== T.ROAD) continue;
@@ -628,7 +658,7 @@ export class GameMap {
       return false;
     };
     let tries = 0;
-    while (this.manholes.length < 26 && tries < 500) {
+    while (this.manholes.length < 34 && tries < 600) {
       tries++;
       let x, y;
       if (this.rng.chance(0.5)) {
@@ -749,6 +779,131 @@ export class GameMap {
       roof: this._buildRoofCanvas(x0, y0, x1, y1, !!upper),
       roofW: (x1 - x0 + 1) * TILE,
       roofH: (y1 - y0 + 1) * TILE,
+    });
+  }
+
+  /**
+   * COMISARÍA (estructura única). Edificio institucional grande: ventanas
+   * densas cada 2 tiles, doble puerta principal al sur + puerta de servicio
+   * al norte, sala de armería vallada en el tercio derecho (armerías W con
+   * el mejor botín de armas del mapa), casilleros en el vestíbulo y botiquines.
+   * Tejado PLANO azul con placa-estrella y bandas de peligro (inconfundible).
+   * Peligro: densidad zombi extra dentro y alrededor (ver zombie.js).
+   */
+  _placePoliceStation(x0, y0, x1, y1) {
+    const rng = this.rng;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+
+    // perímetro + interior
+    for (let x = x0; x <= x1; x++) { this.setTile(x, y0, T.WALL); this.setTile(x, y1, T.WALL); }
+    for (let y = y0; y <= y1; y++) { this.setTile(x0, y, T.WALL); this.setTile(x1, y, T.WALL); }
+    for (let y = y0 + 1; y < y1; y++)
+      for (let x = x0 + 1; x < x1; x++) this.setTile(x, y, T.FLOOR);
+
+    // ventanas densas (cada 2, sin esquinas): fachada institucional
+    for (let x = x0 + 2; x <= x1 - 2; x += 2) {
+      this.setTile(x, y0, T.WINDOW);
+      if (x <= x1 - 2) this.setTile(x, y1, T.WINDOW);
+    }
+    for (let y = y0 + 2; y <= y1 - 2; y += 2) {
+      this.setTile(x0, y, T.WINDOW);
+      this.setTile(x1, y, T.WINDOW);
+    }
+
+    // doble puerta principal (frente sur) + puerta de servicio (norte)
+    const dx = x0 + Math.floor(w / 2) - 1;
+    for (const d of [dx, dx + 1]) {
+      this.setTile(d, y1, T.DOOR_CLOSED);
+      this.doors.push({ tx: d, ty: y1 });
+    }
+    const sx = x0 + 2 + rng.int(0, Math.max(0, w - 6));
+    this.setTile(sx, y0, T.DOOR_CLOSED);
+    this.doors.push({ tx: sx, ty: y0 });
+
+    // ---- sala de armería vallada (tercio derecho) ----
+    const awx = x1 - 4;                 // muro vertical de la sala
+    const agy = y0 + 2;                 // hueco de acceso (2 tiles)
+    for (let y = y0 + 1; y < y1; y++) {
+      if (y !== agy && y !== agy + 1) this.setTile(awx, y, T.WALL);
+    }
+    // armerías al fondo de la sala + casillero de apoyo
+    this._addContainer('armeria', x1 - 2, y1 - 2, 0);
+    this._addContainer('armeria', x1 - 2, y1 - 4, 0);
+    this._addContainer('armeria', x1 - 2, y1 - 6, 0);
+    this._addContainer('casillero', x1 - 3, y1 - 2, 0);
+
+    // ---- vestíbulo: casilleros contra la fachada norte + botiquines ----
+    this._addContainer('casillero', x0 + 3, y0 + 1, 0);
+    this._addContainer('casillero', x0 + 6, y0 + 1, 0);
+    this._addContainer('casillero', x0 + 9, y0 + 1, 0);
+    this._addContainer('botiquin_pared', x0 + 1, y0 + 4, 0);
+    this._addContainer('botiquin_pared', x0 + 1, y0 + 8, 0);
+    // mesa de recepción: dos casilleros a mitad del vestíbulo
+    this._addContainer('casillero', x0 + Math.floor(w / 2) - 1, y0 + Math.floor(h / 2), 0);
+    this._addContainer('casillero', x0 + Math.floor(w / 2), y0 + Math.floor(h / 2), 0);
+
+    this.buildings.push({
+      x0, y0, x1, y1,
+      cx: (x0 + x1) / 2 * TILE + TILE / 2,
+      cy: (y0 + y1) / 2 * TILE + TILE / 2,
+      kind: 'police',
+      upper: null, basement: null, stairs: null,
+      roof: this._buildPoliceRoofCanvas(x0, y0, x1, y1),
+      roofW: w * TILE, roofH: h * TILE,
+    });
+  }
+
+  /**
+   * TIENDA (estructura única). Local comercial: escaparate sur con ventanas
+   * cada 2 tiles, doble puerta, neveras en la pared norte y PASILLOS de
+   * estanterías (E) repletas de comida. Tejado PLANO de grava con franjas
+   * rojas de marquesina + diana comercial + lucernarios (inconfundible).
+   * Peligro: presión zombi media (ver zombie.js).
+   */
+  _placeStore(x0, y0, x1, y1) {
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+
+    // perímetro + interior
+    for (let x = x0; x <= x1; x++) { this.setTile(x, y0, T.WALL); this.setTile(x, y1, T.WALL); }
+    for (let y = y0; y <= y1; y++) { this.setTile(x0, y, T.WALL); this.setTile(x1, y, T.WALL); }
+    for (let y = y0 + 1; y < y1; y++)
+      for (let x = x0 + 1; x < x1; x++) this.setTile(x, y, T.FLOOR);
+
+    // escaparate sur (cada 2) + ventanas laterales más espaciadas (cada 3)
+    for (let x = x0 + 2; x <= x1 - 2; x += 2) this.setTile(x, y1, T.WINDOW);
+    for (let y = y0 + 2; y <= y1 - 2; y += 3) {
+      this.setTile(x0, y, T.WINDOW);
+      this.setTile(x1, y, T.WINDOW);
+    }
+
+    // doble puerta centrada en el escaparate
+    const dx = x0 + Math.floor(w / 2) - 1;
+    for (const d of [dx, dx + 1]) {
+      this.setTile(d, y1, T.DOOR_CLOSED);
+      this.doors.push({ tx: d, ty: y1 });
+    }
+
+    // neveras en la pared del fondo (norte)
+    this._addContainer('nevera', x0 + 2, y0 + 1, 0);
+    this._addContainer('nevera', x0 + 4, y0 + 1, 0);
+
+    // pasillos de estanterías: 2 filas con hueco de paso cada 3 tiles
+    for (const ry of [y0 + 3, y0 + 6]) {
+      if (ry >= y1 - 1) continue;
+      for (let x = x0 + 2, k = 0; x <= x1 - 2; x++, k++) {
+        if (k % 3 === 2) continue;                 // hueco para cruzar el pasillo
+        this._addContainer('estanteria', x, ry, 0);
+      }
+    }
+
+    this.buildings.push({
+      x0, y0, x1, y1,
+      cx: (x0 + x1) / 2 * TILE + TILE / 2,
+      cy: (y0 + y1) / 2 * TILE + TILE / 2,
+      kind: 'store',
+      upper: null, basement: null, stairs: null,
+      roof: this._buildStoreRoofCanvas(x0, y0, x1, y1),
+      roofW: w * TILE, roofH: h * TILE,
     });
   }
 
@@ -1042,6 +1197,190 @@ export class GameMap {
     return rc;
   }
 
+  /**
+   * Tejado PLANO de la COMISARÍA: losas azuladas con juntas, pretil perimetral,
+   * bandas de peligro azul/blanco en el frente, placa circular con ESTRELLA de
+   * plata (el distintivo), climatizadoras y mástil de antena. 100%
+   * determinista (sin rng) → firma de píxel estable para tests.
+   */
+  _buildPoliceRoofCanvas(x0, y0, x1, y1) {
+    const w = (x1 - x0 + 1) * TILE, h = (y1 - y0 + 1) * TILE;
+    const rc = document.createElement('canvas');
+    rc.width = w; rc.height = h;
+    const c = rc.getContext('2d');
+
+    // base: losa de hormigón azulado
+    c.fillStyle = '#46536b';
+    c.fillRect(0, 0, w, h);
+    // juntas de losa (rejilla 48px con desplazamiento)
+    c.fillStyle = 'rgba(0,0,0,0.22)';
+    for (let x = 0; x < w; x += 48) c.fillRect(x, 0, 2, h);
+    for (let y = 0; y < h; y += 48) c.fillRect(0, y, w, 2);
+    // desgaste sutil
+    c.fillStyle = 'rgba(255,255,255,0.03)';
+    for (let i = 0; i < w * h / 2600; i++) {
+      c.fillRect((i * 137) % w, (i * 89) % h, 3, 2);
+    }
+
+    // pretil perimetral (borde elevado)
+    c.fillStyle = '#525f79';
+    c.fillRect(0, 0, w, 5); c.fillRect(0, h - 5, w, 5);
+    c.fillRect(0, 0, 5, h); c.fillRect(w - 5, 0, 5, h);
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.fillRect(0, h - 8, w, 3); c.fillRect(w - 8, 0, 3, h);
+
+    // bandas de peligro azul/blanco en el frente (sur): chevrones diagonales
+    const bandH = Math.min(42, Math.floor(h * 0.16));
+    for (let x = -bandH; x < w + bandH; x += 24) {
+      c.fillStyle = '#2e5a8a';
+      c.beginPath();
+      c.moveTo(x, h); c.lineTo(x + 12, h); c.lineTo(x + 12 + bandH, h - bandH);
+      c.lineTo(x + bandH, h - bandH); c.closePath(); c.fill();
+      c.fillStyle = '#c8ccd2';
+      c.beginPath();
+      c.moveTo(x + 12, h); c.lineTo(x + 24, h); c.lineTo(x + 24 + bandH, h - bandH);
+      c.lineTo(x + 12 + bandH, h - bandH); c.closePath(); c.fill();
+    }
+
+    // placa central: disco oscuro + estrella de plata de 5 puntas
+    const px = w / 2, py = h / 2 - bandH / 2;
+    const R = Math.min(w, h) * 0.21;
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.beginPath(); c.arc(px + 4, py + 4, R, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#26303e';
+    c.beginPath(); c.arc(px, py, R, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#c8ccd2';
+    c.lineWidth = 3;
+    c.beginPath(); c.arc(px, py, R, 0, Math.PI * 2); c.stroke();
+    c.strokeStyle = '#2e5a8a';
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(px, py, R - 6, 0, Math.PI * 2); c.stroke();
+    // estrella de 5 puntas
+    c.fillStyle = '#c9ccd4';
+    c.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? R * 0.62 : R * 0.27;
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const vx = px + Math.cos(a) * r, vy = py + Math.sin(a) * r;
+      if (i === 0) c.moveTo(vx, vy); else c.lineTo(vx, vy);
+    }
+    c.closePath(); c.fill();
+
+    // climatizadoras (2 cajas con rejilla)
+    for (const [ax, ay] of [[w * 0.16, h * 0.2], [w * 0.84, h * 0.3]]) {
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      c.fillRect(ax - 13, ay - 9, 30, 26);
+      c.fillStyle = '#6a7488';
+      c.fillRect(ax - 15, ay - 11, 30, 26);
+      c.fillStyle = '#525c70';
+      c.fillRect(ax - 12, ay - 8, 24, 20);
+      c.fillStyle = 'rgba(0,0,0,0.4)';
+      for (let i = 0; i < 4; i++) c.fillRect(ax - 12, ay - 6 + i * 5, 24, 2);
+    }
+
+    // mástil de antena con luz roja
+    const mx = w * 0.9, my = h * 0.14;
+    c.strokeStyle = '#7a8496';
+    c.lineWidth = 3;
+    c.beginPath(); c.moveTo(mx, my); c.lineTo(mx, my + 26); c.stroke();
+    c.beginPath(); c.moveTo(mx - 7, my + 26); c.lineTo(mx + 7, my + 26); c.stroke();
+    c.fillStyle = '#c0392b';
+    c.beginPath(); c.arc(mx, my, 4, 0, Math.PI * 2); c.fill();
+
+    // contorno
+    c.strokeStyle = 'rgba(8,10,8,0.85)';
+    c.lineWidth = 2;
+    c.strokeRect(1, 1, w - 2, h - 2);
+    return rc;
+  }
+
+  /**
+   * Tejado PLANO de la TIENDA: grava oscura, franjas de MARQUESINA rojo/blanco
+   * en el frente, DIANA comercial (anillos concéntricos) como rótulo, una fila
+   * de LUCERNARIOS de cristal y dos extractores. 100% determinista (sin rng).
+   */
+  _buildStoreRoofCanvas(x0, y0, x1, y1) {
+    const w = (x1 - x0 + 1) * TILE, h = (y1 - y0 + 1) * TILE;
+    const rc = document.createElement('canvas');
+    rc.width = w; rc.height = h;
+    const c = rc.getContext('2d');
+
+    // base: grava bituminosa
+    c.fillStyle = '#3a3a40';
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = 'rgba(255,255,255,0.04)';
+    for (let i = 0; i < w * h / 2200; i++) {
+      c.fillRect((i * 131) % w, (i * 73) % h, 2, 2);
+    }
+    // parches de humedad
+    c.fillStyle = 'rgba(0,0,0,0.18)';
+    c.fillRect(w * 0.55, h * 0.12, w * 0.2, h * 0.1);
+    c.fillRect(w * 0.1, h * 0.62, w * 0.14, h * 0.09);
+
+    // remate perimetral
+    c.fillStyle = '#4a4a52';
+    c.fillRect(0, 0, w, 4); c.fillRect(0, h - 4, w, 4);
+    c.fillRect(0, 0, 4, h); c.fillRect(w - 4, 0, 4, h);
+
+    // marquesina: franjas verticales rojo/blanco en el frente (sur)
+    const bandH = Math.min(38, Math.floor(h * 0.15));
+    for (let x = 0; x < w; x += 20) {
+      c.fillStyle = '#a83a32';
+      c.fillRect(x, h - bandH, 10, bandH);
+      c.fillStyle = '#d8d0c0';
+      c.fillRect(x + 10, h - bandH, 10, bandH);
+    }
+    c.fillStyle = 'rgba(0,0,0,0.3)';
+    c.fillRect(0, h - bandH - 3, w, 3);   // sombra del canalón
+
+    // diana comercial (rótulo): anillos concéntricos
+    const px = w / 2, py = h / 2 - bandH / 2;
+    const R = Math.min(w, h) * 0.19;
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.beginPath(); c.arc(px + 4, py + 4, R, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#a83a32';
+    c.beginPath(); c.arc(px, py, R, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#d8d0c0';
+    c.beginPath(); c.arc(px, py, R * 0.66, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#a83a32';
+    c.beginPath(); c.arc(px, py, R * 0.33, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.4)';
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(px, py, R, 0, Math.PI * 2); c.stroke();
+
+    // fila de lucernarios (3 cristales con marco y reflejo)
+    const skyY = h * 0.18, skyW = w * 0.16, skyH = h * 0.2;
+    for (let i = 0; i < 3; i++) {
+      const sxx = w * 0.12 + i * (skyW + w * 0.06);
+      c.fillStyle = '#2b2f36';
+      c.fillRect(sxx - 3, skyY - 3, skyW + 6, skyH + 6);
+      c.fillStyle = '#5d6d72';
+      c.fillRect(sxx, skyY, skyW, skyH);
+      c.fillStyle = 'rgba(160,190,200,0.30)';
+      c.fillRect(sxx + 3, skyY + 3, skyW * 0.35, skyH * 0.3);
+      c.fillStyle = 'rgba(0,0,0,0.25)';
+      c.fillRect(sxx, skyY + skyH * 0.55, skyW, 2);
+    }
+
+    // extractores (2 cilindros bajos)
+    for (const [ex, ey] of [[w * 0.85, h * 0.72], [w * 0.3, h * 0.82]]) {
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      c.beginPath(); c.arc(ex + 3, ey + 3, 11, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#5a5a64';
+      c.beginPath(); c.arc(ex, ey, 11, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#44444e';
+      c.beginPath(); c.arc(ex, ey, 7, 0, Math.PI * 2); c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.12)';
+      c.beginPath(); c.arc(ex - 3, ey - 3, 4, 0, Math.PI * 2); c.fill();
+    }
+
+    // contorno
+    c.strokeStyle = 'rgba(8,10,8,0.85)';
+    c.lineWidth = 2;
+    c.strokeRect(1, 1, w - 2, h - 2);
+    return rc;
+  }
+
   _addContainer(type, tx, ty, z = 0) {
     const defs = {
       nevera: { name: 'Nevera', color: '#aeb6ba', letter: 'N' },
@@ -1049,6 +1388,8 @@ export class GameMap {
       armario: { name: 'Armario', color: '#6a4a2c', letter: 'R' },
       casillero: { name: 'Casillero', color: '#4a6a6a', letter: 'C' },
       botiquin_pared: { name: 'Botiquín', color: '#d94a4a', letter: '+' },
+      armeria: { name: 'Armería', color: '#3a4a6a', letter: 'W' },
+      estanteria: { name: 'Estantería', color: '#a84a3a', letter: 'E' },
     };
     const d = defs[type];
     const c = {
@@ -1111,6 +1452,34 @@ export class GameMap {
     const idx = this.rng.index(this.indoorTiles.length);
     const tx = idx % MAP_W, ty = Math.floor(idx / MAP_W);
     return { x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 };
+  }
+
+  /** Tile FLOOR aleatorio DENTRO de un edificio concreto (px). */
+  randomIndoorIn(b) {
+    for (let i = 0; i < 60; i++) {
+      const tx = this.rng.int(b.x0 + 1, b.x1 - 1);
+      const ty = this.rng.int(b.y0 + 1, b.y1 - 1);
+      if (this.tileAtIdx(tx, ty) === T.FLOOR) {
+        return { x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 };
+      }
+    }
+    return null;
+  }
+
+  /** Tile exterior caminable aleatorio en un anillo [rMin,rMax] alrededor de un punto (px). */
+  randomOutdoorNear(px, py, rMin, rMax) {
+    for (let i = 0; i < 80; i++) {
+      const a = this.rng.range(0, Math.PI * 2);
+      const r = this.rng.range(rMin, rMax);
+      const x = px + Math.cos(a) * r, y = py + Math.sin(a) * r;
+      const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+      if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) continue;
+      const t = this.tiles[this.idx(tx, ty)];
+      if (t === T.ROAD || t === T.SIDEWALK || t === T.GRASS) {
+        return { x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 };
+      }
+    }
+    return null;
   }
 
   // ================== Render ==================
@@ -1187,11 +1556,29 @@ export class GameMap {
             break;
           }
           case T.FLOOR: {
-            ctx.fillStyle = h < 0.5 ? '#6e5c44' : '#6a5840';
-            ctx.fillRect(sx, sy, TILE, TILE);
-            ctx.fillStyle = 'rgba(0,0,0,0.14)';
-            ctx.fillRect(sx, sy + TILE - 3, TILE, 2);
-            if (h > 0.6) ctx.fillRect(sx + Math.floor(h * 24), sy, 2, TILE);
+            // tinte de suelo por tipo de edificio: comisaría = linóleo
+            // azul-gris, tienda = baldosa ajedrez comercial, casa = madera
+            const bi = this._bIdx[this.idx(tx, ty)];
+            const bk = bi >= 0 ? this.buildings[bi].kind : null;
+            if (bk === 'police') {
+              ctx.fillStyle = h < 0.5 ? '#59626e' : '#555e68';
+              ctx.fillRect(sx, sy, TILE, TILE);
+              ctx.fillStyle = 'rgba(0,0,0,0.18)';
+              if (tx % 3 === 0) ctx.fillRect(sx, sy, 2, TILE);
+              if (ty % 3 === 0) ctx.fillRect(sx, sy, TILE, 2);
+            } else if (bk === 'store') {
+              ctx.fillStyle = (tx + ty) % 2 ? '#7c766a' : '#8a857a';
+              ctx.fillRect(sx, sy, TILE, TILE);
+              ctx.fillStyle = 'rgba(0,0,0,0.12)';
+              ctx.fillRect(sx, sy + TILE - 2, TILE, 2);
+              ctx.fillRect(sx + TILE - 2, sy, 2, TILE);
+            } else {
+              ctx.fillStyle = h < 0.5 ? '#6e5c44' : '#6a5840';
+              ctx.fillRect(sx, sy, TILE, TILE);
+              ctx.fillStyle = 'rgba(0,0,0,0.14)';
+              ctx.fillRect(sx, sy + TILE - 3, TILE, 2);
+              if (h > 0.6) ctx.fillRect(sx + Math.floor(h * 24), sy, 2, TILE);
+            }
             break;
           }
           case T.WALL:

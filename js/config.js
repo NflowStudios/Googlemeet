@@ -9,8 +9,8 @@ export const TILE = 32;
 // una franja centrada en el tile (WALL_T de alto/ancho) que corre a lo largo
 // de la línea de muro; el resto del tile es suelo transitable (exterior/interior).
 export const WALL_T = 10;
-export const MAP_W = 100;   // tiles
-export const MAP_H = 80;
+export const MAP_W = 130;   // tiles (v0.10: mapa ampliado, antes 100×80)
+export const MAP_H = 104;
 export const WORLD_W = MAP_W * TILE;
 export const WORLD_H = MAP_H * TILE;
 
@@ -53,6 +53,16 @@ export const ROOF = {
   near: 56,            // a esta distancia (o menos) el techo queda en su alpha mínimo
   far: 250,            // a partir de aquí es totalmente opaco
   minAlpha: 0.14,      // alpha residual pegado al edificio (fantasma sutil)
+};
+
+// ---------- Estructuras especiales (ÚNICAS por mapa) ----------
+// Comisaría y tienda: una sola de cada tipo en todo el mapa, mucho más
+// grandes que una casa y con tejado plano institucional inconfundible.
+//  inside/around: zombis extra DENTRO / ALREDEDOR (la comisaría es el punto
+//  más peligroso del mapa; la tienda tiene presión media).
+export const SPECIALS = {
+  police: { w: 17, h: 13, inside: 6, around: 4 },   // armería + casilleros
+  store:  { w: 14, h: 10, inside: 3, around: 2 },   // pasillos de estanterías
 };
 
 // ---------- Plantas: 2º piso y sótanos ----------
@@ -109,7 +119,7 @@ export const SURV = {
 
 // ---------- Zombis ----------
 export const ZOMBIE_CFG = {
-  count: 44,
+  count: 74,            // v0.10: mapa ~69% más grande → densidad similar (antes 44)
   hp: 100,
   radius: 10,
   wanderSpeed: 30,
@@ -246,6 +256,10 @@ export const CONTAINER_DEFS = {
   armario: { name: 'Armario', color: '#6a4a2c', letter: 'R', slots: 5 },
   casillero: { name: 'Casillero', color: '#4a6a6a', letter: 'C', slots: 6 },
   botiquin_pared: { name: 'Botiquín de pared', color: '#d94a4a', letter: '+', slots: 4 },
+  // solo dentro de la comisaría (estructura única)
+  armeria: { name: 'Armería', color: '#3a4a6a', letter: 'W', slots: 6 },
+  // solo dentro de la tienda (estructura única)
+  estanteria: { name: 'Estantería', color: '#a84a3a', letter: 'E', slots: 6 },
 };
 
 // Tablas de botín ponderadas [idItem, peso]
@@ -257,10 +271,23 @@ export const LOOT = {
   armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3]],
   casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['escopeta_guardian', 2.2], ['rifle_condor', 1.4], ['cargador_9mm', 5], ['cargador_556', 2.6], ['bala_9mm', 11], ['cartucho_12', 8], ['bala_556', 7], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6]],
   botiquin_pared: [['venda', 30], ['botiquin', 12], ['antibioticos', 9], ['agua', 6]],
+  // ARMERÍA (comisaría): el botín de armas más goloso del mapa
+  armeria: [
+    ['pistola_vibora', 15], ['escopeta_guardian', 10], ['rifle_condor', 7],
+    ['cargador_9mm', 13], ['cargador_556', 8],
+    ['bala_9mm', 22], ['cartucho_12', 16], ['bala_556', 15],
+    ['chaleco', 7], ['casco_tactico', 6], ['funda_tactica', 4],
+    ['botiquin', 5], ['antibioticos', 3],
+  ],
+  // ESTANTERÍA (tienda): comida y bebida a porrillo
+  estanteria: [
+    ['lata_frijoles', 30], ['lata_atun', 26], ['agua', 22], ['refresco', 18],
+    ['papas', 15], ['chocolate', 13], ['manzana', 11], ['venda', 3],
+  ],
 };
 
 // Probabilidad de que la comida generada esté podrida, por contenedor
-export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0 };
+export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0, armeria: 0, estanteria: 0.12 };
 
 // ---------- Aparición de armas encontradas ----------
 // Un arma hallada SIEMPRE trae algo dentro (cargador con balas o tubo cargado):

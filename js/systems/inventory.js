@@ -72,7 +72,7 @@ function _setupLootItem(item, rng) {
 /** Rellena un contenedor con botín de su tabla. */
 export function fillContainer(container, rng) {
   const table = LOOT[container.type] || [];
-  const counts = { nevera: [2, 4], alacena: [2, 3], armario: [1, 3], casillero: [2, 4], botiquin_pared: [1, 2] };
+  const counts = { nevera: [2, 4], alacena: [2, 3], armario: [1, 3], casillero: [2, 4], botiquin_pared: [1, 2], armeria: [2, 4], estanteria: [2, 3] };
   const [lo, hi] = counts[container.type] || [1, 2];
   const n = rng.int(lo, hi);
   const totalW = table.reduce((s, e) => s + e[1], 0);

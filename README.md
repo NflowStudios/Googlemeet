@@ -1,6 +1,6 @@
 # ZONA CERO — Prototipo de supervivencia zombi 2D
 
-> **Sobrevive. Cada ruido cuenta.** · v0.9
+> **Sobrevive. Cada ruido cuenta.** · v0.10
 
 Videojuego de supervivencia zombi con **vista cenital (top-down)** inspirado en la tensión de *Project Zomboid* y *DayZ*. Programado en **JavaScript vanilla + Canvas 2D** con arquitectura modular por módulos ES, **sin dependencias ni pasos de compilación**: se juega directamente en el navegador.
 
@@ -71,6 +71,7 @@ js/
 
 ## Historial de versiones
 
+- **v0.10** — **Mapa ampliado + comisaría y tienda**: el mundo crece a 130×104 tiles (~69% más superficie) con 5×4 manzanas y 4 calles en cada eje. Dos estructuras ÚNICAS por partida, cada una con su tejado plano inconfundible: la **COMISARÍA** (losa azul con placa-estrella, bandas de peligro y antena) guarda la mejor armería del mapa — armerías W con pistolas, escopetas, rifles, munición y equipo táctico — pero concentra el mayor peligro zombi (10 extra dentro/alrededor); la **TIENDA** (grava con marquesina roja, diana comercial y lucernarios) tiene pasillos de estanterías rebosantes de comida y bebida con presión zombi media (5 extra). Suelos propios: linóleo azul en la comisaría, baldosa ajedrez en la tienda. Doble puerta principal en ambas.
 - **v0.9** — **Casas con 2º piso o sótano**: plantas extra con escalera interior y mecánica visual gemela a la de los techos — en planta baja la otra planta es invisible, mientras subes/bajas se revela con un fundido y al llegar es opaca. Contenedores y reparto interior propios por planta; despacho de colisión/visión/combate por planta (los zombis no cruzan techos); filtros de interacción por planta.
 - **v0.8** — **Techos y barra rápida**: los edificios tienen techo que bloquea la visión del interior (se atenúa al acercarse y deja ver por las ventanas, desaparece al entrar y vuelve al salir). Oscuridad fuera del cono de visión al **85%** (antes 99%). **FIX sangre**: los decals estaban mal anclados a la pantalla — la mancha roja que "seguía" al jugador desaparece; ahora la sangre queda donde cayó. **Barra rápida de 3 ranuras** (arma de fuego / melee / objeto) asignable desde el inventario con las teclas 1·2·3.
 - **v0.7** — **Armas a distancia**: Víbora VP-9 (pistola 9mm), Guardián 12 (escopeta de corredera) y Cóndor AR-56 (rifle de asalto automático), con munición apilable, cargadores con estado propio y auto-relleno al recoger balas. Recarga con `R`. Segunda ranura de accesorio + fundas de pistola (3 variantes) que aceleran desenfunde y recarga. Trazadoras, fogonazos, impactos en pared y disparos que atraen a los zombis desde cientos de metros.

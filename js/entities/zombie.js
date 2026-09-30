@@ -5,7 +5,7 @@
  * agachado casi no los alerta) y "huelen/ven" al jugador con línea de visión.
  */
 
-import { ZOMBIE_CFG as Z } from '../config.js';
+import { ZOMBIE_CFG as Z, TILE, SPECIALS } from '../config.js';
 import { dist, angDiff } from '../utils.js';
 
 const ST = { IDLE: 'idle', WANDER: 'wander', INVESTIGATE: 'investigate', SEARCH: 'search', CHASE: 'chase' };
@@ -301,6 +301,25 @@ export function spawnZombies(map, rng, count, spawnPoint) {
     if (!pos) continue;
     if (map.circleHitsSolid(pos.x, pos.y, 12)) continue;
     zombies.push(new Zombie(pos.x, pos.y, rng));
+  }
+
+  // --- Densidad extra por estructura especial (v0.10) ---
+  // La COMISARÍA concentra el mayor peligro del mapa (los agentes cayeron
+  // dentro) y la TIENDA tiene presión media: zombis dentro + alrededor.
+  // Cantidades FIJAS (SPECIALS.inside/around) → total determinista.
+  for (const b of map.buildings) {
+    if (b.kind !== 'police' && b.kind !== 'store') continue;
+    const sp = SPECIALS[b.kind];
+    for (let i = 0; i < sp.inside; i++) {
+      const pos = map.randomIndoorIn(b);
+      if (!pos) break;
+      zombies.push(new Zombie(pos.x, pos.y, rng));
+    }
+    for (let i = 0; i < sp.around; i++) {
+      const pos = map.randomOutdoorNear(b.cx, b.cy, TILE * 3.5, TILE * 11);
+      if (!pos) break;
+      zombies.push(new Zombie(pos.x, pos.y, rng));
+    }
   }
   return zombies;
 }
