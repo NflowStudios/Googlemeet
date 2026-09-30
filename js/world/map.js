@@ -52,6 +52,9 @@ export class GameMap {
     this.outdoorTiles = []; // índices de tiles exteriores caminables
     this.indoorTiles = [];  // índices de tiles de interior
     this.spawn = { x: 0, y: 0 };
+    // v0.13: registro de decals (sangre/cadáveres) para REPRODUCIRLOS al
+    // cargar una partida guardada (el canvas de decals no es serializable).
+    this.decalOps = [];     // {t:'corpse'|'blood', x, y, a?, b?}
 
     // Canvas de decals (sangre/cadáveres) a media resolución de mundo
     this.decalCanvas = document.createElement('canvas');
@@ -384,7 +387,14 @@ export class GameMap {
 
   // ================== Decals persistentes ==================
 
+  /** v0.13: apunta la operación para poder REPETIRLA al cargar partida. */
+  _trackDecal(op) {
+    this.decalOps.push(op);
+    if (this.decalOps.length > 500) this.decalOps.shift();   // tope de memoria
+  }
+
   stampBlood(x, y, big = false) {
+    this._trackDecal({ t: 'blood', x, y, b: big ? 1 : 0 });
     const c = this.dctx;
     c.fillStyle = 'rgba(96, 14, 14, 0.72)';
     const n = big ? 5 : 3;
@@ -399,6 +409,7 @@ export class GameMap {
   }
 
   stampCorpse(x, y, ang) {
+    this._trackDecal({ t: 'corpse', x, y, a: +ang.toFixed(3) });
     const c = this.dctx;
     const px = x / 2, py = y / 2;
     // charco
@@ -502,21 +513,46 @@ export class GameMap {
       }
     }
 
-    // --- Spawn del jugador: cruce central ---
+    // --- Spawn del jugador (v0.13): calle ABIERTA cerca del centro ---
+    // Antes se usaba el tile central tal cual (solo se esquivaba un coche) y
+    // como la manzana central SÍ puede tener casas normales, a veces
+    // aparecías DENTRO de una casa (o tras un muro) rodeado de zombis.
+    // Ahora: espiral desde el centro buscando un tile de CALLE cuyo
+    // vecindario 3×3 esté libre de muros/ventanas/puertas/interior — el
+    // centro de una calle abierta, nunca dentro de un edificio.
     let sx = Math.floor(MAP_W / 2), sy = Math.floor(MAP_H / 2);
-    if (this.tileAtIdx(sx, sy) === T.CAR) {
-      outer: for (let r = 1; r < 6; r++) {
-        for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-          if (this.tileAtIdx(sx + dx, sy + dy) === T.ROAD) { sx += dx; sy += dy; break outer; }
-        }
+    const structNear = (tx, ty) => {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const t = this.tileAtIdx(tx + dx, ty + dy);
+        if (t === T.WALL || t === T.WINDOW || t === T.DOOR_CLOSED ||
+            t === T.DOOR_OPEN || t === T.FLOOR) return true;
+      }
+      return false;
+    };
+    outer: for (let r = 0; r < 44; r++) {
+      const ring = [];        // tiles elegibles del primer anillo con candidatos
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;   // solo el anillo r
+        const tx = sx + dx, ty = sy + dy;
+        if (this.tileAtIdx(tx, ty) === T.ROAD && !structNear(tx, ty)) ring.push({ tx, ty });
+      }
+      if (ring.length) {
+        // cualquiera del anillo es igual de seguro: variedad entre partidas
+        const pick = ring[rng.index(ring.length)];
+        sx = pick.tx; sy = pick.ty;
+        break outer;
       }
     }
     this.spawn = { x: sx * TILE + TILE / 2, y: sy * TILE + TILE / 2 };
+    this.spawnTile = { tx: sx, ty: sy };   // para el guardián de árboles
 
     // --- Árboles ---
     const treeTries = 210;
+    // v0.13: sin árboles pegados al punto de aparición (chebyshev ≤ 2)
+    const sTx = this.spawnTile.tx, sTy = this.spawnTile.ty;
     for (let i = 0; i < treeTries; i++) {
       const tx = rng.int(1, MAP_W - 2), ty = rng.int(1, MAP_H - 2);
+      if (Math.max(Math.abs(tx - sTx), Math.abs(ty - sTy)) <= 2) continue;
       if (this.tileAtIdx(tx, ty) !== T.GRASS) continue;
       // lejos de puertas (no bloquear entradas)
       let nearDoor = false;

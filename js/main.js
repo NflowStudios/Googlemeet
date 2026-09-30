@@ -19,6 +19,7 @@ import { Survival } from './systems/survival.js';
 import { Inventory, makeItem, fillContainer, itemLabel, refillMagazines } from './systems/inventory.js';
 import { playerAttack, zombieHit, reloadRanged, finishReload } from './systems/combat.js';
 import { hotbarUse, hotbarValidate } from './systems/hotbar.js';
+import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, AUTOSAVE_SEC } from './systems/save.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
 import { HUD } from './ui/hud.js';
@@ -59,6 +60,8 @@ class Game {
     this.kills = 0;
     this.searchedCount = 0;
     this.deathCause = null;
+    this.seedUsed = 0;        // v0.13: semilla de la partida (para el guardado)
+    this._autosaveT = 0;      // v0.13: cronómetro del autoguardado (5 min)
 
     this.input.attach(canvas, (a) => this.onAction(a));
     this._resize();
@@ -106,6 +109,7 @@ class Game {
   startRun() {
     this.audio.init();
     const seed = (Math.random() * 2147483647) | 0;
+    this.seedUsed = seed;               // v0.13: para regenerar el mapa al cargar
     this.rng = new Rng(seed);
     this.map = new GameMap(this.rng);
     this.player = new Player(this.map.spawn.x, this.map.spawn.y);
@@ -136,6 +140,7 @@ class Game {
     this.kills = 0;
     this.searchedCount = 0;
     this.deathCause = null;
+    this._autosaveT = 0;
     this.cam.x = this.player.x - this.cam.w / 2;
     this.cam.y = this.player.y - this.cam.h / 2;
 
@@ -148,6 +153,72 @@ class Game {
     this.toasts.clear();
     this.state = STATE.PLAYING;
     this.toasts.push('Sobrevive. Hazte con un arma y busca suministros.', 'info');
+  }
+
+  // ================== Continuar partida guardada (v0.13) ==================
+
+  /** Carga el guardado y sigue donde se quedó. Si no hay (o está roto),
+   *  arranca partida nueva para no dejar al jugador colgado en el menú. */
+  continueRun() {
+    const data = loadSaveData();
+    if (!data) {
+      this.startRun();
+      return;
+    }
+    this.audio.init();
+    const info = restoreGame(this, data);
+    if (!info) {
+      // guardado corrupto: fuera del estado a medias → partida nueva
+      this.startRun();
+      return;
+    }
+
+    // efectos transitorios limpios + cámara sobre el jugador
+    this.tracers.length = 0;
+    this.flashes.length = 0;
+    this.impacts.length = 0;
+    this._dryToastT = 0;
+    this._autosaveT = 0;
+    this.noise = new NoiseSystem();
+    this.vision = new Vision();
+    this._resize();
+    this.cam.x = this.player.x - this.cam.w / 2;
+    this.cam.y = this.player.y - this.cam.h / 2;
+
+    this.menus.hideAll();
+    this.hud.show();
+    this.hud._hintTimer = 0;
+    document.getElementById('controls-hint').classList.add('fade');
+    this.invUI.closeUI();
+    this.input.enabled = true;
+    this.toasts.clear();
+    this.state = STATE.PLAYING;
+    this.toasts.push('Partida restaurada — ' + info.clock + ', DÍA ' + info.day +
+      '. El autoguardado te cubre cada 5 minutos.', 'info');
+  }
+
+  /** Pausa → guardar y volver al menú principal (v0.13). */
+  saveAndQuit() {
+    if (this.state !== STATE.PAUSED && this.state !== STATE.PLAYING) return;
+    const ok = saveGame(this);
+    if (!ok) {
+      // sin guardar no se abandona la partida: avisa y se queda en pausa
+      this.toasts.push('No se pudo guardar la partida (¿almacenamiento lleno?)', 'bad');
+      if (this.state === STATE.PLAYING) this.togglePause();
+      return;
+    }
+    this.toMenu();
+  }
+
+  /** Vuelve al menú principal (tras guardar). */
+  toMenu() {
+    this.state = STATE.MENU;
+    this.input.enabled = false;
+    this.uiOpen = false;
+    this.invUI.closeUI();
+    this.hud.hide();
+    this.menus.hideAll();
+    this.menus.showMenu();      // refresca el botón CONTINUAR PARTIDA
   }
 
   /** Auto-relleno de cargadores con la munición que llevas (toasts incluidos). */
@@ -401,7 +472,10 @@ class Game {
     this.hud.hide();
     this.map.stampCorpse(this.player.x, this.player.y, this.player.angle);
     this.map.stampBlood(this.player.x, this.player.y, true);
-    this.menus.showDeath(cause, { time: this.time, kills: this.kills, searched: this.searchedCount });
+    // v0.13: la muerte es DEFINITIVA — el guardado de esta partida se borra
+    const hadSave = hasSave();
+    clearSave();
+    this.menus.showDeath(cause, { time: this.time, kills: this.kills, searched: this.searchedCount }, hadSave);
   }
 
   // ================== Update ==================
@@ -430,6 +504,15 @@ class Game {
 
     this.survival.update(dt, this, this.player.moving, this.player.running);
     if (this.state !== STATE.PLAYING) return;
+
+    // v0.13: autoguardado cada 5 minutos DE PARTIDA (solo avanza jugando:
+    // el menú, la pausa y el inventario abierto no consumen el cronómetro)
+    this._autosaveT += dt;
+    if (this._autosaveT >= AUTOSAVE_SEC) {
+      this._autosaveT = 0;
+      if (saveGame(this)) this.toasts.push('Partida guardada (automático)', 'save');
+      else this.toasts.push('Autoguardado fallido: revisa el almacenamiento', 'bad');
+    }
 
     this.noise.update(dt);
 

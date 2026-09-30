@@ -1,6 +1,6 @@
 # ZONA CERO — Prototipo de supervivencia zombi 2D
 
-> **Sobrevive. Cada ruido cuenta.** · v0.12
+> **Sobrevive. Cada ruido cuenta.** · v0.13
 
 Videojuego de supervivencia zombi con **vista cenital (top-down)** inspirado en la tensión de *Project Zomboid* y *DayZ*. Programado en **JavaScript vanilla + Canvas 2D** con arquitectura modular por módulos ES, **sin dependencias ni pasos de compilación**: se juega directamente en el navegador.
 
@@ -67,12 +67,13 @@ js/
 ├── core/               — input, cámara, audio procedural
 ├── world/              — mapa procedural + visión (cono/niebla) + pintura vial + techos
 ├── entities/           — jugador y zombi (IA, ataque con línea de visión)
-├── systems/            — supervivencia, ruido, inventario, combate, barra rápida
+├── systems/            — supervivencia, ruido, inventario, combate, barra rápida, guardado
 └── ui/                 — HUD, inventario, menús, toasts
 ```
 
 ## Historial de versiones
 
+- **v0.13** — **Guardado de partidas + spawn seguro**: el menú principal ofrece **NUEVA PARTIDA** y **CONTINUAR PARTIDA** (con el resumen del guardado: día, hora y bajas); el menú de pausa añade **GUARDAR Y SALIR AL MENÚ** y hay **autoguardado cada 5 minutos** de partida (el menú, la pausa y el inventario abierto no consumen el cronómetro). El guardado conserva TODO: posición, planta, mochila, equipo, barra rápida, balas dentro de cargadores, zombis vivos y su estado de IA, contenido de contenedores, objetos del suelo, puertas abiertas, sangre y cadáveres, hora del ciclo día/noche y estadísticas. **La muerte es definitiva**: morir borra el guardado. Además, el **spawn del jugador se volvió seguro**: siempre en mitad de una calle abierta cerca del centro (nunca dentro de una casa ni tras un muro) y con una **burbuja de 460 px sin zombis** a la redonda — imposible aparecer rodeado o sufriendo spawnkill.
 - **v0.12** — **El 5.56 se vuelve escaso y exclusivo**: el Cóndor AR-56 **ya solo aparece en las armerías de la comisaría** (eliminado de la tabla de casilleros comunes: ninguna casa o casillero de calle puede soltarlo) y es **más raro** dentro de ellas — peso 20→9: saquear las 3 armerías se lleva un rifle ~55% de las veces (antes ~81%). Las **balas y los cargadores 5.56 se encuentran raramente en casilleros de todo el mapa** (pesos 13→5 y 5.5→2.2: ~57% más raros; el 9mm manda con claridad) y también bajan en la armería (32→18 y 17→9). La familia AR-56 sigue siendo la más común *dentro* de la armería, pero el arsenal general queda más austero: el rifle es un premio, no una garantía.
 - **v0.11** — **Ciclo día/noche + respawn nocturno + AR-56 manda en la comisaría**: día y noche completos en **12 minutos** (1 h = 30 s), amanecer inicial a las 08:00, **reloj digital de 12 h (HH:MM AM/PM)** en la esquina superior derecha con el día de supervivencia. La noche (20:00–06:00) trae **niebla más opresiva, velo azul y transiciones cálidas** al alba/ocaso; **cada hora nocturna repone 5 zombis** (tope 110) en puntos exteriores **fuera de la línea de visión del jugador** (500+ px, sin LOS directa). Las **armerías de la comisaría** concentran ahora el botín más rico en **rifles Cóndor AR-56, cargadores y balas 5.56** (el arma más común del edificio, por delante de pistolas y escopetas); los casilleros de la comisaría también suben la familia 5.56.
 - **v0.10** — **Mapa ampliado + comisaría y tienda**: el mundo crece a 130×104 tiles (~69% más superficie) con 5×4 manzanas y 4 calles en cada eje. Dos estructuras ÚNICAS por partida, cada una con su tejado plano inconfundible: la **COMISARÍA** (losa azul con placa-estrella, bandas de peligro y antena) guarda la mejor armería del mapa — armerías W con pistolas, escopetas, rifles, munición y equipo táctico — pero concentra el mayor peligro zombi (10 extra dentro/alrededor); la **TIENDA** (grava con marquesina roja, diana comercial y lucernarios) tiene pasillos de estanterías rebosantes de comida y bebida con presión zombi media (5 extra). Suelos propios: linóleo azul en la comisaría, baldosa ajedrez en la tienda. Doble puerta principal en ambas.

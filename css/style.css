@@ -408,6 +408,7 @@ canvas#game {
 .toast.out { opacity: 0; }
 .toast.bad { border-left-color: var(--accent); color: #e88a80; }
 .toast.warn { border-left-color: #c8b03a; color: #d9cf8a; }
+.toast.save { border-left-color: #7aa05a; color: #b9d69a; }
 
 /* ================= Inventario ================= */
 
@@ -650,7 +651,7 @@ kbd {
   white-space: nowrap;
 }
 
-#btn-play, #btn-retry, #btn-resume {
+#btn-play, #btn-retry, #btn-resume, #btn-continue {
   font-family: inherit;
   font-size: 20px;
   font-weight: 700;
@@ -663,12 +664,47 @@ kbd {
   cursor: pointer;
   transition: transform 0.1s, background 0.15s, box-shadow 0.15s;
 }
-#btn-play:hover, #btn-retry:hover, #btn-resume:hover {
+#btn-play:hover, #btn-retry:hover, #btn-resume:hover, #btn-continue:hover {
   background: #e0452f;
   box-shadow: 0 0 34px rgba(200, 52, 31, 0.5);
   transform: translateY(-2px);
 }
-#btn-play:active, #btn-retry:active, #btn-resume:active { transform: translateY(1px); border-bottom-width: 2px; }
+#btn-play:active, #btn-retry:active, #btn-resume:active, #btn-continue:active { transform: translateY(1px); border-bottom-width: 2px; }
+
+/* v0.13: columna de botones del menú + botón secundario (continuar/guardar) */
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+#btn-continue, .btn-secondary {
+  font-size: 15px;
+  letter-spacing: 4px;
+  padding: 11px 40px;
+  background: #262b22;
+  border-bottom: 4px solid #12150f;
+  color: #c9d6b8;
+}
+#btn-continue:hover, .btn-secondary:hover {
+  background: #31382b;
+  box-shadow: 0 0 26px rgba(122, 160, 88, 0.28);
+  color: #dcecc8;
+}
+#continue-info {
+  margin: -2px 0 0;
+  font-size: 12.5px;
+  letter-spacing: 1.5px;
+  color: #7f8a70;
+  text-align: center;
+}
+#continue-info::before { content: '» '; color: #9ab06f; }
+.death-savegone {
+  margin: 4px 0 18px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #a8574d;
+}
 
 .menu-tip { margin-top: 22px; font-size: 12.5px; color: #6d6f64; }
 .menu-tip b { color: #9a7ab8; }

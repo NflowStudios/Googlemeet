@@ -10,6 +10,13 @@ import { dist, angDiff } from '../utils.js';
 
 const ST = { IDLE: 'idle', WANDER: 'wander', INVESTIGATE: 'investigate', SEARCH: 'search', CHASE: 'chase' };
 
+// v0.13: burbuja de seguridad alrededor del punto de aparición del jugador.
+// Ningún zombi EXTERIOR nace a menos de esta distancia → imposible aparecer
+// rodeado o con un muerto pegado a la espalda. Los zombis de interior de la
+// comisaría/tienda se salvan (viven tras sus muros: ahí está el riesgo),
+// pero los de casas normales también la respetan.
+const SPAWN_SAFE_R = 460;
+
 export class Zombie {
   constructor(x, y, rng) {
     this.x = x; this.y = y;
@@ -292,12 +299,25 @@ export class Zombie {
 /** Crea la horda inicial repartida por el mapa. */
 export function spawnZombies(map, rng, count, spawnPoint) {
   const zombies = [];
+  // v0.13: nada de zombis (de calle o de casas normales) dentro de la
+  // burbuja de seguridad del spawn — se re-muestrea hasta salir de ella.
+  const safe = (pos) => Math.hypot(pos.x - spawnPoint.x, pos.y - spawnPoint.y) >= SPAWN_SAFE_R;
   let guard = 0;
-  while (zombies.length < count && guard < count * 40) {
+  while (zombies.length < count && guard < count * 60) {
     guard++;
     let pos = null;
-    if (rng.chance(0.32)) pos = map.randomIndoor();
-    if (!pos) pos = map.randomOutdoor(spawnPoint, 360);
+    if (rng.chance(0.32)) {
+      for (let k = 0; k < 30 && !pos; k++) {
+        const p = map.randomIndoor();
+        if (p && safe(p)) pos = p;
+      }
+    }
+    if (!pos) {
+      for (let k = 0; k < 30 && !pos; k++) {
+        const p = map.randomOutdoor(spawnPoint, SPAWN_SAFE_R);
+        if (p) pos = p;
+      }
+    }
     if (!pos) continue;
     if (map.circleHitsSolid(pos.x, pos.y, 12)) continue;
     zombies.push(new Zombie(pos.x, pos.y, rng));
@@ -307,6 +327,8 @@ export function spawnZombies(map, rng, count, spawnPoint) {
   // La COMISARÍA concentra el mayor peligro del mapa (los agentes cayeron
   // dentro) y la TIENDA tiene presión media: zombis dentro + alrededor.
   // Cantidades FIJAS (SPECIALS.inside/around) → total determinista.
+  // v0.13: los de ALREDEDOR también rehúyen la burbuja del spawn del jugador
+  // (la estructura puede quedar cerca del centro del mapa).
   for (const b of map.buildings) {
     if (b.kind !== 'police' && b.kind !== 'store') continue;
     const sp = SPECIALS[b.kind];
@@ -316,10 +338,52 @@ export function spawnZombies(map, rng, count, spawnPoint) {
       zombies.push(new Zombie(pos.x, pos.y, rng));
     }
     for (let i = 0; i < sp.around; i++) {
-      const pos = map.randomOutdoorNear(b.cx, b.cy, TILE * 3.5, TILE * 11);
+      let pos = null;
+      for (let k = 0; k < 60 && !pos; k++) {
+        const p = map.randomOutdoorNear(b.cx, b.cy, TILE * 3.5, TILE * 11);
+        if (p && safe(p)) pos = p;
+      }
       if (!pos) break;
       zombies.push(new Zombie(pos.x, pos.y, rng));
     }
   }
   return zombies;
+}
+
+// ================== Serialización (v0.13: guardado de partidas) ==================
+
+/** Estado persistente de un zombi (compacto, claves cortas). */
+export function zombieToData(z) {
+  return {
+    x: +z.x.toFixed(1), y: +z.y.toFixed(1), hp: z.hp,
+    st: z.state, tm: +z.timer.toFixed(2),
+    dx: +z.dirX.toFixed(2), dy: +z.dirY.toFixed(2),
+    tx: +z.targetX.toFixed(1), ty: +z.targetY.toFixed(1),
+    lx: +z.lastSeenX.toFixed(1), ly: +z.lastSeenY.toFixed(1),
+    un: +z.unseenT.toFixed(2), sm: +z.speedMul.toFixed(3),
+    ti: +z.tint.toFixed(3), gr: +z.groanT.toFixed(1), fa: +z.face.toFixed(3),
+  };
+}
+
+/** Reconstruye un zombi a partir de sus datos guardados. */
+export function zombieFromData(d) {
+  const z = Object.create(Zombie.prototype);
+  z.x = d.x; z.y = d.y;
+  z.r = Z.radius;
+  z.hp = d.hp;
+  z.z = 0;                       // los zombis viven en la planta baja
+  z.state = d.st || ST.IDLE;
+  z.timer = d.tm ?? 1;
+  z.dirX = d.dx || 0; z.dirY = d.dy || 0;
+  z.targetX = d.tx ?? d.x; z.targetY = d.ty ?? d.y;
+  z.lastSeenX = d.lx || 0; z.lastSeenY = d.ly || 0;
+  z.unseenT = d.un || 0;
+  z.speedMul = d.sm || 1;
+  z.tint = d.ti || 1;
+  z.flash = 0; z.attackCd = 0;
+  z.groanT = d.gr ?? 5;
+  z.kbx = 0; z.kby = 0; z.stuckT = 0;
+  z.face = d.fa || 0;
+  z.visibleNow = false;
+  return z;
 }

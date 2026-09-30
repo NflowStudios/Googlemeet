@@ -114,7 +114,7 @@
 <div id="menu">
   <div class="menu-inner">
     <h1>ZONA<em>CERO</em></h1>
-    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.12</span></p>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.13</span></p>
     <div class="menu-controls">
       <div><kbd>W A S D</kbd><span>Moverse</span></div>
       <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
@@ -127,8 +127,12 @@
       <div><kbd>TAB / I</kbd><span>Inventario y equipo</span></div>
       <div><kbd>P</kbd><span>Pausa</span> <kbd>M</kbd><span>Audio</span></div>
     </div>
-    <button id="btn-play">JUGAR</button>
-    <p class="menu-tip">Consejo: el ciclo día/noche dura 12 minutos. De noche la ciudad se llena otra vez de muertos — saquea de día, atrinchérate de noche.</p>
+    <div class="menu-buttons">
+      <button id="btn-play">NUEVA PARTIDA</button>
+      <button id="btn-continue" class="hidden">CONTINUAR PARTIDA</button>
+      <p id="continue-info" class="hidden"></p>
+    </div>
+    <p class="menu-tip">Consejo: la partida se guarda sola cada 5 minutos y desde el menú de pausa (GUARDAR Y SALIR). Si mueres, el guardado se borra: la muerte es definitiva. El ciclo día/noche dura 12 minutos — saquea de día, atrinchérate de noche.</p>
   </div>
 </div>
 
@@ -142,6 +146,7 @@
       <div><span>ZOMBIS ELIMINADOS</span><b id="ds-kills">0</b></div>
       <div><span>CONTENEDORES</span><b id="ds-search">0</b></div>
     </div>
+    <p id="death-savegone" class="death-savegone hidden"></p>
     <button id="btn-retry">REINTENTAR</button>
   </div>
 </div>
@@ -151,7 +156,11 @@
   <div class="menu-inner">
     <h1 class="pause-title">PAUSA</h1>
     <p>El mundo espera… por ahora.</p>
-    <button id="btn-resume">CONTINUAR (P)</button>
+    <div class="menu-buttons">
+      <button id="btn-resume">CONTINUAR (P)</button>
+      <button id="btn-savequit" class="btn-secondary">GUARDAR Y SALIR AL MENÚ</button>
+    </div>
+    <p class="menu-tip">Guardar y salir respeta la partida: tu posición, botín, zombis y hora del día quedan como están. También hay autoguardado cada 5 minutos.</p>
   </div>
 </div>
 
