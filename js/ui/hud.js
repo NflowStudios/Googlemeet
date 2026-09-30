@@ -38,6 +38,10 @@ export class HUD {
     this.hintEl = document.getElementById('controls-hint');
     this.dmgFlash = 0;
     this._hintTimer = 0;
+    // reloj día/noche (esquina superior derecha)
+    this.clockEl = document.getElementById('clock');
+    this.clockTime = document.getElementById('clock-time');
+    this.clockDay = document.getElementById('clock-day');
   }
 
   show() { this.el.classList.remove('hidden'); }
@@ -110,6 +114,13 @@ export class HUD {
     this.statTime.textContent = fmtTime(g.time);
     this.statKills.textContent = 'BAJAS ' + g.kills;
     this.statSearch.textContent = 'REGISTRADO ' + g.searchedCount;
+
+    // reloj digital de 12 h (HH:MM AM/PM) + día de supervivencia
+    if (this.clockTime && g.daynight) {
+      this.clockTime.textContent = g.daynight.clock;
+      this.clockDay.textContent = 'DÍA ' + g.daynight.day;
+      this.clockEl.classList.toggle('night', g.daynight.darkness > 0.5);
+    }
 
     // ruido
     const lvl = Math.min(4, g.noise ? g.noise.lastLevel : 0);

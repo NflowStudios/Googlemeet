@@ -6,13 +6,14 @@
  * contenedores) y cableado de todos los sistemas modulares.
  */
 
-import { TILE, T, ZOMBIE_CFG, FLOORS } from './config.js';
+import { TILE, T, ZOMBIE_CFG, FLOORS, DAYNIGHT } from './config.js';
 import { Rng } from './rng.js';
 import { Input } from './core/input.js';
 import { Camera } from './core/camera.js';
 import { AudioFX } from './core/audio.js';
 import { GameMap } from './world/map.js';
 import { Vision } from './world/vision.js';
+import { DayNight } from './world/daynight.js';
 import { NoiseSystem } from './systems/noise.js';
 import { Survival } from './systems/survival.js';
 import { Inventory, makeItem, fillContainer, itemLabel, refillMagazines } from './systems/inventory.js';
@@ -44,6 +45,7 @@ class Game {
     this.invUI = new InventoryUI(this);
     this.noise = new NoiseSystem();
     this.vision = new Vision();
+    this.daynight = new DayNight();   // ciclo día/noche (solo avanza jugando)
 
     this.state = STATE.MENU;
     this.uiOpen = false;
@@ -110,6 +112,8 @@ class Game {
     this.survival = new Survival();
     this.noise = new NoiseSystem();
     this.vision = new Vision();
+    this.daynight.reset();            // amanece a las 08:00 del día 1
+    this._hourMark = Math.floor(this.daynight.hour);
     this._resize();
 
     // botín en todos los contenedores
@@ -231,6 +235,36 @@ class Game {
       this.menus.hidePause();
       this._last = performance.now();
     }
+  }
+
+  // ================== Eventos del ciclo día/noche ==================
+
+  /** Cambio de hora del reloj interno: avisos y respawn nocturno. */
+  _onHourChange(h) {
+    if (h === DAYNIGHT.nightStart) {
+      this.toasts.push('Anochece. La noche los trae de vuelta…', 'warn');
+      return;
+    }
+    if (h === DAYNIGHT.nightEnd) {
+      this.toasts.push('Amanece. Por fin algo de luz.', 'info');
+      return;
+    }
+    if (this.daynight.isNight) this._nightRespawn();
+  }
+
+  /**
+   * Respawn nocturno (v0.11): cada hora de la noche el mapa repone un grupo
+   * de zombis en tiles exteriores caminables SIEMPRE fuera de la línea de
+   * visión del jugador (a 500+ px, fuera del cono y sin línea de vista
+   * directa — ver map.nightSpawnSpots). El total nunca supera
+   * ZOMBIE_CFG.nightCap, así que limpiar el barrio deja margen.
+   */
+  _nightRespawn() {
+    const cap = ZOMBIE_CFG.nightCap;
+    if (this.zombies.length >= cap) return;
+    const n = Math.min(ZOMBIE_CFG.nightBatch, cap - this.zombies.length);
+    const spots = this.map.nightSpawnSpots(this.player, n);
+    for (const s of spots) this.zombies.push(new Zombie(s.x, s.y, this.rng));
   }
 
   // ================== Interacción con el mundo ==================
@@ -376,6 +410,15 @@ class Game {
     if (this.state !== STATE.PLAYING || this.uiOpen) return;
 
     this.time += dt;
+
+    // ciclo día/noche (12 min = 24 h de juego) + eventos al cambiar de hora
+    this.daynight.update(dt);
+    const dnH = Math.floor(this.daynight.hour);
+    if (dnH !== this._hourMark) {
+      this._hourMark = dnH;
+      this._onHourChange(dnH);
+    }
+
     this.player.update(dt, this);
     this.player.inventory.setCapacity(this.player.capacity());
 

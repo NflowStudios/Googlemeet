@@ -65,6 +65,22 @@ export const SPECIALS = {
   store:  { w: 14, h: 10, inside: 3, around: 2 },   // pasillos de estanterías
 };
 
+// ---------- Ciclo día/noche (v0.11) ----------
+// Un ciclo COMPLETO (día + noche) dura 12 min reales = 24 h de juego:
+// 1 hora del reloj = 30 s. La partida amanece a las 08:00 del día 1.
+// De noche (20:00–06:00) el mundo se oscurece (niebla más opaca + velo
+// azul) y cada hora repone zombis FUERA de la línea de visión del jugador.
+export const DAYNIGHT = {
+  cycleSec: 720,       // 12 minutos por ciclo completo
+  startHour: 8,        // amanecer del día 1
+  nightStart: 20,      // 20:00 — empieza a oscurecer (respawns desde las 21:00)
+  nightEnd: 6,         // 06:00 — amanece
+  fogDay: 0.78,        // niebla de día (algo más clara que la clásica 0.85)
+  fogNight: 0.93,      // niebla de noche (opresiva)
+  tintNight: 0.42,     // velo azul oscuro en plena noche
+  tintDusk: 0.16,      // golpe cálido al amanecer/atardecer
+};
+
 // ---------- Plantas: 2º piso y sótanos ----------
 // Algunas casas tienen una planta extra (nunca las dos): una escalera interior
 // conecta la planta baja con el 2º piso o el sótano. Mecánica visual gemela a
@@ -136,6 +152,8 @@ export const ZOMBIE_CFG = {
   searchTime: 3.0,
   groanMin: 4,
   groanMax: 11,
+  nightBatch: 5,       // v0.11: zombis repuestos por cada hora de noche
+  nightCap: 110,       // v0.11: tope de zombis simultáneos en el mapa
 };
 
 // ---------- Armas a distancia ----------
@@ -269,13 +287,14 @@ export const LOOT = {
   nevera: [['agua', 24], ['refresco', 14], ['manzana', 12], ['lata_frijoles', 9], ['lata_atun', 7], ['venda', 4]],
   alacena: [['lata_frijoles', 20], ['lata_atun', 16], ['papas', 16], ['chocolate', 12], ['refresco', 8], ['agua', 6]],
   armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3]],
-  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['escopeta_guardian', 2.2], ['rifle_condor', 1.4], ['cargador_9mm', 5], ['cargador_556', 2.6], ['bala_9mm', 11], ['cartucho_12', 8], ['bala_556', 7], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6]],
+  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['escopeta_guardian', 2.2], ['rifle_condor', 3], ['cargador_9mm', 5], ['cargador_556', 5.5], ['bala_9mm', 11], ['cartucho_12', 8], ['bala_556', 13], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6]],
   botiquin_pared: [['venda', 30], ['botiquin', 12], ['antibioticos', 9], ['agua', 6]],
-  // ARMERÍA (comisaría): el botín de armas más goloso del mapa
+  // ARMERÍA (comisaría): el reino del AR-56 (v0.11: el rifle de asalto y
+  // su munición/cargadores son claramente lo más común aquí)
   armeria: [
-    ['pistola_vibora', 15], ['escopeta_guardian', 10], ['rifle_condor', 7],
-    ['cargador_9mm', 13], ['cargador_556', 8],
-    ['bala_9mm', 22], ['cartucho_12', 16], ['bala_556', 15],
+    ['rifle_condor', 20], ['pistola_vibora', 11], ['escopeta_guardian', 7],
+    ['cargador_556', 17], ['cargador_9mm', 9],
+    ['bala_556', 32], ['bala_9mm', 16], ['cartucho_12', 10],
     ['chaleco', 7], ['casco_tactico', 6], ['funda_tactica', 4],
     ['botiquin', 5], ['antibioticos', 3],
   ],

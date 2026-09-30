@@ -58,6 +58,39 @@ canvas#game {
 #hud-top .sep { margin: 0 8px; opacity: 0.5; }
 #stat-time { color: var(--text); }
 
+/* reloj día/noche (esquina superior derecha): 12 h con AM/PM */
+#clock {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-right: 3px solid #d8b45a;
+  padding: 5px 12px 4px;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 0px;
+  transition: border-color 1s;
+}
+#clock-time {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  color: #ffd98a;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px #000;
+  line-height: 1.05;
+}
+#clock-day {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+}
+#clock.night { border-right-color: #4a6a9a; }
+#clock.night #clock-time { color: #8fb7e8; }
+
 #hud-left {
   position: absolute;
   left: 18px;

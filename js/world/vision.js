@@ -126,7 +126,11 @@ export class Vision {
   /**
    * Compone la niebla sobre el frame actual: SOLO visión en tiempo real.
    * Sin memoria: lo que no ves AHORA (tu espalda, lo oculto) queda a oscuras
-   * (85% de opacidad — se intuye el terreno, no se "recuerda").
+   * (se intuye el terreno, no se "recuerda"), recalculado por frame.
+   *
+   * La opacidad depende del ciclo día/noche (v0.11): de día la niebla es algo
+   * más clara (0.78) y de noche se vuelve opresiva (0.93), interpolada por
+   * DayNight.fogAlpha según oscurezca/amanezca.
    */
   render(ctx, game) {
     const { cam, player } = game;
@@ -137,9 +141,9 @@ export class Vision {
     f.globalCompositeOperation = 'source-over';
     f.globalAlpha = 1;
     f.clearRect(0, 0, w, h);
-    // Oscuridad al 85% (petición v0.8): lo no visto queda oculto pero se
-    // intuye el terreno debajo; sin "recuerdo" alguno, recalculado por frame
-    f.fillStyle = `rgba(3, 5, 3, ${VISION.fogAlpha})`;
+    // Oscuridad con la hora del día: día 78% · noche 93% (petición v0.8/v0.11)
+    const fa = game.daynight ? game.daynight.fogAlpha : VISION.fogAlpha;
+    f.fillStyle = `rgba(3, 5, 3, ${fa.toFixed(3)})`;
     f.fillRect(0, 0, w, h);
 
     f.globalCompositeOperation = 'destination-out';

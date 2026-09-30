@@ -1438,8 +1438,11 @@ export class GameMap {
   /** Tile exterior caminable aleatorio (px), con distancia mínima a un punto. */
   randomOutdoor(minDistFrom, minDist) {
     for (let i = 0; i < 200; i++) {
-      const idx = this.rng.index(this.outdoorTiles.length);
-      const tx = idx % MAP_W, ty = Math.floor(idx / MAP_W);
+      // v0.11 FIX: decodificar el ÍNDICE DE TILE guardado en la lista, no la
+      // posición aleatoria dentro de ella (antes se leía idx como tile →
+      // spawns amontonados arriba-izquierda y dentro de edificios).
+      const ti = this.outdoorTiles[this.rng.index(this.outdoorTiles.length)];
+      const tx = ti % MAP_W, ty = Math.floor(ti / MAP_W);
       const x = tx * TILE + TILE / 2, y = ty * TILE + TILE / 2;
       if (Math.hypot(x - minDistFrom.x, y - minDistFrom.y) >= minDist) return { x, y };
     }
@@ -1449,8 +1452,8 @@ export class GameMap {
   /** Tile de interior aleatorio (px). */
   randomIndoor() {
     if (!this.indoorTiles.length) return null;
-    const idx = this.rng.index(this.indoorTiles.length);
-    const tx = idx % MAP_W, ty = Math.floor(idx / MAP_W);
+    const ti = this.indoorTiles[this.rng.index(this.indoorTiles.length)];
+    const tx = ti % MAP_W, ty = Math.floor(ti / MAP_W);
     return { x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 };
   }
 
@@ -1480,6 +1483,32 @@ export class GameMap {
       }
     }
     return null;
+  }
+
+  /**
+   * Puntos de RESPAWN NOCTURNO (v0.11): tiles exteriores caminables que están
+   * SIEMPRE fuera de la línea de visión del jugador:
+   *  - a 500+ px (más allá del alcance del cono, 440 px, y de la periferia),
+   *  - fuera del cono frontal (por si el alcance de visión crece algún día) y
+   *  - sin línea de vista directa (muro/portero de por medio).
+   * Así los muertos "llegan caminando" a la noche en vez de aparecer a la vista.
+   */
+  nightSpawnSpots(player, n) {
+    const out = [];
+    const SAFE = VISION.range + 60;          // margen de seguridad al alcance
+    for (let i = 0; i < n * 25 && out.length < n; i++) {
+      const pos = this.randomOutdoor(player, 500);
+      if (!pos) break;
+      const dx = pos.x - player.x, dy = pos.y - player.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 500) continue;                 // nunca a la vista
+      if (this.circleHitsSolid(pos.x, pos.y, 12)) continue;   // árbol/coche/atasco: no
+      const a = Math.atan2(dy, dx);
+      if (d < SAFE + 60 && Math.abs(angDiff(player.angle, a)) < VISION.halfAngle + 0.1) continue;
+      if (d < SAFE + 60 && this.lineClear(player.x, player.y, pos.x, pos.y)) continue;
+      out.push(pos);
+    }
+    return out;
   }
 
   // ================== Render ==================

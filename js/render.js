@@ -1,8 +1,10 @@
 /**
  * render.js — Composición del frame: mundo → entidades → copas → ruido →
- * niebla de guerra (85%) → estructura iluminada → TECHOS → retícula →
- * viñetas de estado.
+ * niebla de guerra (dinámica día/noche) → estructura iluminada → TECHOS →
+ * tinte ambiente día/noche → retícula → viñetas de estado.
  */
+
+import { DAYNIGHT } from './config.js';
 
 export function renderGame(ctx, game) {
   const cam = game.cam;
@@ -68,9 +70,30 @@ export function renderGame(ctx, game) {
   // dentro del cono; ocurren delante del jugador)
   drawGunFX(ctx, game);
 
+  // ---- tinte ambiente del ciclo día/noche (v0.11) ----
+  // Noche: velo azul oscuro sobre TODO el frame (con el cono encima se sigue
+  // viendo, pero el mundo pesa). Amanecer/atardecer: golpe cálido anaranjado.
+  drawDayNightTint(ctx, game);
+
   // ---- espacio de pantalla ----
   drawCrosshair(ctx, game);
   drawVignettes(ctx, game);
+}
+
+/** Velo de ambiente según la hora: azul de noche, cálido al alba/ocaso. */
+function drawDayNightTint(ctx, game) {
+  const dn = game.daynight;
+  if (!dn) return;
+  const w = game.cam.w, h = game.cam.h;
+  const dusk = dn.duskGlow, dark = dn.darkness;
+  if (dusk > 0.01) {
+    ctx.fillStyle = `rgba(215, 130, 55, ${(DAYNIGHT.tintDusk * dusk).toFixed(3)})`;
+    ctx.fillRect(0, 0, w, h);
+  }
+  if (dark > 0.01) {
+    ctx.fillStyle = `rgba(9, 13, 30, ${(DAYNIGHT.tintNight * dark).toFixed(3)})`;
+    ctx.fillRect(0, 0, w, h);
+  }
 }
 
 /** Trazadoras, fogonazos y polvo de impacto de las armas de fuego. */
