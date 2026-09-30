@@ -283,18 +283,22 @@ export const CONTAINER_DEFS = {
 // Tablas de botín ponderadas [idItem, peso]
 // Las armas de fuego salen de casilleros (comisaría/instalaciones) y,
 // con menos suerte, de armarios de casa. Fundas en armarios y casilleros.
+// v0.12: el Cóndor AR-56 SOLO sale de las armerías de la comisaría (fuera
+// de su tabla jamás aparece); balas y cargadores 5.56 se encuentran
+// raramente en casilleros de cualquier edificio del mapa.
 export const LOOT = {
   nevera: [['agua', 24], ['refresco', 14], ['manzana', 12], ['lata_frijoles', 9], ['lata_atun', 7], ['venda', 4]],
   alacena: [['lata_frijoles', 20], ['lata_atun', 16], ['papas', 16], ['chocolate', 12], ['refresco', 8], ['agua', 6]],
   armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3]],
-  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['escopeta_guardian', 2.2], ['rifle_condor', 3], ['cargador_9mm', 5], ['cargador_556', 5.5], ['bala_9mm', 11], ['cartucho_12', 8], ['bala_556', 13], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6]],
+  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['escopeta_guardian', 2.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['cartucho_12', 8], ['bala_556', 5], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6]],
   botiquin_pared: [['venda', 30], ['botiquin', 12], ['antibioticos', 9], ['agua', 6]],
-  // ARMERÍA (comisaría): el reino del AR-56 (v0.11: el rifle de asalto y
-  // su munición/cargadores son claramente lo más común aquí)
+  // ARMERÍA (comisaría): la ÚNICA fuente del Cóndor AR-56 (v0.12: rifle y
+  // familia 5.56 bastante más raros — saquear las 3 armerías se lleva un
+  // rifle ~55% de las veces, y la munición escasea en el resto del mapa)
   armeria: [
-    ['rifle_condor', 20], ['pistola_vibora', 11], ['escopeta_guardian', 7],
-    ['cargador_556', 17], ['cargador_9mm', 9],
-    ['bala_556', 32], ['bala_9mm', 16], ['cartucho_12', 10],
+    ['rifle_condor', 9], ['pistola_vibora', 8], ['escopeta_guardian', 6],
+    ['cargador_556', 9], ['cargador_9mm', 8],
+    ['bala_556', 18], ['bala_9mm', 14], ['cartucho_12', 9],
     ['chaleco', 7], ['casco_tactico', 6], ['funda_tactica', 4],
     ['botiquin', 5], ['antibioticos', 3],
   ],
