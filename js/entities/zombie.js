@@ -3,6 +3,15 @@
  *
  * Escuchan los eventos de ruido (correr los atrae desde lejos, caminar
  * agachado casi no los alerta) y "huelen/ven" al jugador con línea de visión.
+ *
+ * v0.14 — VARIANTES:
+ *  - normal:  el de toda la vida (equilibrado).
+ *  - runner:  CORREDOR — mitad de vida, casi tan rápido como el jugador
+ *             esprintando (te alcanza caminando; esprintando se te escapa).
+ *             Carne fresca rosada y chillidos agudos.
+ *  - brute:   BRUTO — solo en comisaría/tienda y ocasionalmente vagando por
+ *             el mapa. Lento, muchísima vida, golpes demoledores y apenas
+ *             retrocede al recibir impactos. Masa oscura y retumbo grave.
  */
 
 import { ZOMBIE_CFG as Z, TILE, SPECIALS } from '../config.js';
@@ -17,11 +26,33 @@ const ST = { IDLE: 'idle', WANDER: 'wander', INVESTIGATE: 'investigate', SEARCH:
 // pero los de casas normales también la respetan.
 const SPAWN_SAFE_R = 460;
 
+/**
+ * Aplica a un zombi las estadísticas de su variante (v0.14).
+ * Comparte constructor y deserialización: una única fuente de verdad.
+ */
+function applyVariant(z, variant) {
+  const v = (variant !== 'normal' && Z.variants[variant]) ? Z.variants[variant] : null;
+  z.variant = v ? variant : 'normal';
+  z.r = v ? v.radius : Z.radius;
+  z.maxHp = v ? v.hp : Z.hp;
+  z.wanderSpeed = v ? v.wanderSpeed : Z.wanderSpeed;
+  z.investigateSpeed = v ? v.investigateSpeed : Z.investigateSpeed;
+  z.chaseSpeed = v ? v.chaseSpeed : Z.chaseSpeed;
+  z.attackRange = v ? v.attackRange : Z.attackRange;
+  z.attackCdBase = v ? v.attackCd : Z.attackCd;
+  z.dmgMin = v ? v.dmgMin : Z.dmgMin;
+  z.dmgMax = v ? v.dmgMax : Z.dmgMax;
+  z.loseSightTime = v ? v.loseSightTime : Z.loseSightTime;
+  z.kbMult = v ? v.kbMult : 1;
+  z.groanPitch = v ? v.groanPitch : 1;
+  z.speedMulRange = v && v.speedMulRange ? v.speedMulRange : [0.86, 1.14];
+}
+
 export class Zombie {
-  constructor(x, y, rng) {
+  constructor(x, y, rng, variant = 'normal') {
     this.x = x; this.y = y;
-    this.r = Z.radius;
-    this.hp = Z.hp;
+    applyVariant(this, variant);
+    this.hp = this.maxHp;
     this.z = 0;                 // los zombis viven en la planta baja
     this.state = ST.IDLE;
     this.timer = rng.range(0.5, 3);
@@ -29,7 +60,7 @@ export class Zombie {
     this.targetX = x; this.targetY = y;
     this.lastSeenX = 0; this.lastSeenY = 0;
     this.unseenT = 0;
-    this.speedMul = rng.range(0.86, 1.14);
+    this.speedMul = rng.range(this.speedMulRange[0], this.speedMulRange[1]);
     this.tint = rng.range(0.85, 1.1);
     this.flash = 0;
     this.attackCd = 0;
@@ -43,8 +74,10 @@ export class Zombie {
   takeDamage(dmg, ang, kb, game) {
     this.hp -= dmg;
     this.flash = 0.14;
-    this.kbx += Math.cos(ang) * kb;
-    this.kby += Math.sin(ang) * kb;
+    // v0.14: el empuje depende de la masa (el bruto apenas se mueve;
+    // el corredor, ligero, sale despedido)
+    this.kbx += Math.cos(ang) * kb * this.kbMult;
+    this.kby += Math.sin(ang) * kb * this.kbMult;
     game.map.stampBlood(this.x, this.y);
     // sabe dónde estás: lo golpeado lo enfurece
     this.state = ST.CHASE;
@@ -89,7 +122,19 @@ export class Zombie {
     const sees = this._seePlayer(game);
     if (sees) {
       if (this.state !== ST.CHASE && Math.random() < 0.4) {
-        game.audio.groan(0.5, this._pan(game));
+        game.audio.groan(0.5, this._pan(game), this.groanPitch);
+      }
+      // v0.14: primera vez que una VARIANTE te ve → mini bestiario (una vez
+      // por partida y variante) para que el jugador sepa a qué se enfrenta
+      if (this.variant !== 'normal') {
+        const seen = game._seenVariants || (game._seenVariants = {});
+        if (!seen[this.variant]) {
+          seen[this.variant] = true;
+          game.toasts.push(this.variant === 'runner'
+            ? '¡CORREDOR! La mitad de duro, muchísimo más rápido — esquívalo y golpéalo'
+            : '¡BRUTO! Lento pero brutal: mucha vida y golpes demoledores', 'warn');
+          game.audio.groan(1, this._pan(game), this.groanPitch);
+        }
       }
       this.state = ST.CHASE;
       this.lastSeenX = p.x; this.lastSeenY = p.y;
@@ -111,7 +156,7 @@ export class Zombie {
         break;
 
       case ST.WANDER: {
-        speed = Z.wanderSpeed * this.speedMul;
+        speed = this.wanderSpeed * this.speedMul;
         mvx = this.dirX; mvy = this.dirY;
         this.timer -= dt;
         if (this.timer <= 0) { this.state = ST.IDLE; this.timer = 1 + Math.random() * 2.5; }
@@ -119,7 +164,7 @@ export class Zombie {
       }
 
       case ST.INVESTIGATE: {
-        speed = Z.investigateSpeed * this.speedMul;
+        speed = this.investigateSpeed * this.speedMul;
         const td = dist(this.x, this.y, this.targetX, this.targetY);
         if (td < 18) {
           this.state = ST.SEARCH;
@@ -141,13 +186,13 @@ export class Zombie {
         break;
 
       case ST.CHASE: {
-        speed = Z.chaseSpeed * this.speedMul;
+        speed = this.chaseSpeed * this.speedMul;
         if (sees) {
           this.lastSeenX = p.x; this.lastSeenY = p.y;
           this.unseenT = 0;
         } else {
           this.unseenT += dt;
-          if (this.unseenT > Z.loseSightTime) {
+          if (this.unseenT > this.loseSightTime) {
             this.state = ST.INVESTIGATE;
             this.targetX = this.lastSeenX; this.targetY = this.lastSeenY;
             this.timer = 6;
@@ -161,21 +206,23 @@ export class Zombie {
         // (nadie muerde a través del techo): la franja del muro y las puertas
         // cerradas bloquean el golpe (mismo criterio que el melee del jugador;
         // el cristal de las ventanas deja golpear a través).
-        if (d < Z.attackRange + p.r && this.attackCd <= 0 && (p.z || 0) === this.z &&
+        if (d < this.attackRange + p.r && this.attackCd <= 0 && (p.z || 0) === this.z &&
             !p.climb && map.lineClear(this.x, this.y, p.x, p.y)) {
-          this.attackCd = Z.attackCd;
+          this.attackCd = this.attackCdBase;
           game.combatZombieHit(this);
         }
         break;
       }
     }
 
-    // ---- separación entre zombis ----
+    // ---- separación entre zombis (v0.14: según los radios reales;
+    // normal+normal sigue siendo 22 px, como siempre) ----
     for (const o of game.zombies) {
       if (o === this) continue;
       const dx = this.x - o.x, dy = this.y - o.y;
       const dd = dx * dx + dy * dy;
-      if (dd < 484 && dd > 0.01) { // 22²
+      const sep = this.r + o.r + 2;
+      if (dd < sep * sep && dd > 0.01) {
         const inv = 1 / Math.sqrt(dd);
         mvx += dx * inv * 0.5;
         mvy += dy * inv * 0.5;
@@ -214,12 +261,12 @@ export class Zombie {
       }
     }
 
-    // ---- gemidos espaciales ----
+    // ---- gemidos espaciales (v0.14: tono según variante) ----
     this.groanT -= dt;
     if (this.groanT <= 0) {
       this.groanT = Z.groanMin + Math.random() * (Z.groanMax - Z.groanMin);
       if (d < 300) {
-        game.audio.groan(1 - d / 300, this._pan(game));
+        game.audio.groan(1 - d / 300, this._pan(game), this.groanPitch);
       }
     }
   }
@@ -232,49 +279,104 @@ export class Zombie {
 
   draw(ctx, cam) {
     const s = cam.worldToScreen(this.x, this.y);
-    const hurt = this.hp < 50;
+    const chase = this.state === ST.CHASE;
+    const hurt = this.hp < this.maxHp * 0.5;
 
-    // sombra
+    // ---- paleta según variante (v0.14) ----
+    // normal: oliva clásico · corredor: carne fresca rosada · bruto: masa oscura
+    let body, head, arms, eye;
+    if (this.variant === 'runner') {
+      body = [168, 120, 108]; head = [186, 138, 124]; arms = [156, 108, 96];
+      eye = '#f0821e';                        // ojos naranjas al perseguir
+    } else if (this.variant === 'brute') {
+      body = [78, 92, 72]; head = [88, 102, 80]; arms = [64, 78, 60];
+      eye = '#b01616';                        // ojos rojo sangre
+    } else {
+      body = [104, 116, 84]; head = [112, 126, 92]; arms = [96, 108, 80];
+      eye = '#d83a2a';
+    }
+
+    // sombra (el bruto proyecta más masa)
     ctx.fillStyle = 'rgba(0,0,0,0.32)';
     ctx.beginPath();
     ctx.ellipse(s.x + 2, s.y + 3, this.r, this.r * 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // brazos extendidos (más abiertos al perseguir)
-    const chase = this.state === ST.CHASE;
+    // v0.14: corredor persiguiendo → estelas de velocidad
+    if (this.variant === 'runner' && chase) {
+      ctx.strokeStyle = 'rgba(210, 140, 120, 0.28)';
+      ctx.lineWidth = 2;
+      for (const off of [-0.35, 0, 0.35]) {
+        const bx = s.x + Math.cos(this.face + Math.PI + off) * (this.r + 6);
+        const by = s.y + Math.sin(this.face + Math.PI + off) * (this.r + 6);
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + Math.cos(this.face + Math.PI) * 7, by + Math.sin(this.face + Math.PI) * 7);
+        ctx.stroke();
+      }
+    }
+
+    // brazos (más abiertos al perseguir; el bruto los arrastra GORDOS;
+    // el corredor los echa hacia atrás cuando corre)
     const armSpread = chase ? 0.9 : 0.55;
     const armReach = chase ? this.r + 5 : this.r + 2;
-    ctx.fillStyle = `rgb(${Math.round(96 * this.tint)}, ${Math.round(108 * this.tint)}, ${Math.round(80 * this.tint)})`;
-    for (const side of [-armSpread, armSpread]) {
-      const ax = s.x + Math.cos(this.face + side) * armReach;
-      const ay = s.y + Math.sin(this.face + side) * armReach;
-      ctx.beginPath(); ctx.arc(ax, ay, 3.4, 0, Math.PI * 2); ctx.fill();
+    const armR = this.variant === 'brute' ? 5.4 : 3.4;
+    ctx.fillStyle = `rgb(${Math.round(arms[0] * this.tint)}, ${Math.round(arms[1] * this.tint)}, ${Math.round(arms[2] * this.tint)})`;
+    if (this.variant === 'runner' && chase) {
+      // pose de sprint: brazos hacia atrás
+      for (const side of [-0.42, 0.42]) {
+        const ax = s.x + Math.cos(this.face + Math.PI + side) * (this.r + 2);
+        const ay = s.y + Math.sin(this.face + Math.PI + side) * (this.r + 2);
+        ctx.beginPath(); ctx.arc(ax, ay, armR, 0, Math.PI * 2); ctx.fill();
+      }
+    } else {
+      for (const side of [-armSpread, armSpread]) {
+        const ax = s.x + Math.cos(this.face + side) * armReach;
+        const ay = s.y + Math.sin(this.face + side) * armReach;
+        ctx.beginPath(); ctx.arc(ax, ay, armR, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // v0.14: hombros del bruto — dos jorobas oscuras a los lados
+    if (this.variant === 'brute') {
+      ctx.fillStyle = `rgb(${Math.round(58 * this.tint)}, ${Math.round(70 * this.tint)}, ${Math.round(54 * this.tint)})`;
+      for (const side of [-1.35, 1.35]) {
+        const hx = s.x + Math.cos(this.face + side) * this.r * 0.75;
+        const hy = s.y + Math.sin(this.face + side) * this.r * 0.75;
+        ctx.beginPath(); ctx.arc(hx, hy, this.r * 0.5, 0, Math.PI * 2); ctx.fill();
+      }
     }
 
     // cuerpo
-    ctx.fillStyle = `rgb(${Math.round(104 * this.tint)}, ${Math.round(116 * this.tint)}, ${Math.round(84 * this.tint)})`;
+    ctx.fillStyle = `rgb(${Math.round(body[0] * this.tint)}, ${Math.round(body[1] * this.tint)}, ${Math.round(body[2] * this.tint)})`;
     ctx.beginPath(); ctx.arc(s.x, s.y, this.r, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = this.variant === 'brute' ? 2.2 : 1.5; ctx.stroke();
 
-    // heridas
+    // heridas (el bruto enseña más carne magullada)
     if (hurt) {
       ctx.fillStyle = 'rgba(90,14,14,0.75)';
-      ctx.beginPath(); ctx.arc(s.x - 3, s.y - 2, 4, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(s.x + 4, s.y + 3, 2.6, 0, Math.PI * 2); ctx.fill();
+      const wr = this.variant === 'brute' ? 5.5 : 4;
+      ctx.beginPath(); ctx.arc(s.x - this.r * 0.3, s.y - 2, wr, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(s.x + this.r * 0.4, s.y + 3, wr * 0.65, 0, Math.PI * 2); ctx.fill();
     }
 
-    // cabeza
-    ctx.fillStyle = `rgb(${Math.round(112 * this.tint)}, ${Math.round(126 * this.tint)}, ${Math.round(92 * this.tint)})`;
+    // cabeza (la del bruto, hundida entre los hombros, es proporcionalmente
+    // más pequeña; la del corredor va lanzada hacia delante)
+    const headOff = this.variant === 'runner' ? 3.5 : this.variant === 'brute' ? 1.2 : 2;
+    const headR = this.r * (this.variant === 'brute' ? 0.44 : 0.55);
+    ctx.fillStyle = `rgb(${Math.round(head[0] * this.tint)}, ${Math.round(head[1] * this.tint)}, ${Math.round(head[2] * this.tint)})`;
     ctx.beginPath();
-    ctx.arc(s.x + Math.cos(this.face) * 2, s.y + Math.sin(this.face) * 2, this.r * 0.55, 0, Math.PI * 2);
+    ctx.arc(s.x + Math.cos(this.face) * headOff, s.y + Math.sin(this.face) * headOff, headR, 0, Math.PI * 2);
     ctx.fill();
 
-    // ojos rojos al perseguir
+    // ojos al perseguir (color según variente)
     if (chase) {
-      ctx.fillStyle = '#d83a2a';
+      ctx.fillStyle = eye;
+      const eyeD = this.r * 0.5;
+      const eyeR = this.variant === 'brute' ? 1.8 : 1.4;
       for (const side of [-0.35, 0.35]) {
         ctx.beginPath();
-        ctx.arc(s.x + Math.cos(this.face + side) * 5, s.y + Math.sin(this.face + side) * 5, 1.4, 0, Math.PI * 2);
+        ctx.arc(s.x + Math.cos(this.face + side) * eyeD, s.y + Math.sin(this.face + side) * eyeD, eyeR, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -285,23 +387,25 @@ export class Zombie {
       ctx.beginPath(); ctx.arc(s.x, s.y, this.r + 1, 0, Math.PI * 2); ctx.fill();
     }
 
-    // barra de vida pequeña solo si está herido
-    if (this.hp < Z.hp && this.hp > 0) {
-      const w = 18;
+    // barra de vida pequeña solo si está herido (ancho según el cuerpo)
+    if (this.hp < this.maxHp && this.hp > 0) {
+      const w = this.r * 1.8;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(s.x - w / 2, s.y - this.r - 8, w, 3);
       ctx.fillStyle = '#b83a2a';
-      ctx.fillRect(s.x - w / 2, s.y - this.r - 8, w * Math.max(0, this.hp / Z.hp), 3);
+      ctx.fillRect(s.x - w / 2, s.y - this.r - 8, w * Math.max(0, this.hp / this.maxHp), 3);
     }
   }
 }
 
-/** Crea la horda inicial repartida por el mapa. */
+/** Crea la horda inicial repartida por el mapa (v0.14: con variantes). */
 export function spawnZombies(map, rng, count, spawnPoint) {
   const zombies = [];
   // v0.13: nada de zombis (de calle o de casas normales) dentro de la
-  // burbuja de seguridad del spawn — se re-muestrea hasta salir de ella.
+  // burbuja de seguridad del spawn — se re-muestrean hasta salir de ella.
   const safe = (pos) => Math.hypot(pos.x - spawnPoint.x, pos.y - spawnPoint.y) >= SPAWN_SAFE_R;
+  // v0.14: la horda callejera mezcla normales con CORREDORES (~15%).
+  const pickVariant = () => (rng.chance(Z.runnerChance) ? 'runner' : 'normal');
   let guard = 0;
   while (zombies.length < count && guard < count * 60) {
     guard++;
@@ -320,7 +424,7 @@ export function spawnZombies(map, rng, count, spawnPoint) {
     }
     if (!pos) continue;
     if (map.circleHitsSolid(pos.x, pos.y, 12)) continue;
-    zombies.push(new Zombie(pos.x, pos.y, rng));
+    zombies.push(new Zombie(pos.x, pos.y, rng, pickVariant()));
   }
 
   // --- Densidad extra por estructura especial (v0.10) ---
@@ -329,13 +433,16 @@ export function spawnZombies(map, rng, count, spawnPoint) {
   // Cantidades FIJAS (SPECIALS.inside/around) → total determinista.
   // v0.13: los de ALREDEDOR también rehúyen la burbuja del spawn del jugador
   // (la estructura puede quedar cerca del centro del mapa).
+  // v0.14: cada estructura guarda SUS BRUTOS de guarnición (comisaría 2,
+  // tienda 1) entre su gente de dentro.
   for (const b of map.buildings) {
     if (b.kind !== 'police' && b.kind !== 'store') continue;
     const sp = SPECIALS[b.kind];
+    const brutes = Z.bruteSpecials[b.kind] || 0;
     for (let i = 0; i < sp.inside; i++) {
       const pos = map.randomIndoorIn(b);
       if (!pos) break;
-      zombies.push(new Zombie(pos.x, pos.y, rng));
+      zombies.push(new Zombie(pos.x, pos.y, rng, i < brutes ? 'brute' : pickVariant()));
     }
     for (let i = 0; i < sp.around; i++) {
       let pos = null;
@@ -344,7 +451,25 @@ export function spawnZombies(map, rng, count, spawnPoint) {
         if (p && safe(p)) pos = p;
       }
       if (!pos) break;
-      zombies.push(new Zombie(pos.x, pos.y, rng));
+      zombies.push(new Zombie(pos.x, pos.y, rng, pickVariant()));
+    }
+  }
+
+  // --- v0.14: BRUTOS errantes ocasionales ---
+  // A veces (55% de los mapas) vagan 1-2 brutos por el mapa, siempre en el
+  // exterior y aún más allá de la burbuja de seguridad del spawn: cruzarte
+  // con uno debe ser un suceso, no una emboscada de bienvenida.
+  if (rng.chance(Z.bruteRoamChance)) {
+    const n = 1 + (rng.chance(0.5) ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      let pos = null;
+      for (let k = 0; k < 60 && !pos; k++) {
+        const p = map.randomOutdoor(spawnPoint, SPAWN_SAFE_R + 240);
+        if (p && safe(p)) pos = p;
+      }
+      if (!pos) continue;
+      if (map.circleHitsSolid(pos.x, pos.y, 15)) continue;   // su masa es ancha
+      zombies.push(new Zombie(pos.x, pos.y, rng, 'brute'));
     }
   }
   return zombies;
@@ -352,10 +477,12 @@ export function spawnZombies(map, rng, count, spawnPoint) {
 
 // ================== Serialización (v0.13: guardado de partidas) ==================
 
-/** Estado persistente de un zombi (compacto, claves cortas). */
+/** Estado persistente de un zombi (compacto, claves cortas).
+ *  v0.14: `va` conserva la variante (runner/brute); los guardados viejos
+ *  sin `va` se restauran como zombis normales. */
 export function zombieToData(z) {
   return {
-    x: +z.x.toFixed(1), y: +z.y.toFixed(1), hp: z.hp,
+    va: z.variant, x: +z.x.toFixed(1), y: +z.y.toFixed(1), hp: z.hp,
     st: z.state, tm: +z.timer.toFixed(2),
     dx: +z.dirX.toFixed(2), dy: +z.dirY.toFixed(2),
     tx: +z.targetX.toFixed(1), ty: +z.targetY.toFixed(1),
@@ -368,8 +495,8 @@ export function zombieToData(z) {
 /** Reconstruye un zombi a partir de sus datos guardados. */
 export function zombieFromData(d) {
   const z = Object.create(Zombie.prototype);
+  applyVariant(z, d.va);        // v0.14: stats + radio de su variante
   z.x = d.x; z.y = d.y;
-  z.r = Z.radius;
   z.hp = d.hp;
   z.z = 0;                       // los zombis viven en la planta baja
   z.state = d.st || ST.IDLE;

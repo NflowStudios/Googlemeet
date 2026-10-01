@@ -95,13 +95,15 @@ export class AudioFX {
     this._noise(0.12, 'lowpass', 300, 0.3);
   }
 
-  groan(vol, pan) {
+  /** Gemido de zombi. v0.14: `pitch` adapta el tono a la variante
+   *  (corredor = chillido agudo, bruto = retumbar grave). */
+  groan(vol, pan, pitch = 1) {
     if (!this._ok()) return;
     const t = this.ctx.currentTime;
-    const dur = 0.7 + Math.random() * 0.7;
+    const dur = (0.7 + Math.random() * 0.7) * (pitch < 1 ? 1.25 : 1);
     const o = this.ctx.createOscillator();
     o.type = 'sawtooth';
-    const base = 58 + Math.random() * 42;
+    const base = (58 + Math.random() * 42) * pitch;
     o.frequency.setValueAtTime(base, t);
     o.frequency.linearRampToValueAtTime(base * 0.8, t + dur);
     // vibrato espeluznante
@@ -111,10 +113,11 @@ export class AudioFX {
     lfoG.gain.value = base * 0.13;
     lfo.connect(lfoG); lfoG.connect(o.frequency);
     const f = this.ctx.createBiquadFilter();
-    f.type = 'lowpass'; f.frequency.value = 340;
+    f.type = 'lowpass';
+    f.frequency.value = pitch > 1 ? 460 : pitch < 1 ? 240 : 340;
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol * 0.55, t + 0.18);
+    g.gain.exponentialRampToValueAtTime(vol * 0.55 * (pitch < 1 ? 1.15 : 1), t + 0.18);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     const p = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
     o.connect(f); f.connect(g);

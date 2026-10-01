@@ -286,7 +286,7 @@ export function restoreGame(game, data) {
 
     // ---- decals: reproducir sangre y cadáveres ----
     for (const op of data.decals || []) {
-      if (op.t === 'corpse') map.stampCorpse(op.x, op.y, op.a || 0);
+      if (op.t === 'corpse') map.stampCorpse(op.x, op.y, op.a || 0, op.s || 1);   // v0.14: escala (variante)
       else map.stampBlood(op.x, op.y, !!op.b);
     }
 

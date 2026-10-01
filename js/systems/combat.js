@@ -11,7 +11,6 @@
  * pistola acelera la recarga del arma correspondiente.
  */
 
-import { ZOMBIE_CFG as Z } from '../config.js';
 import { angDiff } from '../utils.js';
 import { gunRounds } from './inventory.js';
 
@@ -292,18 +291,21 @@ export function finishReload(game) {
 
 // ================== ZOMBIS ==================
 
-/** Un zombi golpea al jugador (daño con armadura + posible mordida). */
+/** Un zombi golpea al jugador (daño con armadura + posible mordida).
+ *  v0.14: el daño lo fija la VARIANTE del zombi (un bruto pega el doble). */
 export function zombieHit(game, z) {
   const p = game.player;
-  const dmg = Z.dmgMin + Math.random() * (Z.dmgMax - Z.dmgMin);
+  const dmg = z.dmgMin + Math.random() * (z.dmgMax - z.dmgMin);
   const reduced = dmg * (1 - p.damageReduction());
   const wasBite = game.survival.zombieHit(reduced, game);
   p.hurtFlash = 0.4;
 
-  // pequeño empujón al jugador
+  // pequeño empujón al jugador (un bruto te EMPUJA de verdad)
   const a = Math.atan2(p.y - z.y, p.x - z.x);
-  game.map.moveCircle(p, Math.cos(a) * 7, Math.sin(a) * 7);
+  const shove = z.variant === 'brute' ? 14 : 7;
+  game.map.moveCircle(p, Math.cos(a) * shove, Math.sin(a) * shove);
 
   if (wasBite) game.cam.shake(7);
+  else if (z.variant === 'brute') game.cam.shake(5);   // v0.14: el golpe pesa
   return wasBite;
 }

@@ -62,6 +62,7 @@ class Game {
     this.deathCause = null;
     this.seedUsed = 0;        // v0.13: semilla de la partida (para el guardado)
     this._autosaveT = 0;      // v0.13: cronómetro del autoguardado (5 min)
+    this._seenVariants = {};  // v0.14: bestiario (toasts únicos por variante)
 
     this.input.attach(canvas, (a) => this.onAction(a));
     this._resize();
@@ -141,7 +142,7 @@ class Game {
     this.searchedCount = 0;
     this.deathCause = null;
     this._autosaveT = 0;
-    this.cam.x = this.player.x - this.cam.w / 2;
+    this._seenVariants = {};   // v0.14: aviso único por variante en esta partida
     this.cam.y = this.player.y - this.cam.h / 2;
 
     this.menus.hideAll();
@@ -179,6 +180,7 @@ class Game {
     this.impacts.length = 0;
     this._dryToastT = 0;
     this._autosaveT = 0;
+    this._seenVariants = {};   // v0.14: el bestiario se reavisa tras cargar
     this.noise = new NoiseSystem();
     this.vision = new Vision();
     this._resize();
@@ -329,13 +331,19 @@ class Game {
    * visión del jugador (a 500+ px, fuera del cono y sin línea de vista
    * directa — ver map.nightSpawnSpots). El total nunca supera
    * ZOMBIE_CFG.nightCap, así que limpiar el barrio deja margen.
+   * v0.14: el lote nocturno mezcla normales con CORREDORES (25% — de noche
+   * presionan más). Los brutos NO reaparecen: son guarnición de las
+   * estructuras, no presión de calle.
    */
   _nightRespawn() {
     const cap = ZOMBIE_CFG.nightCap;
     if (this.zombies.length >= cap) return;
     const n = Math.min(ZOMBIE_CFG.nightBatch, cap - this.zombies.length);
     const spots = this.map.nightSpawnSpots(this.player, n);
-    for (const s of spots) this.zombies.push(new Zombie(s.x, s.y, this.rng));
+    for (const s of spots) {
+      const variant = this.rng.chance(ZOMBIE_CFG.nightRunnerChance) ? 'runner' : 'normal';
+      this.zombies.push(new Zombie(s.x, s.y, this.rng, variant));
+    }
   }
 
   // ================== Interacción con el mundo ==================
@@ -458,9 +466,11 @@ class Game {
     const i = this.zombies.indexOf(z);
     if (i >= 0) this.zombies.splice(i, 1);
     this.kills++;
-    this.map.stampCorpse(z.x, z.y, z.face);
+    // v0.14: el cadáver del bruto es más grande; el del corredor, menudo
+    const scale = z.variant === 'brute' ? 1.4 : z.variant === 'runner' ? 0.85 : 1;
+    this.map.stampCorpse(z.x, z.y, z.face, scale);
     this.map.stampBlood(z.x, z.y, true);
-    this.audio.groan(0.7, 0);
+    this.audio.groan(0.7, 0, z.groanPitch);
     this.cam.shake(3);
   }
 

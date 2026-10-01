@@ -134,6 +134,11 @@ export const SURV = {
 };
 
 // ---------- Zombis ----------
+// v0.14 — VARIANTES: además del zombi común existen CORREDORES (mitad de
+// vida, casi tan rápidos como el jugador esprintando) y BRUTOS (escasos:
+// comisaría/tienda + algún errante ocasional; lentos, durísimos y brutales).
+// Los valores de la cabecera son el zombi NORMAL; las variantes los
+// sobreescriben en ZOMBIE_CFG.variants.
 export const ZOMBIE_CFG = {
   count: 74,            // v0.10: mapa ~69% más grande → densidad similar (antes 44)
   hp: 100,
@@ -154,6 +159,48 @@ export const ZOMBIE_CFG = {
   groanMax: 11,
   nightBatch: 5,       // v0.11: zombis repuestos por cada hora de noche
   nightCap: 110,       // v0.11: tope de zombis simultáneos en el mapa
+  // --- v0.14: variantes ---
+  runnerChance: 0.15,        // proporción de corredores en la horda callejera
+  nightRunnerChance: 0.25,   // de noche los corredores presionan más
+  bruteSpecials: { police: 2, store: 1 },  // brutos de guarnición por estructura
+  bruteRoamChance: 0.55,     // probabilidad de que el mapa tenga brutos errantes
+  variants: {
+    // CORREDOR: carne fresca. Mitad de vida, pero casi alcanza a un jugador
+    // esprintando (195 px/s) — te alcanza caminando, se te escapa esprintando.
+    runner: {
+      hp: 50,
+      radius: 9,
+      wanderSpeed: 46,
+      investigateSpeed: 118,
+      chaseSpeed: 174,             // ~0.89 × esprint del jugador: justo
+      speedMulRange: [0.95, 1.05], // techo 183 px/s < 195: SIEMPRE escapable esprintando
+      attackCd: 0.8,
+      attackRange: 25,
+      dmgMin: 8,
+      dmgMax: 14,
+      loseSightTime: 3.2,          // no se rinden pronto
+      kbMult: 1.35,                // ligeros: salen volando con cada golpe
+      groanPitch: 1.55,            // chillido agudo
+    },
+    // BRUTO: masa.putrefacta. Solo en comisaría/tienda y, a veces, vagando;
+    // lento (incluso caminando lo dejas atrás) pero aguantas un cargador
+    // entero y sus golpes duelen el doble.
+    brute: {
+      hp: 220,
+      radius: 13,
+      wanderSpeed: 15,
+      investigateSpeed: 38,
+      chaseSpeed: 56,
+      speedMulRange: [0.9, 1.1],
+      attackCd: 1.3,               // brazo pesado: golpea más lento
+      attackRange: 31,
+      dmgMin: 16,
+      dmgMax: 26,
+      loseSightTime: 3.6,
+      kbMult: 0.22,                // masa bruta: apenas retrocede
+      groanPitch: 0.55,            // retumbar grave
+    },
+  },
 };
 
 // ---------- Armas a distancia ----------

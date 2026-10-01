@@ -408,25 +408,26 @@ export class GameMap {
     }
   }
 
-  stampCorpse(x, y, ang) {
-    this._trackDecal({ t: 'corpse', x, y, a: +ang.toFixed(3) });
+  stampCorpse(x, y, ang, scale = 1) {
+    this._trackDecal({ t: 'corpse', x, y, a: +ang.toFixed(3), s: scale });
     const c = this.dctx;
     const px = x / 2, py = y / 2;
+    // v0.14: scale distingue cadáveres por variante (bruto 1.4 · corredor 0.85)
     // charco
     c.fillStyle = 'rgba(88, 12, 12, 0.8)';
     c.beginPath();
-    c.ellipse(px, py, 13, 9, ang, 0, Math.PI * 2);
+    c.ellipse(px, py, 13 * scale, 9 * scale, ang, 0, Math.PI * 2);
     c.fill();
     // cuerpo caído
     c.save();
     c.translate(px, py);
     c.rotate(ang);
     c.fillStyle = '#5c6650';
-    c.beginPath(); c.ellipse(0, 0, 9, 5.5, 0, 0, Math.PI * 2); c.fill();   // torso
+    c.beginPath(); c.ellipse(0, 0, 9 * scale, 5.5 * scale, 0, 0, Math.PI * 2); c.fill();   // torso
     c.fillStyle = '#6e7a5a';
-    c.beginPath(); c.ellipse(8, 0, 4.5, 4, 0, 0, Math.PI * 2); c.fill();   // cabeza
+    c.beginPath(); c.ellipse(8 * scale, 0, 4.5 * scale, 4 * scale, 0, 0, Math.PI * 2); c.fill();   // cabeza
     c.strokeStyle = '#4e5844'; c.lineWidth = 2.5;
-    c.beginPath(); c.moveTo(-4, -3); c.lineTo(-11, -6); c.stroke();        // brazo
+    c.beginPath(); c.moveTo(-4 * scale, -3 * scale); c.lineTo(-11 * scale, -6 * scale); c.stroke();        // brazo
     c.restore();
   }
 
