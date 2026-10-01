@@ -67,10 +67,16 @@ export const ROOF = {
 //  INFESTADA (18 dentro, 4 de ellos brutos de guarnición) y un SÓTANO-
 //  ARSENAL repleto del mejor botín, con sus propios guardianes abajo.
 //  Ahí vive en exclusiva el Subfusil Cuervo y todo el equipo militar.
+// v0.18 — HOSPITAL: grande, DOS PISOS (planta baja + planta de
+//  hospitalización) y en APAGÓN permanente: sin luz eléctrica, de noche no
+//  se ve nada sin linterna (ver HOSPITAL más abajo). Ambos pisos INFESTADOS
+//  (15 abajo + 10 arriba + 5 alrededor) y con los objetos médicos
+//  EXCLUSIVOS del juego: suero, adrenalina, antibióticos potentes y morfina.
 export const SPECIALS = {
   police: { w: 17, h: 13, inside: 6, around: 4 },   // armería + casilleros
   store:  { w: 14, h: 10, inside: 3, around: 2 },   // pasillos de estanterías
   military: { w: 22, h: 20, inside: 18, around: 5, basement: 4 },  // arsenal subterráneo
+  hospital: { w: 20, h: 16, inside: 15, around: 5, upper: 10 },    // apagón + 2 pisos infestados
 };
 
 // ---------- Linterna (v0.17) ----------
@@ -94,6 +100,27 @@ export const FLASH = {
   rangeIndoor: 1.25,    // dentro de estructuras (siempre que estés dentro)
   rangeDay: 1.06,       // de día, en exterior y despejado (casi nada)
   fogAlphaCap: 0.90,    // con el haz encendido la niebla nocturna no pasa de aquí
+};
+
+// ---------- Hospital (v0.18): el APAGÓN ----------
+// El hospital está a oscuras (no hay luz eléctrica): la visión DENTRO del
+// edificio depende de la luz ambiental y de la linterna:
+//  - DE DÍA: la luz que entra por las ventanas deja ver casi normal
+//    (dayMul 0,88: 440 → 387 px).
+//  - DE NOCHE SIN LINTERNA: blackout casi total (nightMul 0,42:
+//    440 → 185 px — como la neblina más densa, pero dentro).
+//  - DE NOCHE CON LINTERNA: el haz despeja el apagón y además rinde como
+//    en cualquier interior (flashNight 1,35 → 594 px); de día apenas
+//    aporta (flashDay 1,08). Estos bonos SUSTITUYEN a los de calle de
+//    flashRangeMul (no se apilan: dentro manda el apagón).
+//  - El velo oscuro extra sobre la pantalla llega a tintMax (0,30) de
+//    noche sin haz y casi desaparece con el haz encendido.
+export const HOSPITAL = {
+  dayMul: 0.88,        // blackout con luz de día (ventanas)
+  nightMul: 0.42,      // blackout de noche sin linterna
+  flashDay: 1.08,      // de día con el haz (apenas mejora)
+  flashNight: 1.35,    // de noche con el haz (despeja el apagón)
+  tintMax: 0.30,       // velo oscuro extra en pantalla (noche sin haz)
 };
 
 // ---------- Ciclo día/noche (v0.11) ----------
@@ -211,11 +238,11 @@ export const ZOMBIE_CFG = {
   groanMin: 4,
   groanMax: 11,
   nightBatch: 10,      // v0.16: zombis repuestos por cada hora de noche (antes 5)
-  nightCap: 220,       // v0.16: tope de zombis simultáneos (antes 110)
+  nightCap: 240,       // v0.18: 220 → 240 (el hospital suma 30 a la horda inicial)
   // --- v0.14: variantes ---
   runnerChance: 0.15,        // proporción de corredores en la horda callejera
   nightRunnerChance: 0.25,   // de noche los corredores presionan más
-  bruteSpecials: { police: 2, store: 1, military: 4 },  // brutos de guarnición por estructura
+  bruteSpecials: { police: 2, store: 1, military: 4, hospital: 2 },  // brutos de guarnición por estructura
   bruteRoamChance: 0.55,     // probabilidad de que el mapa tenga brutos errantes
   variants: {
     // CORREDOR: carne fresca. Mitad de vida y rápido. v0.15 lo bajó de 160 a
@@ -423,6 +450,24 @@ export const ITEMS = {
     lootMin: 1, lootMax: 3,
     desc: 'Pilas AA de larga duración. Alimentan la linterna automáticamente cuando su carga queda baja — no hace falta hacer nada.',
   },
+  // ---- v0.18: objetos EXCLUSIVOS del HOSPITAL (solo armarios de medicina y
+  // carritos de curas del hospital, jamás en tablas civiles ni militares) ----
+  suero_medico: {
+    name: 'Suero médico', cat: 'medico', thirstFull: true, color: '#7ac8d9', stack: 3,
+    desc: 'Bolsa de suero fisiológico de 500 ml con torundas. Restaura la SED al 100% de un trago.',
+  },
+  adrenalina: {
+    name: 'Inyección de adrenalina', cat: 'medico', adrenalinSec: 25, color: '#d9a03a', stack: 2,
+    desc: 'Jeringa precargada de epinefrina. Energía INFINITA durante 25 segundos: corre sin agotarte.',
+  },
+  antibioticos_potentes: {
+    name: 'Antibióticos potentes', cat: 'medico', heal: 20, cureBelow: 35, color: '#e8f0d8', stack: 2,
+    desc: 'Ciclo hospitalario de espectro amplio. Regenera un 20% de vida y CURA la infección si aún está por debajo del 35%.',
+  },
+  morfina: {
+    name: 'Morfina', cat: 'medico', morphineSec: 45, color: '#b8a0d9', stack: 2,
+    desc: 'Ampolla de clorhidrato de morfina. Recibes un 50% MENOS de daño durante 45 segundos.',
+  },
   // Ropa — slot: cabeza | accesorios | torso | pantalones
   gorra: { name: 'Gorra', cat: 'ropa', slot: 'cabeza', armor: 0.03, color: '#2b2b30', desc: 'Protección simbólica. 3% reducción de daño.' },
   casco_obra: { name: 'Casco de obra', cat: 'ropa', slot: 'cabeza', armor: 0.15, color: '#d9a520', desc: 'Amarillo y sólido. 15% reducción de daño.' },
@@ -452,12 +497,13 @@ export const ITEMS = {
   racion_combate: { name: 'Ración de combate', cat: 'comida', hunger: 55, stamina: 20, color: '#4a5238', stack: 4, desc: 'Ración militar de campaña calórica y estable. +55 hambre, +20 energía. La mejor comida del juego.' },
 };
 
-// Slots de ropa (orden de render del equipo) — DOS ranuras de accesorio:
-// cualquier accesorio (lentes, pasamontañas, máscara, fundas…) puede ir en
-// cualquiera de las dos; se rellena primero la primera libre.
-export const EQUIP_SLOTS = ['cabeza', 'accesorios', 'accesorios2', 'torso', 'pantalones'];
+// Slots de ropa (orden de render del equipo) — TRES ranuras de accesorio
+// (v0.18): cualquier accesorio (lentes, pasamontañas, máscara, fundas,
+// linterna…) puede ir en cualquiera de las tres; se rellena primero la
+// primera libre.
+export const EQUIP_SLOTS = ['cabeza', 'accesorios', 'accesorios2', 'accesorios3', 'torso', 'pantalones'];
 export const EQUIP_LABELS = {
-  cabeza: 'CABEZA', accesorios: 'ACCESORIO 1', accesorios2: 'ACCESORIO 2',
+  cabeza: 'CABEZA', accesorios: 'ACCESORIO 1', accesorios2: 'ACCESORIO 2', accesorios3: 'ACCESORIO 3',
   torso: 'TORSO', pantalones: 'PANTALONES', arma: 'ARMA',
 };
 
@@ -477,6 +523,9 @@ export const CONTAINER_DEFS = {
   caja_municion: { name: 'Caja de munición', color: '#5a5240', letter: 'X', slots: 6 },
   armeria_mil: { name: 'Armería militar', color: '#2f3a2f', letter: 'G', slots: 6 },
   estanteria_mil: { name: 'Estantería de suministros', color: '#6a6a4a', letter: 'S', slots: 6 },
+  // ---- v0.18: solo dentro del HOSPITAL (ambos pisos) ----
+  armario_medico: { name: 'Armario de medicina', color: '#3a7a6a', letter: 'F', slots: 6 },
+  carrito_curas: { name: 'Carrito de curas', color: '#5a8a9a', letter: 'T', slots: 5 },
 };
 
 // Tablas de botín ponderadas [idItem, peso]
@@ -541,10 +590,24 @@ export const LOOT = {
     ['antibioticos', 8], ['botiquin', 6], ['refresco', 6],
     ['linterna', 3], ['bateria', 8],
   ],
+  // ---- v0.18: HOSPITAL — los cuatro objetos EXCLUSIVOS viven SOLO aquí
+  // (armarios de medicina F y carritos de curas T, en cualquiera de los dos
+  // pisos). Jamás en tablas civiles ni militares. ----
+  armario_medico: [
+    ['suero_medico', 16], ['antibioticos_potentes', 10], ['adrenalina', 8],
+    ['morfina', 6],
+    ['venda', 18], ['botiquin', 10], ['antibioticos', 8],
+    ['agua', 8], ['linterna', 2], ['bateria', 4],
+  ],
+  carrito_curas: [
+    ['venda', 24], ['suero_medico', 8], ['botiquin', 8],
+    ['antibioticos', 6], ['adrenalina', 3], ['morfina', 2],
+    ['agua', 10], ['refresco', 4],
+  ],
 };
 
 // Probabilidad de que la comida generada esté podrida, por contenedor
-export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0, armeria: 0, estanteria: 0.12, taquilla_mil: 0, caja_municion: 0, armeria_mil: 0, estanteria_mil: 0.05 };
+export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0, armeria: 0, estanteria: 0.12, taquilla_mil: 0, caja_municion: 0, armeria_mil: 0, estanteria_mil: 0.05, armario_medico: 0, carrito_curas: 0 };
 
 // ---------- Aparición de armas encontradas ----------
 // Un arma hallada SIEMPRE trae algo dentro (cargador con balas o tubo cargado):

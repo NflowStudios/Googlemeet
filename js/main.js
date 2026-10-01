@@ -150,6 +150,7 @@ class Game {
     this._autosaveT = 0;
     this._seenVariants = {};   // v0.14: aviso único por variante en esta partida
     this._militarySeen = false;  // v0.16: aviso único al entrar en la base militar
+    this._hospitalSeen = false;  // v0.18: aviso único al entrar en el hospital
     this.cam.y = this.player.y - this.cam.h / 2;
 
     this.menus.hideAll();
@@ -189,6 +190,7 @@ class Game {
     this._autosaveT = 0;
     this._seenVariants = {};   // v0.14: el bestiario se reavisa tras cargar
     this._militarySeen = false;  // v0.16: el aviso de la base se reactiva tras cargar
+    this._hospitalSeen = false;  // v0.18: el aviso del hospital se reactiva tras cargar
     this._weatherMark = this.weather.type;   // v0.15: sin toast de clima al restaurar
     this.noise = new NoiseSystem();
     this.vision = new Vision();
@@ -599,6 +601,16 @@ class Game {
       if (b && b.kind === 'military') {
         this._militarySeen = true;
         this.toasts.push('BASE MILITAR: el sótano guarda el mejor botín del juego… y a sus dueños', 'warn');
+        this.audio.groan(1, 0, 0.55);
+      }
+    }
+
+    // v0.18: aviso único al pisar por primera vez el HOSPITAL (cualquier piso)
+    if (!this._hospitalSeen) {
+      const bh = this.map.buildingAtPx(this.player.x, this.player.y);
+      if (bh && bh.kind === 'hospital') {
+        this._hospitalSeen = true;
+        this.toasts.push('HOSPITAL SAN RAFAEL: apagón total — de noche no verás nada sin una linterna. Ambos pisos están infestados…', 'warn');
         this.audio.groan(1, 0, 0.55);
       }
     }

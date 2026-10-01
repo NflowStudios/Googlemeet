@@ -32,10 +32,11 @@ import { zombieToData, zombieFromData } from '../entities/zombie.js';
 import { flashlightItem } from './flashlight.js';
 import { HOTBAR_N } from './hotbar.js';
 
-// v0.16: bump a 2 — el mapa se regeneró al DOBLE con la base militar y las
-// posiciones guardadas de la v1 ya no son válidas (los guardados viejos se
-// rechazan limpiamente y el menú arranca partida nueva).
-export const SAVE_VERSION = 2;
+// v0.18: bump a 3 — el mapa se AJUSTA para acoger al HOSPITAL (nueva
+// estructura única con dos pisos, contenedores y bloque dedicado), así que
+// la disposición de manzanas/contenedores de la v2 ya no coincide y los
+// guardados viejos se rechazan limpiamente (el menú arranca partida nueva).
+export const SAVE_VERSION = 3;
 export const AUTOSAVE_SEC = 300;        // autoguardado cada 5 min DE PARTIDA
 const KEY = 'zonacero.save.v' + SAVE_VERSION;
 
@@ -106,6 +107,7 @@ export function buildSaveData(game) {
       cabeza: reg(p.equipment.cabeza),
       accesorios: reg(p.equipment.accesorios),
       accesorios2: reg(p.equipment.accesorios2),
+      accesorios3: reg(p.equipment.accesorios3),   // v0.18: 3ª ranura
       torso: reg(p.equipment.torso),
       pantalones: reg(p.equipment.pantalones),
       arma: reg(p.equipment.arma),
@@ -120,6 +122,8 @@ export function buildSaveData(game) {
     inf: s.infected ? 1 : 0, in: +s.infection.toFixed(1),
     irm: +s.infectionRateMult.toFixed(2),
     tox: +s.intoxicated.toFixed(1),
+    adr: +s.adrenaline.toFixed(1),   // v0.18: adrenalina restante (s)
+    mor: +s.morphine.toFixed(1),     // v0.18: morfina restante (s)
     heal: s.healEffects.map((e) => ({
       am: e.amount, du: e.dur, re: +e.remaining.toFixed(1),
     })),
@@ -249,6 +253,7 @@ export function restoreGame(game, data) {
       cabeza: get(pd.eq.cabeza),
       accesorios: get(pd.eq.accesorios),
       accesorios2: get(pd.eq.accesorios2),
+      accesorios3: get(pd.eq.accesorios3),   // v0.18: 3ª ranura
       torso: get(pd.eq.torso),
       pantalones: get(pd.eq.pantalones),
       arma: get(pd.eq.arma),
@@ -278,6 +283,8 @@ export function restoreGame(game, data) {
     surv.infection = sd.in || 0;
     surv.infectionRateMult = sd.irm || 1;
     surv.intoxicated = sd.tox || 0;
+    surv.adrenaline = sd.adr || 0;      // v0.18: buff de adrenalina
+    surv.morphine = sd.mor || 0;        // v0.18: buff de morfina
     surv.healEffects = (sd.heal || []).map((e) => ({
       amount: e.am, dur: e.du, remaining: e.re,
     }));

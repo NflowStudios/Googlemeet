@@ -150,6 +150,8 @@ export class HUD {
     if (s.intoxicated > 0) chips += '<span class="chip bad">INTOXICADO</span>';
     if (s.infected) chips += '<span class="chip bad">INFECTADO</span>';
     if (s.healEffects.length > 0) chips += '<span class="chip heal">VENDADO</span>';
+    if (s.adrenaline > 0) chips += '<span class="chip adren">ADRENALINA ' + Math.ceil(s.adrenaline) + 's</span>';
+    if (s.morphine > 0) chips += '<span class="chip morph">MORFINA ' + Math.ceil(s.morphine) + 's</span>';
     this.chips.innerHTML = chips;
 
     // equipo rápido

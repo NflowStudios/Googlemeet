@@ -21,6 +21,9 @@ export class Survival {
     this.intoxicated = 0;       // segundos restantes
     this.healEffects = [];      // {amount, remaining, dur, rate}
     this.deathCause = null;
+    // v0.18 — objetos exclusivos del hospital:
+    this.adrenaline = 0;        // segundos de ENERGÍA INFINITA restantes
+    this.morphine = 0;          // segundos de daño −50% restantes
   }
 
   /** Stamina máxima efectiva (la fiebre la debilita). */
@@ -50,11 +53,20 @@ export class Survival {
     this.thirst = clamp(this.thirst - thirstRate * dt, 0, 100);
 
     // ---- stamina ----
-    if (running && moving) {
+    // v0.18: la ADRENALINA del hospital da energía infinita mientras dura —
+    // ni se agota corriendo ni se puede quedar "agotado" (y arranca llena)
+    if (this.adrenaline > 0) {
+      this.adrenaline = Math.max(0, this.adrenaline - dt);
+      this.stamina = this.maxStamina;
+    } else if (running && moving) {
       this.stamina = clamp(this.stamina - SURV.staminaRunDrain * dt, 0, this.maxStamina);
     } else {
       this.stamina = clamp(this.stamina + this.staminaRegen(moving) * dt, 0, this.maxStamina);
     }
+
+    // v0.18: la MORFINA del hospital reduce a la mitad el daño RECIBIDO
+    // mientras dura (los drenajes pasivos de hambre/sed no se mitigan)
+    if (this.morphine > 0) this.morphine = Math.max(0, this.morphine - dt);
 
     // ---- niveles críticos ----
     if (this.hunger < SURV.critLevel) this.damage(SURV.hungerHpDrain * dt, 'hambre', game, true);
@@ -82,9 +94,12 @@ export class Survival {
     }
   }
 
-  /** Aplica daño. silent = sin shake/sfx (drenajes pasivos). */
+  /** Aplica daño. silent = sin shake/sfx (drenajes pasivos).
+   *  v0.18: la morfina mitiga el daño "sentido" (golpes, disparos, comida
+   *  podrida) pero no los drenajes pasivos de hambre/sed. */
   damage(amount, cause, game, silent = false) {
     if (this.deathCause) return;
+    if (this.morphine > 0 && !silent) amount *= 0.5;
     this.health = clamp(this.health - amount, 0, 100);
     if (!silent && game) {
       game.cam.shake(Math.min(7, amount * 0.6));
@@ -154,6 +169,39 @@ export class Survival {
         this.healEffects.push({ amount: def.healOverTime, dur: def.healDur, remaining: def.healDur });
         game.audio.heal();
         msgs.push('+' + def.healOverTime + ' vida en ' + def.healDur + 's');
+      }
+      // v0.18 — SUERO MÉDICO: restaura TODA la sed
+      if (def.thirstFull) {
+        this.thirst = 100;
+        game.audio.drink();
+        msgs.push('SED RESTAURADA AL 100%');
+      }
+      // v0.18 — INYECCIÓN DE ADRENALINA: energía infinita por N segundos
+      if (def.adrenalinSec) {
+        this.adrenaline = def.adrenalinSec;
+        this.stamina = this.maxStamina;
+        if (game.player) game.player.exhausted = false;   // despeja el agotamiento
+        msgs.push('ENERGÍA INFINITA ' + def.adrenalinSec + ' s');
+      }
+      // v0.18 — ANTIBIÓTICOS POTENTES: curan la infección por debajo de
+      // cureBelow (35) y la frenan aún más fuerte si ya está avanzada
+      if (def.cureBelow !== undefined) {
+        if (this.infected && this.infection < def.cureBelow) {
+          this.infected = false;
+          this.infection = 0;
+          this.infectionRateMult = 1;
+          msgs.push('INFECCIÓN CURADA');
+        } else if (this.infected) {
+          this.infectionRateMult = 0.35;
+          msgs.push('infección frenada (demasiado avanzada para curarla)');
+        } else {
+          msgs.push('sin infección que tratar');
+        }
+      }
+      // v0.18 — MORFINA: la mitad de daño recibido durante N segundos
+      if (def.morphineSec) {
+        this.morphine = def.morphineSec;
+        msgs.push('DAÑO −50% DURANTE ' + def.morphineSec + ' s');
       }
       if (def.infectProt !== undefined || item.id === 'antibioticos') {
         // antibióticos

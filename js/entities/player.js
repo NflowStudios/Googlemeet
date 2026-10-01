@@ -25,12 +25,14 @@ export class Player {
     this.stepAcc = 0;
     this.hurtFlash = 0;
 
-    // Equipo vestible (instancias de objetos o null) — DOS ranuras de
-    // accesorio: cualquier accesorio (incluidas fundas) puede ir en cualquiera
+    // Equipo vestible (instancias de objetos o null) — TRES ranuras de
+    // accesorio (v0.18): cualquier accesorio (incluidas fundas y la
+    // linterna) puede ir en cualquiera de las tres
     this.equipment = {
       cabeza: null,
       accesorios: null,
       accesorios2: null,
+      accesorios3: null,
       torso: makeItem('playera'),
       pantalones: makeItem('jeans'),
       arma: null,
@@ -103,7 +105,7 @@ export class Player {
 
   /** Modificador de tiempo de desenfunde de pistola según la funda equipada. */
   pistolDrawMod() {
-    for (const s of ['accesorios', 'accesorios2']) {
+    for (const s of ['accesorios', 'accesorios2', 'accesorios3']) {
       const f = this.equipment[s];
       if (f && f.def.pistolDrawMod) return f.def.pistolDrawMod;
     }
@@ -112,7 +114,7 @@ export class Player {
 
   /** Modificador de tiempo de recarga de pistola según la funda equipada. */
   pistolReloadMod() {
-    for (const s of ['accesorios', 'accesorios2']) {
+    for (const s of ['accesorios', 'accesorios2', 'accesorios3']) {
       const f = this.equipment[s];
       if (f && f.def.pistolReloadMod) return f.def.pistolReloadMod;
     }
@@ -122,15 +124,17 @@ export class Player {
   /** ¿Lleva una funda puesta? */
   hasHolster() {
     return !!(this.equipment.accesorios && this.equipment.accesorios.def.pistolDrawMod) ||
-           !!(this.equipment.accesorios2 && this.equipment.accesorios2.def.pistolDrawMod);
+           !!(this.equipment.accesorios2 && this.equipment.accesorios2.def.pistolDrawMod) ||
+           !!(this.equipment.accesorios3 && this.equipment.accesorios3.def.pistolDrawMod);
   }
 
   capacity() { return BASE_SLOTS + this.slotsBonus(); }
 
   /**
    * Equipa un objeto de ropa/arma; el anterior vuelve a la mochila.
-   * Los accesorios (lentes, pasamontañas, máscaras, fundas…) pueden ocupar
-   * cualquiera de las DOS ranuras de accesorio (se usa la primera libre).
+   * Los accesorios (lentes, pasamontañas, máscaras, fundas, linterna…)
+   * pueden ocupar cualquiera de las TRES ranuras de accesorio (v0.18: se
+   * usa la primera libre).
    * Al desenfundar un arma de fuego hay un pequeño tiempo de "sacar"
    // (la funda de pistola lo acorta).
    */
@@ -155,9 +159,11 @@ export class Player {
     }
     if (item.def.cat === 'ropa' && item.def.slot) {
       let slot = item.def.slot;
-      if (slot === 'accesorios' || slot === 'accesorios2') {
-        // cualquiera de las dos ranuras vale: primera libre
-        if (this.equipment.accesorios && !this.equipment.accesorios2) slot = 'accesorios2';
+      if (slot === 'accesorios' || slot === 'accesorios2' || slot === 'accesorios3') {
+        // cualquiera de las tres ranuras vale: primera libre
+        if (!this.equipment.accesorios) slot = 'accesorios';
+        else if (!this.equipment.accesorios2) slot = 'accesorios2';
+        else if (!this.equipment.accesorios3) slot = 'accesorios3';
         else slot = 'accesorios';
       }
       const old = this.equipment[slot];
@@ -276,6 +282,7 @@ export class Player {
     const headGear = this.equipment.cabeza ? this.equipment.cabeza.def.color : null;
     const acc1 = this.equipment.accesorios;
     const acc2 = this.equipment.accesorios2;
+    const acc3 = this.equipment.accesorios3;
 
     // "piernas": media luna inferior del color del pantalón
     ctx.fillStyle = pants;
@@ -299,7 +306,8 @@ export class Player {
       ctx.translate(hx, hy);
       ctx.rotate(a);
       const f = this.equipment.accesorios?.def.pistolDrawMod ? this.equipment.accesorios
-        : this.equipment.accesorios2;
+        : this.equipment.accesorios2?.def.pistolDrawMod ? this.equipment.accesorios2
+        : this.equipment.accesorios3;
       ctx.fillStyle = f.def.color;
       ctx.fillRect(-4, -2.5, 8, 6);
       ctx.strokeStyle = 'rgba(0,0,0,0.5)';
@@ -364,8 +372,8 @@ export class Player {
     ctx.beginPath(); ctx.arc(hx, hy, R * 0.62, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; ctx.stroke();
 
-    // accesorios sobre la cabeza (ambas ranuras)
-    for (const acc of [acc1, acc2]) {
+    // accesorios sobre la cabeza (las tres ranuras)
+    for (const acc of [acc1, acc2, acc3]) {
       if (!acc) continue;
       if (acc.id === 'mascara_gas') {
         ctx.fillStyle = '#4a5a3a';

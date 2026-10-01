@@ -76,7 +76,8 @@ function _setupLootItem(item, rng) {
 export function fillContainer(container, rng) {
   const table = LOOT[container.type] || [];
   // v0.16: contenedores militares de la base (mismo rango que la armería)
-  const counts = { nevera: [2, 4], alacena: [2, 3], armario: [1, 3], casillero: [2, 4], botiquin_pared: [1, 2], armeria: [2, 4], estanteria: [2, 3], taquilla_mil: [2, 4], caja_municion: [2, 4], armeria_mil: [2, 4], estanteria_mil: [2, 3] };
+  // v0.18: contenedores del hospital (armarios de medicina generosos)
+  const counts = { nevera: [2, 4], alacena: [2, 3], armario: [1, 3], casillero: [2, 4], botiquin_pared: [1, 2], armeria: [2, 4], estanteria: [2, 3], taquilla_mil: [2, 4], caja_municion: [2, 4], armeria_mil: [2, 4], estanteria_mil: [2, 3], armario_medico: [2, 4], carrito_curas: [2, 3] };
   const [lo, hi] = counts[container.type] || [1, 2];
   const n = rng.int(lo, hi);
   const totalW = table.reduce((s, e) => s + e[1], 0);

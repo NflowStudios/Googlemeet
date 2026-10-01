@@ -5,8 +5,8 @@
  * viñetas de estado.
  */
 
-import { DAYNIGHT } from './config.js';
-import { flashActive } from './systems/flashlight.js';
+import { DAYNIGHT, HOSPITAL } from './config.js';
+import { flashActive, isInHospital } from './systems/flashlight.js';
 
 export function renderGame(ctx, game) {
   const cam = game.cam;
@@ -82,6 +82,10 @@ export function renderGame(ctx, game) {
   // vision.js (neblina −50%, lluvia −12%).
   drawWeatherFX(ctx, game);
 
+  // ---- v0.18: APAGÓN del hospital — velo oscuro extra mientras estás
+  // dentro (con el haz encendido casi desaparece: la luz lo despeja)
+  drawHospitalFX(ctx, game);
+
   // ---- v0.17: haz de la linterna (si está encendida) — se dibuja ENCIMA de
   // los velos de noche y clima para iluminar de verdad el cono de visión ----
   drawFlashlightFX(ctx, game);
@@ -154,6 +158,24 @@ function drawFlashlightFX(ctx, game) {
   ctx.fill();
 
   ctx.restore();
+}
+
+// ================== Hospital: el apagón (v0.18) ==================
+
+/**
+ * Velo del APAGÓN: dentro del hospital no hay luz eléctrica, así que el
+ * interior queda sumido en una oscuridad EXTRA (además de la contracción
+ * del cono que ya hizo vision.js). Escala con la oscuridad de la hora y
+ * casi se despeja con el haz de la linterna encendido.
+ */
+function drawHospitalFX(ctx, game) {
+  if (!isInHospital(game)) return;
+  const dark = game.daynight ? game.daynight.darkness : 0;
+  const k = dark * (flashActive(game) ? 0.2 : 1);
+  if (k <= 0.01) return;
+  const w = game.cam.w, h = game.cam.h;
+  ctx.fillStyle = `rgba(2, 4, 10, ${(HOSPITAL.tintMax * k).toFixed(3)})`;
+  ctx.fillRect(0, 0, w, h);
 }
 
 // ================== Clima (v0.15) ==================

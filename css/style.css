@@ -178,6 +178,8 @@ canvas#game {
 .chip.heal { color: #d8d5cc; }
 .chip.reload { color: #7ab0d8; border-color: #3a5a74; animation: critPulse 1.4s infinite; }
 .chip.flash { color: #e8c66a; border-color: #8a7430; }   /* v0.17: linterna encendida */
+.chip.adren { color: #e8963a; border-color: #8a5a20; }   /* v0.18: adrenalina activa */
+.chip.morph { color: #b8a0d9; border-color: #5a4a74; }   /* v0.18: morfina activa */
 
 /* derecha: ruido + equipo */
 #hud-right {

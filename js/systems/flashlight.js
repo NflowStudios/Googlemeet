@@ -1,5 +1,5 @@
 /**
- * flashlight.js — Linterna y pilas (v0.17).
+ * flashlight.js — Linterna y pilas (v0.17) + APAGÓN del hospital (v0.18).
  *
  * La LINTERNA se equipa en una ranura de ACCESORIO (o se asigna a las
  * ranuras 4/5 de la barra rápida) y se enciende/apaga con la tecla L.
@@ -14,17 +14,22 @@
  * por debajo de FLASH.lowAt se cambia SOLA por una pila del inventario
  * (con toast y sonido) y si no te quedan, la linterna se apaga al agotarse.
  * Solo avanza JUGANDO (main.update), como el día/noche y el clima.
+ *
+ * v0.18 — HOSPITAL EN APAGÓN: dentro del hospital no hay luz eléctrica;
+ * hospitalVisionMul() aplica el multiplicador de blackout según la hora
+ * (de noche casi ciego sin haz) y el haz lo despeja. Los bonos del hospital
+ * SUSTITUYEN a los de calle (no se apilan).
  */
 
-import { FLASH } from '../config.js';
+import { FLASH, HOSPITAL } from '../config.js';
 
-/** La linterna equipada (en cualquiera de las dos ranuras de accesorio). */
+/** La linterna equipada (en cualquiera de las tres ranuras de accesorio). */
 export function flashlightItem(player) {
   if (!player || !player.equipment) return null;
-  const a = player.equipment.accesorios;
-  const b = player.equipment.accesorios2;
-  if (a && a.def.flashlight) return a;
-  if (b && b.def.flashlight) return b;
+  for (const s of ['accesorios', 'accesorios2', 'accesorios3']) {
+    const a = player.equipment[s];
+    if (a && a.def.flashlight) return a;
+  }
   return null;
 }
 
@@ -47,12 +52,37 @@ export function isIndoor(game) {
   return !!game.map.buildingAtPx(p.x, p.y);
 }
 
+/** ¿Está dentro del HOSPITAL? (cualquiera de sus dos pisos o su escalera). */
+export function isInHospital(game) {
+  const p = game.player;
+  if (!p || !game.map) return false;
+  const b = game.map.buildingAtPx(p.x, p.y);
+  return !!(b && b.kind === 'hospital');
+}
+
 /** ¿El haz está encendido de verdad? (equipada + ON + con carga). */
 export function flashActive(game) {
   const p = game.player;
   if (!p || !p.flashOn) return false;
   const fl = flashlightItem(p);
   return !!(fl && (fl.charge ?? 0) > 0);
+}
+
+/**
+ * v0.18 — Multiplicador de visión DENTRO DEL HOSPITAL (el APAGÓN):
+ *  - de día: la luz de las ventanas (dayMul 0,88);
+ *  - de noche SIN haz: blackout (nightMul 0,42);
+ *  - con el haz: despeja el apagón (flashDay..flashNight según la hora) y
+ *    SUSTITUYE a los bonos de calle de flashRangeMul (no se apilan).
+ * Fuera del hospital devuelve 1 (no toca nada).
+ */
+export function hospitalVisionMul(game) {
+  if (!isInHospital(game)) return 1;
+  const dark = game.daynight ? game.daynight.darkness : 0;
+  if (flashActive(game)) {
+    return HOSPITAL.flashDay + (HOSPITAL.flashNight - HOSPITAL.flashDay) * dark;
+  }
+  return HOSPITAL.dayMul + (HOSPITAL.nightMul - HOSPITAL.dayMul) * dark;
 }
 
 /**

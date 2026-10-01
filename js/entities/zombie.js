@@ -447,7 +447,7 @@ export function spawnZombies(map, rng, count, spawnPoint) {
   // v0.14: cada estructura guarda SUS BRUTOS de guarnición (comisaría 2,
   // tienda 1) entre su gente de dentro.
   for (const b of map.buildings) {
-    if (b.kind !== 'police' && b.kind !== 'store' && b.kind !== 'military') continue;
+    if (b.kind !== 'police' && b.kind !== 'store' && b.kind !== 'military' && b.kind !== 'hospital') continue;
     const sp = SPECIALS[b.kind];
     const brutes = Z.bruteSpecials[b.kind] || 0;
     for (let i = 0; i < sp.inside; i++) {
@@ -480,6 +480,26 @@ export function spawnZombies(map, rng, count, spawnPoint) {
         const c = free[(i * 7 + 3) % free.length];   // repartidos, no apiñados
         const wx = (b.x0 + c.lx) * TILE + TILE / 2, wy = (b.y0 + c.ly) * TILE + TILE / 2;
         zombies.push(new Zombie(wx, wy, rng, kinds[i % kinds.length], -1));
+      }
+    }
+    // v0.18: PLANTA DE HOSPITALIZACIÓN — el hospital está infestado TAMBIÉN
+    // arriba: 10 zombis custodian las habitaciones y el botín exclusivo.
+    // Mezcla fija: 1 bruto + 3 corredores + 6 normales.
+    if (b.kind === 'hospital' && b.upper && sp.upper) {
+      const fl = b.upper;
+      const free = [];
+      for (let ly = 1; ly < fl.h - 1; ly++) {
+        for (let lx = 1; lx < fl.w - 1; lx++) {
+          const t = fl.tiles[ly * fl.w + lx];
+          if (t === T.FLOOR) free.push({ lx, ly });
+        }
+      }
+      const kinds = ['brute', 'runner', 'normal', 'normal', 'runner',
+                      'normal', 'normal', 'normal', 'runner', 'normal'];
+      for (let i = 0; i < Math.min(sp.upper, free.length); i++) {
+        const c = free[(i * 5 + 2) % free.length];   // repartidos por la planta
+        const wx = (b.x0 + c.lx) * TILE + TILE / 2, wy = (b.y0 + c.ly) * TILE + TILE / 2;
+        zombies.push(new Zombie(wx, wy, rng, kinds[i % kinds.length], 1));
       }
     }
   }

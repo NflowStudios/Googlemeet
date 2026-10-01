@@ -460,12 +460,16 @@ export class GameMap {
       }
     }
 
-    // --- Estructuras especiales ÚNICAS: comisaría, tienda y base militar ---
+    // --- Estructuras especiales ÚNICAS: comisaría, tienda, base militar y
+    // hospital ---
     // Se eligen manzanas distintas lo bastante grandes (nunca la central,
     // donde aparece el jugador) y se dedican por completo al edificio.
     // v0.16: la BASE MILITAR se queda con una de las manzanas 24×22 MÁS
     // LEJANAS del centro (top-3 por distancia, elección aleatoria entre
     // ellas): cruzar media ciudad para alcanzarla es parte del riesgo.
+    // v0.18: el HOSPITAL se queda con una manzana grande del cuadrante
+    // lejano justo DESPUÉS de la base (posiciones 4-6 por distancia):
+    // lejos del centro, pero sin robarle el rincón extremo a la base.
     const allBlocks = [];
     for (const [bx0, bx1] of X_BLOCKS)
       for (const [by0, by1] of Y_BLOCKS)
@@ -479,7 +483,11 @@ export class GameMap {
       .sort((a, b) => distC(b) - distC(a));
     const farPool = farBig.slice(0, Math.min(3, farBig.length));
     const militaryBlock = farPool.length ? farPool[rng.index(farPool.length)] : null;
-    const pool = shuffle(allBlocks.filter((b) => !isCenter(b) && b !== militaryBlock), rng);
+    // v0.18: hospital — manzanas grandes de los puestos 4-6 (nunca las de
+    // la base, que son las 3 primeras)
+    const hospPool = farBig.slice(3, Math.min(6, farBig.length));
+    const hospitalBlock = hospPool.length ? hospPool[rng.index(hospPool.length)] : null;
+    const pool = shuffle(allBlocks.filter((b) => !isCenter(b) && b !== militaryBlock && b !== hospitalBlock), rng);
     const policeBlock = pool.find((b) => bigEnough(b, SPECIALS.police.w, SPECIALS.police.h)) || null;
     const storeBlock = pool.find((b) => b !== policeBlock && bigEnough(b, SPECIALS.store.w, SPECIALS.store.h)) || null;
 
@@ -489,19 +497,22 @@ export class GameMap {
         const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
         const placed = [];
 
-        // manzana dedicada a una estructura especial → edificiio único + salir
+        // manzana dedicada a una estructura especial → edificio único + salir
         const isPolice = policeBlock && policeBlock.bx0 === bx0 && policeBlock.by0 === by0;
         const isStore = storeBlock && storeBlock.bx0 === bx0 && storeBlock.by0 === by0;
         const isMilitary = militaryBlock && militaryBlock.bx0 === bx0 && militaryBlock.by0 === by0;
-        if (isPolice || isStore || isMilitary) {
-          const sp = isPolice ? SPECIALS.police : isStore ? SPECIALS.store : SPECIALS.military;
+        const isHospital = hospitalBlock && hospitalBlock.bx0 === bx0 && hospitalBlock.by0 === by0;
+        if (isPolice || isStore || isMilitary || isHospital) {
+          const sp = isPolice ? SPECIALS.police : isStore ? SPECIALS.store
+            : isMilitary ? SPECIALS.military : SPECIALS.hospital;
           const w = Math.min(sp.w, bw - 2), h = Math.min(sp.h, bh - 2);
           const x0 = bx0 + 1 + rng.int(0, Math.max(0, bw - 2 - w));
           const y0 = by0 + 1 + rng.int(0, Math.max(0, bh - 2 - h));
           placed.push({ x0, y0, x1: x0 + w - 1, y1: y0 + h - 1 });
           if (isPolice) this._placePoliceStation(x0, y0, x0 + w - 1, y0 + h - 1);
           else if (isStore) this._placeStore(x0, y0, x0 + w - 1, y0 + h - 1);
-          else this._placeMilitaryBase(x0, y0, x0 + w - 1, y0 + h - 1);
+          else if (isMilitary) this._placeMilitaryBase(x0, y0, x0 + w - 1, y0 + h - 1);
+          else this._placeHospital(x0, y0, x0 + w - 1, y0 + h - 1);
           continue;
         }
 
@@ -1139,6 +1150,309 @@ export class GameMap {
   }
 
   /**
+   * HOSPITAL (estructura única, v0.18). San Rafael: edificio institucional
+   * grande de DOS PISOS. Planta baja: vestíbulo con carritos de curas al
+   * sur (doble puerta principal), FARMACIA vallada al oeste (armarios de
+   * medicina F: el mejor botín médico) y URGENCIAS al este. Una ESCALERA
+   * sube a la PLANTA DE HOSPITALIZACIÓN (ver _buildHospitalUpper).
+   * El edificio está en APAGÓN (ver config HOSPITAL + flashlight.js): sin
+   * luz eléctrica, de noche no se ve nada sin linterna.
+   * Ambos pisos INFESTADOS (zombie.js: 15 abajo + 10 arriba + 5 alrededor).
+   * Tejado: losa clara con CRUZ ROJA en círculo blanco (inconfundible).
+   */
+  _placeHospital(x0, y0, x1, y1) {
+    const rng = this.rng;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+
+    // perímetro + interior
+    for (let x = x0; x <= x1; x++) { this.setTile(x, y0, T.WALL); this.setTile(x, y1, T.WALL); }
+    for (let y = y0; y <= y1; y++) { this.setTile(x0, y, T.WALL); this.setTile(x1, y, T.WALL); }
+    for (let y = y0 + 1; y < y1; y++)
+      for (let x = x0 + 1; x < x1; x++) this.setTile(x, y, T.FLOOR);
+
+    // ventanas institucionales: fachada sur densa (cada 2), resto cada 3
+    for (let x = x0 + 2; x <= x1 - 2; x += 2) this.setTile(x, y1, T.WINDOW);
+    for (let x = x0 + 3; x <= x1 - 3; x += 3) this.setTile(x, y0, T.WINDOW);
+    for (let y = y0 + 3; y <= y1 - 3; y += 3) {
+      this.setTile(x0, y, T.WINDOW);
+      this.setTile(x1, y, T.WINDOW);
+    }
+
+    // doble puerta principal al sur (centro) + puerta de servicio al norte
+    const dx = x0 + Math.floor(w / 2) - 1;
+    for (const d of [dx, dx + 1]) {
+      this.setTile(d, y1, T.DOOR_CLOSED);
+      this.doors.push({ tx: d, ty: y1 });
+    }
+    const sx = x0 + 3 + rng.int(0, Math.max(0, w - 8));
+    this.setTile(sx, y0, T.DOOR_CLOSED);
+    this.doors.push({ tx: sx, ty: y0 });
+
+    // ---- FARMACIA vallada (oeste): muro vertical con hueco de 2 ----
+    const fwx = x0 + Math.floor(w * 0.3);          // muro de la farmacia
+    const fgy = y0 + Math.floor(h * 0.4);          // hueco de acceso (2 tiles)
+    for (let y = y0 + 1; y < y1; y++) {
+      if (y !== fgy && y !== fgy + 1) this.setTile(fwx, y, T.WALL);
+    }
+    // ---- URGENCIAS (este): muro vertical con hueco de 2 ----
+    const uwx = x0 + Math.floor(w * 0.68);
+    const ugy = y0 + Math.floor(h * 0.6);
+    for (let y = y0 + 1; y < y1; y++) {
+      if (y !== ugy && y !== ugy + 1) this.setTile(uwx, y, T.WALL);
+    }
+
+    // ---- escalera a la PLANTA DE HOSPITALIZACIÓN: semifija en el pasillo
+    // central, con verificación de 4 vecinos FLOOR y búsqueda de respaldo ----
+    let stairs = null;
+    const fixedX = x0 + Math.max(4, Math.floor(w * 0.5));
+    const fixedY = y0 + Math.max(3, Math.floor(h * 0.28));
+    const okFixed = this.tileAtIdx(fixedX, fixedY) === T.FLOOR &&
+      this.tileAtIdx(fixedX - 1, fixedY) === T.FLOOR && this.tileAtIdx(fixedX + 1, fixedY) === T.FLOOR &&
+      this.tileAtIdx(fixedX, fixedY - 1) === T.FLOOR && this.tileAtIdx(fixedX, fixedY + 1) === T.FLOOR;
+    if (okFixed) {
+      this.setTile(fixedX, fixedY, T.STAIRS);
+      stairs = { tx: fixedX, ty: fixedY };
+    } else {
+      const cands = [];
+      for (let y = y0 + 2; y <= y1 - 2; y++) {
+        for (let x = fwx + 1; x < uwx; x++) {
+          if (this.tileAtIdx(x, y) !== T.FLOOR) continue;
+          if (this.tileAtIdx(x - 1, y) !== T.FLOOR || this.tileAtIdx(x + 1, y) !== T.FLOOR ||
+              this.tileAtIdx(x, y - 1) !== T.FLOOR || this.tileAtIdx(x, y + 1) !== T.FLOOR) continue;
+          cands.push({ x, y });
+        }
+      }
+      if (cands.length) {
+        const s = cands[rng.index(cands.length)];
+        this.setTile(s.x, s.y, T.STAIRS);
+        stairs = { tx: s.x, ty: s.y };
+      }
+    }
+
+    // ---- contenedores (planta baja) ----
+    const put = (type, tx, ty) => {
+      if (this.tileAtIdx(tx, ty) !== T.FLOOR) return;   // no pisa muro/escalera
+      this._addContainer(type, tx, ty, 0);
+    };
+    // farmacia (oeste vallada): los armarios de medicina F
+    put('armario_medico', x0 + 1, y0 + 3);
+    put('armario_medico', x0 + 1, y0 + Math.floor(h * 0.5));
+    put('armario_medico', x0 + 1, y1 - 4);
+    put('carrito_curas', x0 + 3, y0 + Math.floor(h * 0.62));
+    // urgencias (este): curas y medicina
+    put('armario_medico', x1 - 2, y0 + 3);
+    put('armario_medico', x1 - 2, y0 + Math.floor(h * 0.45));
+    put('carrito_curas', x1 - 2, y0 + Math.floor(h * 0.68));
+    put('carrito_curas', x1 - 4, y1 - 3);
+    put('botiquin_pared', x1 - 2, y1 - 6);
+    // vestíbulo sur (junto a la doble puerta)
+    put('carrito_curas', x0 + Math.floor(w * 0.5) - 2, y1 - 2);
+    put('carrito_curas', x0 + Math.floor(w * 0.5) + 1, y1 - 2);
+    // pasillo norte + botiquines junto a la puerta de servicio
+    put('botiquin_pared', x0 + 2, y0 + 1);
+    put('botiquin_pared', x1 - 3, y0 + 1);
+
+    // ---- PLANTA DE HOSPITALIZACIÓN (la escalera coincide en mundo) ----
+    const upper = stairs ? this._buildHospitalUpper(x0, y0, x1, y1, stairs) : null;
+
+    this.buildings.push({
+      x0, y0, x1, y1,
+      cx: (x0 + x1) / 2 * TILE + TILE / 2,
+      cy: (y0 + y1) / 2 * TILE + TILE / 2,
+      kind: 'hospital',
+      upper, basement: null, stairs,
+      roof: this._buildHospitalRoofCanvas(x0, y0, x1, y1),
+      roofW: w * TILE, roofH: h * TILE,
+    });
+  }
+
+  /**
+   * PLANTA DE HOSPITALIZACIÓN (v0.18, z=+1): pasillo central con CUATRO
+   * habitaciones de hospitalización a los lados (dos al oeste, dos al
+   * este), cada una con su armario de medicina F y/o carrito de curas T —
+   * aquí vive buena parte del botín exclusivo, guardado por los 10 zombis
+   * de arriba (ver zombie.js). La escalera ocupa la misma posición de
+   * mundo que en planta baja.
+   */
+  _buildHospitalUpper(x0, y0, x1, y1, stairs) {
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    const tiles = new Uint8Array(w * h);
+    const set = (lx, ly, v) => { tiles[ly * w + lx] = v; };
+
+    // perímetro: copia muros/ventanas de la planta baja (la puerta→muro)
+    for (let x = 0; x < w; x++) {
+      const gt = this.tileAtIdx(x0 + x, y0), gb = this.tileAtIdx(x0 + x, y1);
+      set(x, 0, gt === T.WINDOW ? T.WINDOW : T.WALL);
+      set(x, h - 1, gb === T.WINDOW ? T.WINDOW : T.WALL);
+    }
+    for (let y = 0; y < h; y++) {
+      const gl = this.tileAtIdx(x0, y0 + y), gr = this.tileAtIdx(x1, y0 + y);
+      set(0, y, gl === T.WINDOW ? T.WINDOW : T.WALL);
+      set(w - 1, y, gr === T.WINDOW ? T.WINDOW : T.WALL);
+    }
+    for (let y = 1; y < h - 1; y++)
+      for (let x = 1; x < w - 1; x++) set(x, y, T.FLOOR);
+
+    // hueco de la escalera (misma posición de mundo que en planta baja)
+    const stx = stairs.tx - x0, sty = stairs.ty - y0;
+    set(stx, sty, T.STAIRS);
+
+    // ---- pasillo central: muros verticales con DOS huecos cada uno ----
+    const westX = Math.floor(w * 0.3);
+    const eastX = Math.floor(w * 0.68);
+    const hole = (wx, y0t, y1t) => {
+      for (let y = 1; y < h - 1; y++) {
+        if ((y === y0t || y === y0t + 1 || y === y1t || y === y1t + 1)) continue;
+        if (tiles[y * w + wx] === T.FLOOR) set(wx, y, T.WALL);
+      }
+    };
+    hole(westX, Math.floor(h * 0.18), Math.floor(h * 0.62));
+    hole(eastX, Math.floor(h * 0.3), Math.floor(h * 0.75));
+
+    // ---- habitaciones: muros horizontales partidos en dos cada lado ----
+    const roomY = Math.floor(h * 0.5);
+    for (let x = 1; x < westX; x++) {
+      if (tiles[roomY * w + x] === T.FLOOR) set(x, roomY, T.WALL);
+    }
+    const doorW = Math.floor(w * 0.12);
+    if (tiles[roomY * w + doorW] === T.WALL) set(doorW, roomY, T.FLOOR);
+    for (let x = eastX + 1; x < w - 1; x++) {
+      if (tiles[roomY * w + x] === T.FLOOR) set(x, roomY, T.WALL);
+    }
+    const doorE = eastX + 1 + Math.floor((w - 2 - (eastX + 1)) * 0.5);
+    if (tiles[roomY * w + doorE] === T.WALL) set(doorE, roomY, T.FLOOR);
+
+    // ---- contenedores de la planta (las 4 habitaciones + pasillo) ----
+    const z = 1;
+    const put = (type, lx, ly) => {
+      if (lx < 1 || ly < 1 || lx >= w - 1 || ly >= h - 1) return;
+      if (tiles[ly * w + lx] !== T.FLOOR) return;
+      this._addContainer(type, x0 + lx, y0 + ly, z);
+    };
+    // habitaciones oeste (arriba y abajo del muro de habitación)
+    put('armario_medico', 1, 2);
+    put('carrito_curas', 1, Math.floor(h * 0.34));
+    put('armario_medico', 1, roomY + 2);
+    put('armario_medico', 1, h - 3);
+    // habitaciones este
+    put('carrito_curas', w - 2, 2);
+    put('armario_medico', w - 2, Math.floor(h * 0.34));
+    put('armario_medico', w - 2, roomY + 2);
+    put('carrito_curas', w - 2, h - 3);
+    // pasillo central: botiquines y un carrito de paso (la escalera queda libre)
+    put('botiquin_pared', Math.floor(w * 0.45), 1);
+    put('botiquin_pared', Math.floor(w * 0.6), 1);
+    put('carrito_curas', Math.floor(w * 0.5), Math.floor(h * 0.55));
+    put('armario_medico', Math.floor(w * 0.55), h - 2);
+
+    const containers = this.containers.filter((c) => c.z === z &&
+      c.x >= x0 * TILE && c.x <= (x1 + 1) * TILE && c.y >= y0 * TILE && c.y <= (y1 + 1) * TILE);
+    const fl = {
+      kind: 'hospitalUpper', z, tiles, w, h, x0, y0, containers,
+      stairs: { tx: stairs.tx, ty: stairs.ty },
+    };
+    fl.canvas = this._buildFloorCanvas(fl);
+    return fl;
+  }
+
+  /**
+   * Tejado PLANO del HOSPITAL: losa de hormigón claro desgastado, pretil
+   * perimetral, la CRUZ ROJA DE SAN RAFAEL en círculo blanco (el rótulo
+   * inconfundible), dos climatizadoras, extractor de quirófano y mástil
+   * con luz roja. 100% determinista (sin rng) → firma de píxel estable.
+   */
+  _buildHospitalRoofCanvas(x0, y0, x1, y1) {
+    const w = (x1 - x0 + 1) * TILE, h = (y1 - y0 + 1) * TILE;
+    const rc = document.createElement('canvas');
+    rc.width = w; rc.height = h;
+    const c = rc.getContext('2d');
+
+    // base: losa de hormigón claro (sanitario)
+    c.fillStyle = '#8a9089';
+    c.fillRect(0, 0, w, h);
+    // juntas de losa (rejilla 48px)
+    c.fillStyle = 'rgba(0,0,0,0.20)';
+    for (let x = 0; x < w; x += 48) c.fillRect(x, 0, 2, h);
+    for (let y = 0; y < h; y += 48) c.fillRect(0, y, w, 2);
+    // desgaste sutil + manchas de humedad antiguas
+    c.fillStyle = 'rgba(255,255,255,0.04)';
+    for (let i = 0; i < w * h / 2400; i++) c.fillRect((i * 151) % w, (i * 83) % h, 3, 2);
+    c.fillStyle = 'rgba(60,70,64,0.14)';
+    c.fillRect(w * 0.08, h * 0.55, w * 0.16, h * 0.1);
+    c.fillRect(w * 0.7, h * 0.2, w * 0.12, h * 0.08);
+
+    // pretil perimetral
+    c.fillStyle = '#9aa09a';
+    c.fillRect(0, 0, w, 5); c.fillRect(0, h - 5, w, 5);
+    c.fillRect(0, 0, 5, h); c.fillRect(w - 5, 0, 5, h);
+    c.fillStyle = 'rgba(0,0,0,0.32)';
+    c.fillRect(0, h - 8, w, 3); c.fillRect(w - 8, 0, 3, h);
+
+    // ---- CRUZ ROJA en círculo blanco (el rótulo del hospital) ----
+    const px = w / 2, py = h * 0.42;
+    const R = Math.min(w, h) * 0.26;
+    c.fillStyle = 'rgba(0,0,0,0.28)';
+    c.beginPath(); c.arc(px + 4, py + 4, R, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#d8d5cc';
+    c.beginPath(); c.arc(px, py, R, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.35)';
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(px, py, R, 0, Math.PI * 2); c.stroke();
+    // la cruz (dos brazos gruesos)
+    const armW = R * 0.34;                          // ancho del brazo
+    const armL = R * 0.78;                          // largo del brazo
+    c.fillStyle = '#c0392b';
+    c.fillRect(px - armW / 2, py - armL, armW, armL * 2);
+    c.fillRect(px - armL, py - armW / 2, armL * 2, armW);
+    c.fillStyle = 'rgba(0,0,0,0.22)';               // sombra de la cruz
+    c.fillRect(px + armL - armW / 2 - 3, py - armW / 2, 4, armW);
+
+    // ---- climatizadoras (2 cajas con rejilla, como la comisaría) ----
+    for (const [ax, ay] of [[w * 0.14, h * 0.16], [w * 0.86, h * 0.68]]) {
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      c.fillRect(ax - 13, ay - 9, 30, 26);
+      c.fillStyle = '#7e8a86';
+      c.fillRect(ax - 15, ay - 11, 30, 26);
+      c.fillStyle = '#6a7672';
+      c.fillRect(ax - 12, ay - 8, 24, 20);
+      c.fillStyle = 'rgba(0,0,0,0.4)';
+      for (let i = 0; i < 4; i++) c.fillRect(ax - 12, ay - 6 + i * 5, 24, 2);
+    }
+
+    // ---- extractor de quirófano (cilindro bajo) ----
+    const ex = w * 0.78, ey = h * 0.24;
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.beginPath(); c.arc(ex + 3, ey + 3, 12, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#8a948e';
+    c.beginPath(); c.arc(ex, ey, 12, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#5a6460';
+    c.beginPath(); c.arc(ex, ey, 7, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.14)';
+    c.beginPath(); c.arc(ex - 3, ey - 3, 4, 0, Math.PI * 2); c.fill();
+
+    // ---- franja de acceso de AMBULANCIA (sur): dos bandas rojas ----
+    const bandH = Math.min(26, Math.floor(h * 0.11));
+    c.fillStyle = '#a83a32';
+    c.fillRect(w * 0.36, h - bandH, w * 0.1, bandH);
+    c.fillRect(w * 0.54, h - bandH, w * 0.1, bandH);
+
+    // ---- mástil con luz roja (esquina NE) ----
+    const mx = w * 0.9, my = h * 0.12;
+    c.strokeStyle = '#7a8496';
+    c.lineWidth = 3;
+    c.beginPath(); c.moveTo(mx, my); c.lineTo(mx, my + 24); c.stroke();
+    c.beginPath(); c.moveTo(mx - 7, my + 24); c.lineTo(mx + 7, my + 24); c.stroke();
+    c.fillStyle = '#c0392b';
+    c.beginPath(); c.arc(mx, my, 4, 0, Math.PI * 2); c.fill();
+
+    // contorno
+    c.strokeStyle = 'rgba(8,10,8,0.85)';
+    c.lineWidth = 2;
+    c.strokeRect(1, 1, w - 2, h - 2);
+    return rc;
+  }
+
+  /**
    * Tejado PLANO de la BASE MILITAR: losa de hormigón verde oliva, HELIPUERTO
    * con círculo y H desgastado, radar con mástil, retícula de camuflaje,
    * ESTRELLA blanca de 5 puntas, parapeto de sacos de arena en el frente y
@@ -1359,9 +1673,11 @@ export class GameMap {
     fc.width = wpx; fc.height = hpx;
     const c = fc.getContext('2d');
     const upper = fl.kind === 'upper';
+    const hosp = fl.kind === 'hospitalUpper';   // v0.18: planta de hospitalización
     const off = (TILE - WALL_T) / 2;
 
-    // suelo tile a tile (madera clara arriba / hormigón abajo)
+    // suelo tile a tile (madera clara arriba / linóleo clínico en el
+    // hospital / hormigón abajo)
     for (let ly = 0; ly < fl.h; ly++) {
       for (let lx = 0; lx < fl.w; lx++) {
         const t = fl.tiles[ly * fl.w + lx];
@@ -1374,6 +1690,23 @@ export class GameMap {
             c.fillStyle = 'rgba(0,0,0,0.12)';
             c.fillRect(sx, sy + TILE - 3, TILE, 2);
             if (hs > 0.62) c.fillRect(sx + Math.floor(hs * 24), sy, 2, TILE);
+          } else if (hosp) {
+            // v0.18: linóleo clínico pálido con juntas cruzadas y remaches
+            c.fillStyle = hs < 0.5 ? '#7c8880' : '#78857d';
+            c.fillRect(sx, sy, TILE, TILE);
+            c.fillStyle = 'rgba(0,0,0,0.13)';
+            c.fillRect(sx, sy, TILE, 1);
+            c.fillRect(sx, sy, 1, TILE);
+            c.fillStyle = 'rgba(255,255,255,0.05)';
+            c.fillRect(sx + 1, sy + 1, TILE - 2, 1);
+            if (hs > 0.78) {                     // remache del linóleo
+              c.fillStyle = 'rgba(0,0,0,0.18)';
+              c.fillRect(sx + 15, sy + 15, 2, 2);
+            }
+            if (hs > 0.4 && hs < 0.5) {         // pasada de limpieza desgastada
+              c.fillStyle = 'rgba(255,255,255,0.03)';
+              c.fillRect(sx + 2, sy + 2, TILE - 4, TILE - 4);
+            }
           } else {
             c.fillStyle = hs < 0.5 ? '#4b4b49' : '#474745';
             c.fillRect(sx, sy, TILE, TILE);
@@ -1420,6 +1753,12 @@ export class GameMap {
           c.strokeRect(rx * TILE + 5, ry * TILE + 5, rw * TILE - 10, rh * TILE - 10);
         }
       }
+    } else if (hosp) {
+      // v0.18: pasillo central del hospital — franja central de linóleo más
+      // claro (guía de circulación) del lado oeste al este
+      const gx0 = Math.floor(fl.w * 0.35) * TILE, gx1 = Math.floor(fl.w * 0.66) * TILE;
+      c.fillStyle = 'rgba(255,255,255,0.045)';
+      c.fillRect(gx0, TILE, Math.max(TILE, gx1 - gx0), (fl.h - 2) * TILE);
     } else {
       // sótano: ambiente más cerrado — viñeta oscura en los bordes
       const g = c.createRadialGradient(wpx / 2, hpx / 2, Math.min(wpx, hpx) * 0.25, wpx / 2, hpx / 2, Math.max(wpx, hpx) * 0.62);
@@ -1752,6 +2091,9 @@ export class GameMap {
       caja_municion: { name: 'Caja de munición', color: '#5a5240', letter: 'X' },
       armeria_mil: { name: 'Armería militar', color: '#2f3a2f', letter: 'G' },
       estanteria_mil: { name: 'Estantería de suministros', color: '#6a6a4a', letter: 'S' },
+      // v0.18: hospital
+      armario_medico: { name: 'Armario de medicina', color: '#3a7a6a', letter: 'F' },
+      carrito_curas: { name: 'Carrito de curas', color: '#5a8a9a', letter: 'T' },
     };
     const d = defs[type];
     const c = {
@@ -1972,6 +2314,19 @@ export class GameMap {
               if (ty % 4 === 0) ctx.fillRect(sx, sy, TILE, 1);
               ctx.fillStyle = 'rgba(0,0,0,0.14)';
               ctx.fillRect(sx, sy + TILE - 2, TILE, 2);
+            } else if (bk === 'hospital') {
+              // v0.18: hospital — linóleo clínico pálido con juntas cruzadas
+              ctx.fillStyle = h < 0.5 ? '#7c8880' : '#78857d';
+              ctx.fillRect(sx, sy, TILE, TILE);
+              ctx.fillStyle = 'rgba(0,0,0,0.13)';
+              ctx.fillRect(sx, sy, TILE, 1);
+              ctx.fillRect(sx, sy, 1, TILE);
+              ctx.fillStyle = 'rgba(255,255,255,0.05)';
+              ctx.fillRect(sx + 1, sy + 1, TILE - 2, 1);
+              if (h > 0.78) {                     // remache del linóleo
+                ctx.fillStyle = 'rgba(0,0,0,0.18)';
+                ctx.fillRect(sx + 15, sy + 15, 2, 2);
+              }
             } else {
               ctx.fillStyle = h < 0.5 ? '#6e5c44' : '#6a5840';
               ctx.fillRect(sx, sy, TILE, TILE);

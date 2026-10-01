@@ -20,12 +20,17 @@
 
 import { VISION, TILE, MAP_W, MAP_H, T, FLASH } from '../config.js';
 import { angDiff } from '../utils.js';
-import { flashActive, flashRangeMul } from '../systems/flashlight.js';
+import { flashActive, flashRangeMul, hospitalVisionMul } from '../systems/flashlight.js';
 
 /** Alcance efectivo del cono en este frame: base × clima (v0.15) × linterna
- *  (v0.17: el haz lo estira de noche, con neblina/lluvia y en interiores). */
+ *  (v0.17: el haz lo estira de noche, con neblina/lluvia y en interiores).
+ *  v0.18: DENTRO DEL HOSPITAL manda el APAGÓN — hospitalVisionMul aplica el
+ *  multiplicador de blackout (y con el haz lo despeja) SUSTITUYENDO a los
+ *  bonos de calle de flashRangeMul: dentro no se apilan. */
 function effRange(game) {
   let r = game.weather ? VISION.range * game.weather.visionMul() : VISION.range;
+  const hMul = hospitalVisionMul(game);
+  if (hMul !== 1) return r * hMul;      // hospital: blackout (con o sin haz)
   return r * flashRangeMul(game);
 }
 
