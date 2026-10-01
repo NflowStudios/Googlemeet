@@ -21,6 +21,12 @@
 import { VISION, TILE, MAP_W, MAP_H, T } from '../config.js';
 import { angDiff } from '../utils.js';
 
+/** Alcance efectivo del cono en este frame (v0.15: el clima lo contrae —
+ *  neblina −50%, lluvia −12%). Con clima despejado es VISION.range. */
+function effRange(game) {
+  return game.weather ? VISION.range * game.weather.visionMul() : VISION.range;
+}
+
 export class Vision {
   constructor() {
     this.cone = [];    // polígono del cono (coords de mundo)
@@ -50,9 +56,10 @@ export class Vision {
 
     this.cone.length = 0;
     const n = VISION.coneRays;
+    const range = effRange(game);   // v0.15: cono contraído por neblina/lluvia
     for (let i = 0; i <= n; i++) {
       const a = this.aim - VISION.halfAngle + (2 * VISION.halfAngle * i) / n;
-      const d = map.castRayZ(px, py, a, VISION.range, vz);
+      const d = map.castRayZ(px, py, a, range, vz);
       this.cone.push([px + Math.cos(a) * d, py + Math.sin(a) * d]);
     }
 
@@ -73,7 +80,7 @@ export class Vision {
     // aquí: solo lo que se cuela por ventanas / puertas abiertas llega a verse.
     // Sin memoria: se recalcula desde cero cada frame.
     this.wallTiles.clear();
-    const R = VISION.range + TILE;
+    const R = range + TILE;   // v0.15: el muestreo de estructura sigue al cono efectivo
     const t0x = Math.max(0, Math.floor((px - R) / TILE));
     const t1x = Math.min(MAP_W - 1, Math.floor((px + R) / TILE));
     const t0y = Math.max(0, Math.floor((py - R) / TILE));
@@ -117,7 +124,7 @@ export class Vision {
     const dx = x - player.x, dy = y - player.y;
     const d = Math.hypot(dx, dy);
     if (d < VISION.nearR) return map.lineClearZ(player.x, player.y, x, y, vz);
-    if (d > VISION.range + 12) return false;
+    if (d > effRange(game) + 12) return false;   // v0.15: alcance efectivo
     const a = Math.atan2(dy, dx);
     if (Math.abs(angDiff(this.aim, a)) > VISION.halfAngle + 0.14) return false;
     return map.lineClearZ(player.x, player.y, x, y, vz);
@@ -136,6 +143,8 @@ export class Vision {
     const { cam, player } = game;
     const f = this.fctx;
     const w = this.fog.width, h = this.fog.height;
+    // v0.15: el gradiente del cono termina en el alcance EFECTIVO (clima)
+    const range = effRange(game);
 
     f.setTransform(1, 0, 0, 1, 0, 0);
     f.globalCompositeOperation = 'source-over';
@@ -150,7 +159,7 @@ export class Vision {
 
     // 1) Visión actual: cono frontal con caída radial
     const ps = cam.worldToScreen(player.x, player.y);
-    const grad = f.createRadialGradient(ps.x, ps.y, 12, ps.x, ps.y, VISION.range);
+    const grad = f.createRadialGradient(ps.x, ps.y, 12, ps.x, ps.y, Math.max(24, range));
     grad.addColorStop(0, 'rgba(0,0,0,0.97)');
     grad.addColorStop(0.72, 'rgba(0,0,0,0.88)');
     grad.addColorStop(1, 'rgba(0,0,0,0.5)');

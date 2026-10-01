@@ -6,12 +6,18 @@
  *
  * v0.14 — VARIANTES:
  *  - normal:  el de toda la vida (equilibrado).
- *  - runner:  CORREDOR — mitad de vida, casi tan rápido como el jugador
- *             esprintando (te alcanza caminando; esprintando se te escapa).
+ *  - runner:  CORREDOR — mitad de vida y rápido, pero con margen para
+ *             contragolpear (v0.15: 148 px/s — caminando te alcanza,
+ *             esprintando le ganas de verdad; su golpe deja respiro).
  *             Carne fresca rosada y chillidos agudos.
  *  - brute:   BRUTO — solo en comisaría/tienda y ocasionalmente vagando por
  *             el mapa. Lento, muchísima vida, golpes demoledores y apenas
  *             retrocede al recibir impactos. Masa oscura y retumbo grave.
+ *
+ * v0.15 — CLIMA: con NEBLINA el alcance al que ven/huelen al jugador se
+ * contrae en la misma medida que la visión del jugador (hasta la mitad):
+ * todos van a tientas. La lluvia no los ciega (solo enmascara el ruido,
+ * cosa de noise.js).
  */
 
 import { ZOMBIE_CFG as Z, TILE, SPECIALS } from '../config.js';
@@ -92,6 +98,9 @@ export class Zombie {
     const d = dist(this.x, this.y, p.x, p.y);
     let detectR = p.sneak ? Z.detectSneak : Z.detectRadius;
     if (p.running) detectR = Math.max(detectR, Z.detectRun);
+    // v0.15: la neblina cierra SU alcance visual igual que el del jugador
+    // (la lluvia no: solo enmascara el sonido en noise.js)
+    if (game.weather) detectR *= game.weather.zombieSightMul();
     if (d > detectR) return false;
     // forAI=true: árboles y coches tapan la vista del zombi → cobertura.
     // El jugador los ve desde arriba, pero puede esconderse detrás de ellos.
@@ -131,7 +140,7 @@ export class Zombie {
         if (!seen[this.variant]) {
           seen[this.variant] = true;
           game.toasts.push(this.variant === 'runner'
-            ? '¡CORREDOR! La mitad de duro, muchísimo más rápido — esquívalo y golpéalo'
+            ? '¡CORREDOR! Frágil y veloz — esprintando le ganas: gana distancia y contragolpea'
             : '¡BRUTO! Lento pero brutal: mucha vida y golpes demoledores', 'warn');
           game.audio.groan(1, this._pan(game), this.groanPitch);
         }

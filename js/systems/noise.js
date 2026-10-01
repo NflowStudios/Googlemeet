@@ -5,6 +5,12 @@
  * dentro del radio escuchan y van a investigar. Caminar agachado reduce
  * drásticamente el radio; correr lo dispara. Se muestran anillos tenues
  * para que el jugador entienda su propia firma de sonido.
+ *
+ * v0.15 — CLIMA: `mul` contrae el radio de TODOS los ruidos cuando llueve
+ * (−25% a plena intensidad): la lluvia "tapa" el sonido. main.js lo fija
+ * cada frame desde weather.noiseMul(); con cielo despejado vale 1. Los
+ * anillos visuales y el medidor del HUD usan el radio YA ajustado — lo que
+ * ves es lo que oyen.
  */
 
 export class NoiseSystem {
@@ -13,6 +19,7 @@ export class NoiseSystem {
     this.frame = [];   // eventos de ruido del frame actual (los consume la IA)
     this.lastLevel = 0; // 0..4 para el medidor del HUD
     this._levelTimer = 0;
+    this.mul = 1;      // v0.15: multiplicador climático (lluvia 0.75..1)
   }
 
   /**
@@ -22,6 +29,7 @@ export class NoiseSystem {
    * @param {string} kind etiqueta (paso, ataque, puerta…)
    */
   emit(x, y, radius, kind = 'paso') {
+    radius *= this.mul;   // v0.15: la lluvia enmascara el sonido (radio menor)
     this.frame.push({ x, y, radius, kind });
     if (radius > 8) {
       this.rings.push({ x, y, r: radius, t: 0, life: 0.55 });

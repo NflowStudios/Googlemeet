@@ -10,6 +10,10 @@ export class AudioFX {
     this.muted = false;
     this._noiseBuf = null;
     this._hbTimer = 0;
+    this._rainSrc = null;    // v0.15: bucle de lluvia (ruido filtrado)
+    this._rainGain = null;
+    this._rainLevel = 0;     // último nivel pedido (para truenos)
+    this._thunderT = 20;     // v0.15: cuenta atrás del próximo trueno lejano
   }
 
   init() {
@@ -203,6 +207,70 @@ export class AudioFX {
       this._hbTimer = 0.85;
       this._tone('sine', 52, 40, 0.11, 0.55);
       setTimeout(() => this._tone('sine', 48, 38, 0.1, 0.4), 190);
+    }
+  }
+
+  // ---------- Clima (v0.15) ----------
+
+  /**
+   * Ambiente de lluvia: bucle de ruido filtrado cuyo volumen sigue la
+   * intensidad del frente (0 = silencio). Llamar cada frame jugando.
+   * Con nivel alto, de vez en cuando ruge un trueno LEJANO (grave y suave:
+   * acompaña, no asusta).
+   */
+  setRain(level, dt = 0) {
+    if (!this.ctx || !this.master) return;
+    this._ensureRain();
+    this._rainLevel = level;
+    if (this._rainGain) {
+      const t = this.ctx.currentTime;
+      this._rainGain.gain.cancelScheduledValues(t);
+      this._rainGain.gain.setTargetAtTime(0.16 * level, t, 0.6);   // sube/baja suave
+    }
+    // truenos lejanos: solo con lluvia establecida (cada 22-60 s)
+    if (level > 0.45 && dt > 0) {
+      this._thunderT -= dt;
+      if (this._thunderT <= 0) {
+        this._thunderT = 22 + Math.random() * 38;
+        this._thunder(0.3 + Math.random() * 0.2 * level);
+      }
+    } else if (level <= 0.05) {
+      this._thunderT = Math.max(this._thunderT, 8);   // nada de truenos residuales
+    }
+  }
+
+  /** Retumbo grave y lejano: dos capas de ruido con cola larga. */
+  _thunder(vol) {
+    this._noise(1.6, 'lowpass', 110, vol * 0.5);
+    this._tone('sine', 54, 27, 1.3, vol * 0.4);
+    setTimeout(() => this._noise(0.9, 'lowpass', 90, vol * 0.3), 260);
+  }
+
+  /** Crea (una sola vez) el bucle de lluvia: ruido blanco → pasa-banda. */
+  _ensureRain() {
+    if (this._rainSrc || !this.ctx) return;
+    try {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this._noiseBuf;
+      src.loop = true;
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 1500;
+      f.Q.value = 0.45;
+      // el agua cae con vaivén: modulación lenta del filtro
+      const lfo = this.ctx.createOscillator();
+      lfo.frequency.value = 0.13;
+      const lfoG = this.ctx.createGain();
+      lfoG.gain.value = 320;
+      lfo.connect(lfoG); lfoG.connect(f.frequency);
+      const g = this.ctx.createGain();
+      g.gain.value = 0;
+      src.connect(f); f.connect(g); g.connect(this.master);
+      src.start(); lfo.start();
+      this._rainSrc = src;
+      this._rainGain = g;
+    } catch (e) {
+      this._rainSrc = null;
     }
   }
 

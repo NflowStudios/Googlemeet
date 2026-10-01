@@ -1,7 +1,8 @@
 /**
  * render.js — Composición del frame: mundo → entidades → copas → ruido →
  * niebla de guerra (dinámica día/noche) → estructura iluminada → TECHOS →
- * tinte ambiente día/noche → retícula → viñetas de estado.
+ * tinte ambiente día/noche → CLIMA (v0.15: lluvia/neblina) → retícula →
+ * viñetas de estado.
  */
 
 import { DAYNIGHT } from './config.js';
@@ -75,6 +76,11 @@ export function renderGame(ctx, game) {
   // viendo, pero el mundo pesa). Amanecer/atardecer: golpe cálido anaranjado.
   drawDayNightTint(ctx, game);
 
+  // ---- clima (v0.15): lluvia en cortinas + gris azulado, neblina lechosa
+  // con bancos a la deriva. Mecánica aparte: el cono ya se contrajo en
+  // vision.js (neblina −50%, lluvia −12%).
+  drawWeatherFX(ctx, game);
+
   // ---- espacio de pantalla ----
   drawCrosshair(ctx, game);
   drawVignettes(ctx, game);
@@ -94,6 +100,83 @@ function drawDayNightTint(ctx, game) {
     ctx.fillStyle = `rgba(9, 13, 30, ${(DAYNIGHT.tintNight * dark).toFixed(3)})`;
     ctx.fillRect(0, 0, w, h);
   }
+}
+
+// ================== Clima (v0.15) ==================
+
+/** Hash determinista [0,1) — animación SIN estado de las gotas/bancos. */
+function _h1(n) {
+  const s = Math.sin(n * 127.1) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/** Módulo siempre positivo (para el wrap-around de las gotas). */
+const _wrap = (v, m) => ((v % m) + m) % m;
+
+/**
+ * Lluvia: cortinas de gotas diagonales (caen con un ligero viento) sobre un
+ * velo gris azulado. La animación es pura función del tiempo: nada de estado
+ * que serializar ni que pueda desincronizarse con el guardado.
+ */
+function drawRain(ctx, w, h, i, t) {
+  // velo de cielo encapotado
+  ctx.fillStyle = `rgba(34, 42, 54, ${(0.11 * i).toFixed(3)})`;
+  ctx.fillRect(0, 0, w, h);
+
+  const n = Math.round(150 * i);
+  if (!n) return;
+  ctx.save();
+  ctx.strokeStyle = `rgba(172, 192, 214, ${(0.30 * i).toFixed(3)})`;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  const spanY = h + 40;
+  const spanX = w + 120;
+  for (let k = 0; k < n; k++) {
+    const spd = 560 + _h1(k + 7.3) * 340;         // px/s de caída
+    const drift = -70 - _h1(k + 3.1) * 55;        // viento hacia la izquierda
+    const len = 11 + _h1(k + 11.7) * 9;           // largo del trazo
+    const y = _wrap(_h1(k + 5.9) * spanY + t * spd, spanY) - 20;
+    const x = _wrap(_h1(k) * spanX + t * drift, spanX) - 60;
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (drift / spd) * len, y + len);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Neblina: velo lechoso general + bancos amplios a la deriva (radios grandes
+ * que se solapan). La parte MECÁNICA (cono a la mitad) ya la hizo vision.js;
+ * esto vende la sensación de mundo cerrado.
+ */
+function drawFog(ctx, w, h, i, t) {
+  ctx.fillStyle = `rgba(184, 192, 198, ${(0.15 * i).toFixed(3)})`;
+  ctx.fillRect(0, 0, w, h);
+  const big = Math.max(w, h);
+  for (let k = 0; k < 6; k++) {
+    const ph = _h1(k) * Math.PI * 2;
+    const spd = 0.05 + _h1(k + 2.2) * 0.06;
+    const cx = w * (0.15 + 0.7 * _h1(k + 4.4)) + Math.cos(t * spd + ph) * w * 0.2;
+    const cy = h * (0.15 + 0.7 * _h1(k + 8.8)) + Math.sin(t * spd * 1.3 + ph) * h * 0.18;
+    const R = big * (0.22 + _h1(k + 13.1) * 0.15);
+    const g = ctx.createRadialGradient(cx, cy, R * 0.1, cx, cy, R);
+    g.addColorStop(0, `rgba(200, 208, 214, ${(0.085 * i).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(200, 208, 214, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }
+}
+
+/** Capa climática del frame: solo si hay frente activo con intensidad. */
+function drawWeatherFX(ctx, game) {
+  const wx = game.weather;
+  if (!wx || wx.type === 'clear') return;
+  const i = wx.intensity;
+  if (i <= 0.01) return;
+  const w = game.cam.w, h = game.cam.h;
+  const t = performance.now() / 1000;
+  if (wx.type === 'rain') drawRain(ctx, w, h, i, t);
+  else drawFog(ctx, w, h, i, t);
 }
 
 /** Trazadoras, fogonazos y polvo de impacto de las armas de fuego. */

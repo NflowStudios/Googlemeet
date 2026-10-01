@@ -14,6 +14,7 @@ import { AudioFX } from './core/audio.js';
 import { GameMap } from './world/map.js';
 import { Vision } from './world/vision.js';
 import { DayNight } from './world/daynight.js';
+import { Weather } from './world/weather.js';
 import { NoiseSystem } from './systems/noise.js';
 import { Survival } from './systems/survival.js';
 import { Inventory, makeItem, fillContainer, itemLabel, refillMagazines } from './systems/inventory.js';
@@ -47,6 +48,7 @@ class Game {
     this.noise = new NoiseSystem();
     this.vision = new Vision();
     this.daynight = new DayNight();   // ciclo día/noche (solo avanza jugando)
+    this.weather = new Weather();     // v0.15: lluvia y neblina (idem: solo jugando)
 
     this.state = STATE.MENU;
     this.uiOpen = false;
@@ -63,6 +65,7 @@ class Game {
     this.seedUsed = 0;        // v0.13: semilla de la partida (para el guardado)
     this._autosaveT = 0;      // v0.13: cronómetro del autoguardado (5 min)
     this._seenVariants = {};  // v0.14: bestiario (toasts únicos por variante)
+    this._weatherMark = 'clear';  // v0.15: para avisar de transiciones climáticas
 
     this.input.attach(canvas, (a) => this.onAction(a));
     this._resize();
@@ -119,6 +122,8 @@ class Game {
     this.vision = new Vision();
     this.daynight.reset();            // amanece a las 08:00 del día 1
     this._hourMark = Math.floor(this.daynight.hour);
+    this.weather.reset();             // v0.15: cielo despejado, primer frente a 2-5 días
+    this._weatherMark = this.weather.type;
     this._resize();
 
     // botín en todos los contenedores
@@ -181,6 +186,7 @@ class Game {
     this._dryToastT = 0;
     this._autosaveT = 0;
     this._seenVariants = {};   // v0.14: el bestiario se reavisa tras cargar
+    this._weatherMark = this.weather.type;   // v0.15: sin toast de clima al restaurar
     this.noise = new NoiseSystem();
     this.vision = new Vision();
     this._resize();
@@ -219,6 +225,7 @@ class Game {
     this.uiOpen = false;
     this.invUI.closeUI();
     this.hud.hide();
+    this.audio.setRain(0);   // v0.15: el mundo no se dibuja en el menú → sin lluvia
     this.menus.hideAll();
     this.menus.showMenu();      // refresca el botón CONTINUAR PARTIDA
   }
@@ -310,7 +317,25 @@ class Game {
     }
   }
 
-  // ================== Eventos del ciclo día/noche ==================
+  // ================== Eventos del ciclo día/noche y del clima ==================
+
+  /**
+   * v0.15: transición de clima → toasts (compara con la marca del frame
+   * anterior, igual que _onHourChange con la hora). El primer frame tras
+   * empezar/continuar no avisa: la marca se fija en startRun/continueRun.
+   */
+  _onWeatherChange(prev, now) {
+    if (prev === now) return;
+    if (now === 'rain') {
+      this.toasts.push('Llueve: el ruido queda enmascarado — te oyen menos, ves algo menos', 'info');
+    } else if (now === 'fog') {
+      this.toasts.push('Neblina densa: visibilidad reducida a la mitad… también para ellos', 'warn');
+    } else if (prev === 'rain') {
+      this.toasts.push('La lluvia amaina', 'info');
+    } else if (prev === 'fog') {
+      this.toasts.push('La neblina se disipa', 'info');
+    }
+  }
 
   /** Cambio de hora del reloj interno: avisos y respawn nocturno. */
   _onHourChange(h) {
@@ -502,6 +527,21 @@ class Game {
       this._hourMark = dnH;
       this._onHourChange(dnH);
     }
+
+    // v0.15: clima (lluvia/neblina) — avanza con el mundo, avisa de
+    // transiciones y deja listos los multiplicadores del frame:
+    //  · noise.mul → la lluvia enmascara TODOS los ruidos de este frame
+    //    (pasos, disparos, puertas…): lo leen los zombis al escuchar.
+    //  · audio.setRain → ambiente de lluvia con su intensidad (y truenos).
+    this.weather.update(dt);
+    const wt = this.weather.type;
+    if (wt !== this._weatherMark) {
+      const prev = this._weatherMark;
+      this._weatherMark = wt;
+      this._onWeatherChange(prev, wt);
+    }
+    this.noise.mul = this.weather.noiseMul();
+    this.audio.setRain(wt === 'rain' ? this.weather.intensity : 0, dt);
 
     this.player.update(dt, this);
     this.player.inventory.setCapacity(this.player.capacity());

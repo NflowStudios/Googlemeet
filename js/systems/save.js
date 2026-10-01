@@ -10,7 +10,8 @@
  *    de cargadores/tubos.
  *  - Zombis vivos (posición, vida, estado de IA), contenedores (registrado
  *    + contenido), objetos del suelo, contadores vitales, hora del ciclo
- *    día/noche y estadísticas de la partida.
+ *    día/noche, estado del CLIMA (v0.15: lluvia/neblina y su cuenta atrás)
+ *    y estadísticas de la partida.
  *
  * QUÉ NO: efectos efímeros (trazadoras, fogonazos, recarga en curso,
  * retroceso). El guardado es instantáneo y a prueba de corrupción leve
@@ -23,6 +24,7 @@ import { ITEMS, BASE_SLOTS, DAYNIGHT, T } from '../config.js';
 import { Rng } from '../rng.js';
 import { GameMap } from '../world/map.js';
 import { DayNight } from '../world/daynight.js';
+import { Weather } from '../world/weather.js';
 import { makeItem, Inventory } from './inventory.js';
 import { Survival } from './survival.js';
 import { Player } from '../entities/player.js';
@@ -142,6 +144,7 @@ export function buildSaveData(game) {
     kills: game.kills,
     searched: game.searchedCount,
     dn: { t: +game.daynight.t.toFixed(2) },
+    wx: game.weather ? game.weather.toData() : null,   // v0.15: clima
     player, surv,
     zombies: game.zombies.map(zombieToData),
     containers, ground, doors,
@@ -267,6 +270,11 @@ export function restoreGame(game, data) {
     game.daynight = new DayNight();
     game.daynight.t = data.dn.t || 0;
     game._hourMark = Math.floor(game.daynight.hour);
+
+    // ---- clima (v0.15): frente activo y cuenta atrás del siguiente ----
+    // guardados v0.13/v0.14 sin bloque wx → cielo despejado con agenda nueva
+    game.weather = new Weather();
+    game.weather.load(data.wx);
 
     // ---- zombis ----
     game.zombies = data.zombies.map(zombieFromData);

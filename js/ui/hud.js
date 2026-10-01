@@ -42,6 +42,8 @@ export class HUD {
     this.clockEl = document.getElementById('clock');
     this.clockTime = document.getElementById('clock-time');
     this.clockDay = document.getElementById('clock-day');
+    this.clockWeather = document.getElementById('clock-weather');  // v0.15
+    this._wxSig = '';
   }
 
   show() { this.el.classList.remove('hidden'); }
@@ -120,6 +122,16 @@ export class HUD {
       this.clockTime.textContent = g.daynight.clock;
       this.clockDay.textContent = 'DÍA ' + g.daynight.day;
       this.clockEl.classList.toggle('night', g.daynight.darkness > 0.5);
+    }
+
+    // v0.15: estado del clima bajo el reloj (LLUVIA/NEBLINA; despejado → oculto)
+    if (this.clockWeather && g.weather) {
+      const ty = g.weather.type;
+      if (ty !== this._wxSig) {
+        this._wxSig = ty;
+        this.clockWeather.textContent = g.weather.label;
+        this.clockWeather.className = ty;
+      }
     }
 
     // ruido

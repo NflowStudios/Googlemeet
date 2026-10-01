@@ -88,6 +88,15 @@ canvas#game {
   letter-spacing: 3px;
   color: var(--text-dim);
 }
+/* v0.15: estado del clima bajo el reloj (LLUVIA / NEBLINA; vacío = despejado) */
+#clock-weather {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+}
+#clock-weather.rain { color: #9fc6e8; }
+#clock-weather.fog  { color: #cdd4d8; }
 #clock.night { border-right-color: #4a6a9a; }
 #clock.night #clock-time { color: #8fb7e8; }
 

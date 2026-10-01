@@ -81,6 +81,27 @@ export const DAYNIGHT = {
   tintDusk: 0.16,      // golpe cálido al amanecer/atardecer
 };
 
+// ---------- Clima (v0.15): lluvia y neblina ----------
+// El clima es un evento GLOBAL con vida propia: cada 2-5 días de juego
+// llega un frente que dura entre medio día y un día completos (12-24 h de
+// juego, aleatorio). Llega y se va con una rampa suave (~1 h de juego)
+// para que la transición no sea un cambio brusco.
+//  - LLUVIA: enmascara el sonido (el radio de los ruidos baja un 25% —
+//    tus pasos y disparos atraen menos) pero reduce un poco la visión (12%).
+//  - NEBLINA: reduce la visibilidad a la MITAD (cono de 440→220 px) y
+//    también cierra el alcance visual de los zombis (ven/huelen a 112→56 px).
+// El clima solo avanza JUGANDO (como el ciclo día/noche) y se guarda con
+// la partida (save.js: bloque wx).
+export const WEATHER = {
+  gapDays: [2, 5],        // días de juego entre frentes (aleatorio en el rango)
+  durHours: [12, 24],     // duración: medio día a un día de juego
+  rampHours: 1,           // entrada/salida suaves (~1 h de juego)
+  rainChance: 0.55,       // probabilidad de que el frente sea lluvia (resto: neblina)
+  rainVisionMul: 0.88,    // lluvia: visibilidad −12% («un poco»)
+  fogVisionMul: 0.5,      // neblina: visibilidad −50% («en gran medida»)
+  rainNoiseMul: 0.75,     // lluvia: los ruidos se enmascaran (radio efectivo −25%)
+};
+
 // ---------- Plantas: 2º piso y sótanos ----------
 // Algunas casas tienen una planta extra (nunca las dos): una escalera interior
 // conecta la planta baja con el 2º piso o el sótano. Mecánica visual gemela a
@@ -135,8 +156,9 @@ export const SURV = {
 
 // ---------- Zombis ----------
 // v0.14 — VARIANTES: además del zombi común existen CORREDORES (mitad de
-// vida, casi tan rápidos como el jugador esprintando) y BRUTOS (escasos:
-// comisaría/tienda + algún errante ocasional; lentos, durísimos y brutales).
+// vida, rápidos pero con margen real para escaparles y contragolpear desde
+// v0.15) y BRUTOS (escasos: comisaría/tienda + algún errante ocasional;
+// lentos, durísimos y brutales).
 // Los valores de la cabecera son el zombi NORMAL; las variantes los
 // sobreescriben en ZOMBIE_CFG.variants.
 export const ZOMBIE_CFG = {
@@ -165,20 +187,23 @@ export const ZOMBIE_CFG = {
   bruteSpecials: { police: 2, store: 1 },  // brutos de guarnición por estructura
   bruteRoamChance: 0.55,     // probabilidad de que el mapa tenga brutos errantes
   variants: {
-    // CORREDOR: carne fresca. Mitad de vida, pero casi alcanza a un jugador
-    // esprintando (195 px/s) — te alcanza caminando, se te escapa esprintando.
+    // CORREDOR: carne fresca. Mitad de vida y rápido, pero ya NO te pega
+    // pegado sin remedio (v0.15): 148 px/s de persecución (techo 155 con
+    // su variación) — caminando te alcanza, pero esprintando le ganas por
+    // 40+ px/s y abres hueco en segundos. Además su golpe deja respiro
+    // (cadencia 1.05 s) para que el contragolpe sea una opción real.
     runner: {
       hp: 50,
       radius: 9,
       wanderSpeed: 46,
-      investigateSpeed: 118,
-      chaseSpeed: 174,             // ~0.89 × esprint del jugador: justo
-      speedMulRange: [0.95, 1.05], // techo 183 px/s < 195: SIEMPRE escapable esprintando
-      attackCd: 0.8,
+      investigateSpeed: 102,
+      chaseSpeed: 148,             // ~0.76 × esprint del jugador: escapable de verdad
+      speedMulRange: [0.95, 1.05], // techo 155.4 < 195: esprintando SIEMPRE le ganas
+      attackCd: 1.05,              // v0.15: ventana de contragolpe entre mordiscos
       attackRange: 25,
       dmgMin: 8,
       dmgMax: 14,
-      loseSightTime: 3.2,          // no se rinden pronto
+      loseSightTime: 2.8,          // v0.15: si rompes la línea de visión, cesa antes
       kbMult: 1.35,                // ligeros: salen volando con cada golpe
       groanPitch: 1.55,            // chillido agudo
     },
