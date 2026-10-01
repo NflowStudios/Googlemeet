@@ -148,6 +148,7 @@ class Game {
     this.deathCause = null;
     this._autosaveT = 0;
     this._seenVariants = {};   // v0.14: aviso único por variante en esta partida
+    this._militarySeen = false;  // v0.16: aviso único al entrar en la base militar
     this.cam.y = this.player.y - this.cam.h / 2;
 
     this.menus.hideAll();
@@ -186,6 +187,7 @@ class Game {
     this._dryToastT = 0;
     this._autosaveT = 0;
     this._seenVariants = {};   // v0.14: el bestiario se reavisa tras cargar
+    this._militarySeen = false;  // v0.16: el aviso de la base se reactiva tras cargar
     this._weatherMark = this.weather.type;   // v0.15: sin toast de clima al restaurar
     this.noise = new NoiseSystem();
     this.vision = new Vision();
@@ -582,8 +584,22 @@ class Game {
     // barra rápida: vacía las ranuras cuyo objeto ya no llevas
     hotbarValidate(this.player);
 
+    // v0.16: aviso único al pisar por primera vez la BASE MILITAR
+    if (!this._militarySeen && this.player.z === 0) {
+      const b = this.map.buildingAtPx(this.player.x, this.player.y);
+      if (b && b.kind === 'military') {
+        this._militarySeen = true;
+        this.toasts.push('BASE MILITAR: el sótano guarda el mejor botín del juego… y a sus dueños', 'warn');
+        this.audio.groan(1, 0, 0.55);
+      }
+    }
+
     // visibilidad de entidades (para render y lógica de "solo lo que ves")
-    for (const z of this.zombies) z.visibleNow = this.vision.isVisible(z.x, z.y, this);
+    // v0.16: la visibilidad es de TU planta (el sótano tiene su propio mundo)
+    const _pz = this.player.climb ? this.player.climb.to : (this.player.z || 0);
+    for (const z of this.zombies) {
+      z.visibleNow = ((z.z || 0) === _pz) && this.vision.isVisible(z.x, z.y, this);
+    }
     for (const gi of this.groundItems) gi.visibleNow = this.vision.isVisible(gi.x, gi.y, this);
 
     const mw = this.cam.screenToWorld(this.input.mouse.x, this.input.mouse.y);

@@ -20,7 +20,7 @@
  * cosa de noise.js).
  */
 
-import { ZOMBIE_CFG as Z, TILE, SPECIALS } from '../config.js';
+import { ZOMBIE_CFG as Z, TILE, T, SPECIALS } from '../config.js';
 import { dist, angDiff } from '../utils.js';
 
 const ST = { IDLE: 'idle', WANDER: 'wander', INVESTIGATE: 'investigate', SEARCH: 'search', CHASE: 'chase' };
@@ -55,11 +55,11 @@ function applyVariant(z, variant) {
 }
 
 export class Zombie {
-  constructor(x, y, rng, variant = 'normal') {
+  constructor(x, y, rng, variant = 'normal', z = 0) {
     this.x = x; this.y = y;
     applyVariant(this, variant);
     this.hp = this.maxHp;
-    this.z = 0;                 // los zombis viven en la planta baja
+    this.z = z;                 // planta: 0 calle/baja, -1 sótanos (base militar)
     this.state = ST.IDLE;
     this.timer = rng.range(0.5, 3);
     this.dirX = 0; this.dirY = 0;
@@ -104,7 +104,8 @@ export class Zombie {
     if (d > detectR) return false;
     // forAI=true: árboles y coches tapan la vista del zombi → cobertura.
     // El jugador los ve desde arriba, pero puede esconderse detrás de ellos.
-    return game.map.lineClear(this.x, this.y, p.x, p.y, true);
+    // v0.16: la línea de visión es la de TU planta (el sótano tiene sus muros)
+    return game.map.lineClearZ(this.x, this.y, p.x, p.y, this.z);
   }
 
   update(dt, game) {
@@ -216,7 +217,7 @@ export class Zombie {
         // cerradas bloquean el golpe (mismo criterio que el melee del jugador;
         // el cristal de las ventanas deja golpear a través).
         if (d < this.attackRange + p.r && this.attackCd <= 0 && (p.z || 0) === this.z &&
-            !p.climb && map.lineClear(this.x, this.y, p.x, p.y)) {
+            !p.climb && map.lineClearZ(this.x, this.y, p.x, p.y, this.z)) {
           this.attackCd = this.attackCdBase;
           game.combatZombieHit(this);
         }
@@ -228,6 +229,7 @@ export class Zombie {
     // normal+normal sigue siendo 22 px, como siempre) ----
     for (const o of game.zombies) {
       if (o === this) continue;
+      if ((o.z || 0) !== this.z) continue;   // v0.16: no se empujan a través del suelo
       const dx = this.x - o.x, dy = this.y - o.y;
       const dd = dx * dx + dy * dy;
       const sep = this.r + o.r + 2;
@@ -241,7 +243,7 @@ export class Zombie {
     // ---- movimiento + knockback ----
     const ox = this.x, oy = this.y;
     if (speed > 0 || this.kbx !== 0 || this.kby !== 0) {
-      map.moveCircle(this, (mvx * speed + this.kbx) * dt, (mvy * speed + this.kby) * dt);
+      map.moveCircle(this, (mvx * speed + this.kbx) * dt, (mvy * speed + this.kby) * dt, this.z || 0);
     }
     this.kbx *= Math.pow(0.0005, dt);
     this.kby *= Math.pow(0.0005, dt);
@@ -262,7 +264,7 @@ export class Zombie {
           // desliza en perpendicular
           const perp = Math.random() < 0.5 ? 1 : -1;
           const px = -mvy * perp, py = mvx * perp;
-          map.moveCircle(this, px * speed * dt * 8, py * speed * dt * 8);
+          map.moveCircle(this, px * speed * dt * 8, py * speed * dt * 8, this.z || 0);
           this.stuckT = 0.3;
         }
       } else {
@@ -445,7 +447,7 @@ export function spawnZombies(map, rng, count, spawnPoint) {
   // v0.14: cada estructura guarda SUS BRUTOS de guarnición (comisaría 2,
   // tienda 1) entre su gente de dentro.
   for (const b of map.buildings) {
-    if (b.kind !== 'police' && b.kind !== 'store') continue;
+    if (b.kind !== 'police' && b.kind !== 'store' && b.kind !== 'military') continue;
     const sp = SPECIALS[b.kind];
     const brutes = Z.bruteSpecials[b.kind] || 0;
     for (let i = 0; i < sp.inside; i++) {
@@ -462,6 +464,24 @@ export function spawnZombies(map, rng, count, spawnPoint) {
       if (!pos) break;
       zombies.push(new Zombie(pos.x, pos.y, rng, pickVariant()));
     }
+    // v0.16: GUARDIANES DEL SÓTANO de la base militar — esperan abajo,
+    // junto al botín. Mezcla fija: 1 bruto + 1 corredor + 2 normales.
+    if (b.kind === 'military' && b.basement && sp.basement) {
+      const fl = b.basement;
+      const free = [];
+      for (let ly = 1; ly < fl.h - 1; ly++) {
+        for (let lx = 1; lx < fl.w - 1; lx++) {
+          const t = fl.tiles[ly * fl.w + lx];
+          if (t === T.FLOOR) free.push({ lx, ly });
+        }
+      }
+      const kinds = ['brute', 'runner', 'normal', 'normal'];
+      for (let i = 0; i < Math.min(sp.basement, free.length); i++) {
+        const c = free[(i * 7 + 3) % free.length];   // repartidos, no apiñados
+        const wx = (b.x0 + c.lx) * TILE + TILE / 2, wy = (b.y0 + c.ly) * TILE + TILE / 2;
+        zombies.push(new Zombie(wx, wy, rng, kinds[i % kinds.length], -1));
+      }
+    }
   }
 
   // --- v0.14: BRUTOS errantes ocasionales ---
@@ -469,7 +489,7 @@ export function spawnZombies(map, rng, count, spawnPoint) {
   // exterior y aún más allá de la burbuja de seguridad del spawn: cruzarte
   // con uno debe ser un suceso, no una emboscada de bienvenida.
   if (rng.chance(Z.bruteRoamChance)) {
-    const n = 1 + (rng.chance(0.5) ? 1 : 0);
+    const n = 1 + (rng.chance(0.5) ? 1 : 0) + (rng.chance(0.35) ? 1 : 0);   // v0.16: 1-3 con el mapa al doble
     for (let i = 0; i < n; i++) {
       let pos = null;
       for (let k = 0; k < 60 && !pos; k++) {
@@ -492,6 +512,7 @@ export function spawnZombies(map, rng, count, spawnPoint) {
 export function zombieToData(z) {
   return {
     va: z.variant, x: +z.x.toFixed(1), y: +z.y.toFixed(1), hp: z.hp,
+    zz: z.z || 0,                       // v0.16: planta (guardianes del sótano)
     st: z.state, tm: +z.timer.toFixed(2),
     dx: +z.dirX.toFixed(2), dy: +z.dirY.toFixed(2),
     tx: +z.targetX.toFixed(1), ty: +z.targetY.toFixed(1),
@@ -507,7 +528,7 @@ export function zombieFromData(d) {
   applyVariant(z, d.va);        // v0.14: stats + radio de su variante
   z.x = d.x; z.y = d.y;
   z.hp = d.hp;
-  z.z = 0;                       // los zombis viven en la planta baja
+  z.z = d.zz || 0;                // v0.16: planta (guardianes del sótano)
   z.state = d.st || ST.IDLE;
   z.timer = d.tm ?? 1;
   z.dirX = d.dx || 0; z.dirY = d.dy || 0;

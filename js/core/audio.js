@@ -149,9 +149,26 @@ export class AudioFX {
 
   // ---------- Armas de fuego (procedurales) ----------
 
-  /** Disparo según el arma: pistola / escopeta / rifle. */
+  /** Disparo según el arma: pistola / escopeta / rifle / revólver /
+   *  cerrojo / subfusil (v0.16). */
   gunshot(kind) {
-    if (kind === 'escopeta') {
+    if (kind === 'revolver') {
+      // v0.16 — magnum: trueno Graves, cola larga y metálica
+      this._noise(0.14, 'lowpass', 520, 0.9);
+      this._tone('square', 300, 42, 0.16, 0.75);
+      this._noise(0.3, 'lowpass', 160, 0.55);
+      this._noise(0.05, 'highpass', 1500, 0.5);
+    } else if (kind === 'cerrojo') {
+      // v0.16 — cerrojo .308: latigazo seco y profundo con eco
+      this._noise(0.08, 'highpass', 1000, 0.85);
+      this._tone('sine', 95, 30, 0.3, 0.9);
+      this._noise(0.34, 'lowpass', 130, 0.6);
+    } else if (kind === 'subfusil') {
+      // v0.16 — subfusil: chasquido corto y contenido (ráfagas)
+      this._noise(0.05, 'highpass', 1100, 0.55);
+      this._tone('square', 480, 90, 0.05, 0.38);
+      this._noise(0.1, 'lowpass', 260, 0.3);
+    } else if (kind === 'escopeta') {
       // trueno grave con cola
       this._noise(0.16, 'lowpass', 420, 0.95);
       this._tone('sine', 120, 36, 0.26, 0.85);
@@ -168,6 +185,13 @@ export class AudioFX {
       this._tone('square', 420, 60, 0.08, 0.55);
       this._noise(0.22, 'lowpass', 180, 0.45);
     }
+  }
+
+  /** v0.16: accionar el cerrojo del rifle de caza tras disparar. */
+  boltCycle() {
+    this._tone('square', 340, 250, 0.05, 0.2);
+    setTimeout(() => this._noise(0.06, 'bandpass', 540, 0.25, 0, 3), 130);
+    setTimeout(() => this._tone('square', 260, 190, 0.05, 0.22), 210);
   }
 
   /** Accionar la corredera de la escopeta tras disparar. */

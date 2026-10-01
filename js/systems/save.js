@@ -30,7 +30,10 @@ import { Survival } from './survival.js';
 import { Player } from '../entities/player.js';
 import { zombieToData, zombieFromData } from '../entities/zombie.js';
 
-export const SAVE_VERSION = 1;
+// v0.16: bump a 2 — el mapa se regeneró al DOBLE con la base militar y las
+// posiciones guardadas de la v1 ya no son válidas (los guardados viejos se
+// rechazan limpiamente y el menú arranca partida nueva).
+export const SAVE_VERSION = 2;
 export const AUTOSAVE_SEC = 300;        // autoguardado cada 5 min DE PARTIDA
 const KEY = 'zonacero.save.v' + SAVE_VERSION;
 

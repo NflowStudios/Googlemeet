@@ -9,8 +9,11 @@ export const TILE = 32;
 // una franja centrada en el tile (WALL_T de alto/ancho) que corre a lo largo
 // de la línea de muro; el resto del tile es suelo transitable (exterior/interior).
 export const WALL_T = 10;
-export const MAP_W = 130;   // tiles (v0.10: mapa ampliado, antes 100×80)
-export const MAP_H = 104;
+// v0.16: mapa AMPLIADO AL DOBLE de superficie (13.520 → 27.232 m²):
+// 184×148 tiles (5.888×4.736 px). La retícula pasa de 5×4 a 7×6 manzanas
+// para hacer hueco a la BASE MILITAR y a la nueva economía de armas.
+export const MAP_W = 184;   // tiles (v0.16: antes 130)
+export const MAP_H = 148;   // tiles (v0.16: antes 104)
 export const WORLD_W = MAP_W * TILE;
 export const WORLD_H = MAP_H * TILE;
 
@@ -60,9 +63,14 @@ export const ROOF = {
 // grandes que una casa y con tejado plano institucional inconfundible.
 //  inside/around: zombis extra DENTRO / ALREDEDOR (la comisaría es el punto
 //  más peligroso del mapa; la tienda tiene presión media).
+// v0.16 — BASE MILITAR: la estructura más grande del juego. Planta baja
+//  INFESTADA (18 dentro, 4 de ellos brutos de guarnición) y un SÓTANO-
+//  ARSENAL repleto del mejor botín, con sus propios guardianes abajo.
+//  Ahí vive en exclusiva el Subfusil Cuervo y todo el equipo militar.
 export const SPECIALS = {
   police: { w: 17, h: 13, inside: 6, around: 4 },   // armería + casilleros
   store:  { w: 14, h: 10, inside: 3, around: 2 },   // pasillos de estanterías
+  military: { w: 22, h: 20, inside: 18, around: 5, basement: 4 },  // arsenal subterráneo
 };
 
 // ---------- Ciclo día/noche (v0.11) ----------
@@ -162,7 +170,7 @@ export const SURV = {
 // Los valores de la cabecera son el zombi NORMAL; las variantes los
 // sobreescriben en ZOMBIE_CFG.variants.
 export const ZOMBIE_CFG = {
-  count: 74,            // v0.10: mapa ~69% más grande → densidad similar (antes 44)
+  count: 150,            // v0.16: mapa al doble → densidad intacta (antes 74)
   hp: 100,
   radius: 10,
   wanderSpeed: 30,
@@ -179,12 +187,12 @@ export const ZOMBIE_CFG = {
   searchTime: 3.0,
   groanMin: 4,
   groanMax: 11,
-  nightBatch: 5,       // v0.11: zombis repuestos por cada hora de noche
-  nightCap: 110,       // v0.11: tope de zombis simultáneos en el mapa
+  nightBatch: 10,      // v0.16: zombis repuestos por cada hora de noche (antes 5)
+  nightCap: 220,       // v0.16: tope de zombis simultáneos (antes 110)
   // --- v0.14: variantes ---
   runnerChance: 0.15,        // proporción de corredores en la horda callejera
   nightRunnerChance: 0.25,   // de noche los corredores presionan más
-  bruteSpecials: { police: 2, store: 1 },  // brutos de guarnición por estructura
+  bruteSpecials: { police: 2, store: 1, military: 4 },  // brutos de guarnición por estructura
   bruteRoamChance: 0.55,     // probabilidad de que el mapa tenga brutos errantes
   variants: {
     // CORREDOR: carne fresca. Mitad de vida y rápido, pero ya NO te pega
@@ -257,6 +265,35 @@ export const RANGED = {
     magType: 'cargador_556', ammo: 'bala_556', sfx: 'rifle', auto: true,
     desc: 'Rifle de asalto 5.56×45mm automático. Devastador a media distancia… y ensordecedor. Cargador de 30.',
   },
+  // ---- v0.16: cuatro armas nuevas ----
+  revolver: {
+    id: 'revolver_aspid', name: 'Áspid .357', gunClass: 'revolver',
+    dmg: 52, cd: 0.5, range: 540, spread: 0.04, pellets: 1,
+    shellTime: 1.1, draw: 0.5, noise: 680, kb: 15, shake: 4.5, gunLen: 16,
+    tubeCap: 5, ammo: 'bala_357', sfx: 'revolver',
+    desc: 'Revólver de acero .357 Magnum. Tambor de 5: se recarga cámara a cámara (lenta), pero cada golpe es una martillada. Cadencia media, daño alto. Tan común como la VP-9.',
+  },
+  doble: {
+    id: 'escopeta_yarara', name: 'Yarará Doble', gunClass: 'dobles',
+    dmg: 13, cd: 0.3, range: 300, spread: 0.24, pellets: 6,
+    shellTime: 0.85, draw: 0.6, noise: 820, kb: 30, shake: 6, gunLen: 21,
+    tubeCap: 2, ammo: 'cartucho_12', sfx: 'escopeta',
+    desc: 'Escopeta de dos cañones superpuestos calibre 12. Solo 2 cartuchos y recarga media (rompe-culata), pero dispara los dos casi seguidos: a bocajarro es un muro de postas. Más común que la corredera.',
+  },
+  cerrojo: {
+    id: 'rifle_nandu', name: 'Ñandú .308', gunClass: 'cerrojo',
+    dmg: 85, cd: 1.15, range: 820, spread: 0.02, pellets: 1,
+    shellTime: 1.2, draw: 0.8, noise: 900, kb: 24, shake: 7, gunLen: 27,
+    tubeCap: 5, ammo: 'bala_308', sfx: 'cerrojo',
+    desc: 'Rifle de caza de cerrojo .308 Winchester. Daño brutal (un zombi normal cae de un toque) y alcance récord, pero cadencia lenta y recarga de bala en bala en el almacén interno de 5. Mismo nivel de rareza que la Yarará Doble.',
+  },
+  subfusil: {
+    id: 'subfusil_cuervo', name: 'Cuervo SMG-9', gunClass: 'subfusil',
+    dmg: 18, cd: 0.075, range: 520, spread: 0.075, pellets: 1,
+    reload: 2.4, draw: 0.65, noise: 700, kb: 7, shake: 2.5, gunLen: 21,
+    magType: 'cargador_cuervo', ammo: 'bala_9mm', sfx: 'subfusil', auto: true,
+    desc: 'Subfusil automático 9×19mm con cargadores de 35. Cadencia altísima y daño por bala discreto: muerde en ráfagas. EXCLUSIVO de la Base Militar.',
+  },
 };
 
 // ---------- Base de datos de objetos ----------
@@ -304,17 +341,55 @@ export const ITEMS = {
     color: '#2e3428', stack: 1,
     desc: 'Rifle de asalto 5.56×45mm automático. Cargador de 30. Ruidoso a más no poder.',
   },
+  // ---- v0.16: armas nuevas ----
+  revolver_aspid: {
+    name: 'Áspid .357', cat: 'arma', ranged: true, gunClass: 'revolver',
+    dmg: 52, cd: 0.5, range: 540, spread: 0.04, pellets: 1,
+    shellTime: 1.1, draw: 0.5, noise: 680, kb: 15, shake: 4.5, gunLen: 16,
+    tubeCap: 5, ammo: 'bala_357', sfx: 'revolver',
+    color: '#8a8f96', stack: 1,
+    desc: 'Revólver .357 Magnum. Tambor de 5, recarga lenta cámara a cámara. Daño alto.',
+  },
+  escopeta_yarara: {
+    name: 'Yarará Doble', cat: 'arma', ranged: true, gunClass: 'dobles',
+    dmg: 13, cd: 0.3, range: 300, spread: 0.24, pellets: 6,
+    shellTime: 0.85, draw: 0.6, noise: 820, kb: 30, shake: 6, gunLen: 21,
+    tubeCap: 2, ammo: 'cartucho_12', sfx: 'escopeta',
+    color: '#4a3a2a', stack: 1,
+    desc: 'Escopeta de dos cañones calibre 12. 2 cartuchos, cadencia rapidísima.',
+  },
+  rifle_nandu: {
+    name: 'Ñandú .308', cat: 'arma', ranged: true, gunClass: 'cerrojo',
+    dmg: 85, cd: 1.15, range: 820, spread: 0.02, pellets: 1,
+    shellTime: 1.2, draw: 0.8, noise: 900, kb: 24, shake: 7, gunLen: 27,
+    tubeCap: 5, ammo: 'bala_308', sfx: 'cerrojo',
+    color: '#5a4632', stack: 1,
+    desc: 'Rifle de caza de cerrojo .308. Daño brutal, cadencia lenta, 5 balas internas.',
+  },
+  subfusil_cuervo: {
+    name: 'Cuervo SMG-9', cat: 'arma', ranged: true, gunClass: 'subfusil',
+    dmg: 18, cd: 0.075, range: 520, spread: 0.075, pellets: 1,
+    reload: 2.4, draw: 0.65, noise: 700, kb: 7, shake: 2.5, gunLen: 21,
+    magType: 'cargador_cuervo', ammo: 'bala_9mm', sfx: 'subfusil', auto: true,
+    color: '#26292e', stack: 1,
+    desc: 'Subfusil automático 9mm. Cargadores de 35. Solo en la Base Militar.',
+  },
   // Munición (apilable) — alimenta los cargadores automáticamente al recogerla
   bala_9mm: { name: 'Balas 9mm', cat: 'municion', color: '#c9a24f', stack: 60, lootMin: 6, lootMax: 18, desc: 'Cartuchos 9×19mm. Rellenan solos los cargadores VP-9 que lleves; el sobrante queda en la mochila.' },
   cartucho_12: { name: 'Cartuchos cal. 12', cat: 'municion', color: '#b0392b', stack: 40, lootMin: 4, lootMax: 12, desc: 'Cartuchos de postas calibre 12. Se cargan directamente en el tubo de la Guardián 12.' },
   bala_556: { name: 'Balas 5.56mm', cat: 'municion', color: '#8a9a4f', stack: 90, lootMin: 8, lootMax: 24, desc: 'Cartuchos 5.56×45mm. Rellenan solos los cargadores AR-56 que lleves; el sobrante queda en la mochila.' },
+  // ---- v0.16: munición nueva ----
+  bala_357: { name: 'Balas .357', cat: 'municion', color: '#c98a4f', stack: 60, lootMin: 6, lootMax: 14, desc: 'Cartuchos .357 Magnum. Al recogerlas pasan solas al tambor del Áspid; el resto queda en la mochila.' },
+  bala_308: { name: 'Balas .308', cat: 'municion', color: '#a8b29a', stack: 50, lootMin: 4, lootMax: 10, desc: 'Cartuchos .308 Winchester de caza. Se insertan una a una en el almacén del Ñandú.' },
   // Cargadores (no apilables): guardan sus balas dentro (item.rounds)
   cargador_9mm: { name: 'Cargador VP-9', cat: 'cargador', cap: 15, ammo: 'bala_9mm', color: '#4a4f56', desc: 'Cargador extraíble de 15 balas 9mm. Se rellena solo con la munición que recogas.' },
   cargador_556: { name: 'Cargador AR-56', cat: 'cargador', cap: 30, ammo: 'bala_556', color: '#3a4232', desc: 'Cargador extraíble de 30 balas 5.56mm. Se rellena solo con la munición que recogas.' },
+  cargador_cuervo: { name: 'Cargador Cuervo', cat: 'cargador', cap: 35, ammo: 'bala_9mm', color: '#23262a', desc: 'Cargador extraíble de 35 balas 9mm del subfusil Cuervo. Se rellena solo con la munición que recogas.' },
   // Ropa — slot: cabeza | accesorios | torso | pantalones
   gorra: { name: 'Gorra', cat: 'ropa', slot: 'cabeza', armor: 0.03, color: '#2b2b30', desc: 'Protección simbólica. 3% reducción de daño.' },
   casco_obra: { name: 'Casco de obra', cat: 'ropa', slot: 'cabeza', armor: 0.15, color: '#d9a520', desc: 'Amarillo y sólido. 15% reducción de daño.' },
   casco_tactico: { name: 'Casco táctico', cat: 'ropa', slot: 'cabeza', armor: 0.22, color: '#3a4a3a', desc: 'Equipo militar. 22% reducción de daño.' },
+  casco_combate: { name: 'Casco de combate M88', cat: 'ropa', slot: 'cabeza', armor: 0.30, color: '#3a4030', desc: 'Casco reglamentario con arnés. 30% reducción de daño: la mejor protección de cabeza.' },
   lentes: { name: 'Lentes de sol', cat: 'ropa', slot: 'accesorios', armor: 0.02, color: '#1a1a1e', desc: 'Estilo ante el apocalipsis. 2% reducción.' },
   pasamontanas: { name: 'Pasamontañas', cat: 'ropa', slot: 'accesorios', infectProt: 0.25, noiseMod: 0.85, color: '#26262a', desc: 'Cubre el cuello. -25% infección por mordida, pasos más silenciosos.' },
   mascara_gas: { name: 'Máscara de gas', cat: 'ropa', slot: 'accesorios', infectProt: 0.7, color: '#4a5a3a', desc: 'Filtro completo. -70% infección por mordida.' },
@@ -322,12 +397,21 @@ export const ITEMS = {
   funda_cadera: { name: 'Funda de cadera', cat: 'ropa', slot: 'accesorios', pistolDrawMod: 0.55, pistolReloadMod: 0.8, color: '#6a4a2c', desc: 'Funda de cuero al costado. Desenfunde de pistola un 45% más rápido y -20% tiempo de recarga.' },
   funda_hombro: { name: 'Funda de hombro', cat: 'ropa', slot: 'accesorios', pistolDrawMod: 0.45, pistolReloadMod: 0.68, color: '#3a3a44', desc: 'Funda axilar bajo la chaqueta. Desenfunde un 55% más rápido y -32% tiempo de recarga.' },
   funda_tactica: { name: 'Funda táctica de pierna', cat: 'ropa', slot: 'accesorios', pistolDrawMod: 0.32, pistolReloadMod: 0.5, color: '#2f3a2f', desc: 'Funda de nylon con retención. Desenfunde prácticamente instantáneo y -50% tiempo de recarga.' },
+  // ---- v0.16: equipo militar (EXCLUSIVO de la Base Militar) ----
+  funda_muslera: { name: 'Funda de muslera militar', cat: 'ropa', slot: 'accesorios', pistolDrawMod: 0.25, pistolReloadMod: 0.42, color: '#3d4a35', desc: 'Funda reglamentaria de tiro rápido. El desenfunde más veloz del juego y -58% tiempo de recarga de armas cortas.' },
+  mascara_cm4: { name: 'Máscara militar CM-4', cat: 'ropa', slot: 'accesorios', infectProt: 0.85, color: '#39422f', desc: 'Máscara de filtro pesado de dotación militar. -85% infección por mordida: lo mejor que puedes llevar en la cara.' },
+  respirador_tactico: { name: 'Respirador táctico', cat: 'ropa', slot: 'accesorios', infectProt: 0.55, noiseMod: 0.88, color: '#2c3330', desc: 'Media máscara con válvula. -55% infección por mordida y respiración filtrada más silenciosa.' },
   playera: { name: 'Playera blanca', cat: 'ropa', slot: 'torso', armor: 0, color: '#c8c8c0', desc: 'Algodón. Sin protección.' },
   chaqueta: { name: 'Chaqueta de cuero', cat: 'ropa', slot: 'torso', armor: 0.12, color: '#5a3a2a', desc: 'Cuero grueso. 12% reducción de daño.' },
   chaleco: { name: 'Chaleco táctico', cat: 'ropa', slot: 'torso', armor: 0.25, slotsBonus: 4, color: '#2f3a2f', desc: 'Placas balísticas. 25% reducción y +4 espacios.' },
+  uniforme_cargo: { name: 'Uniforme de campaña', cat: 'ropa', slot: 'torso', armor: 0.18, slotsBonus: 2, color: '#4a5238', desc: 'Uniforme militar de campo. 18% reducción de daño y +2 espacios de bolsillo.' },
+  chaleco_balistico: { name: 'Chaleco balístico reforzado', cat: 'ropa', slot: 'torso', armor: 0.34, slotsBonus: 5, color: '#39412e', desc: 'Chaleco con placas cerámicas de dotación militar. 34% reducción (el máximo) y +5 espacios. El mejor torso del juego.' },
   jeans: { name: 'Jeans', cat: 'ropa', slot: 'pantalones', armor: 0, color: '#3a4a6a', desc: 'Denim resistente al roce, no a los dientes.' },
   cargo: { name: 'Pantalón cargo', cat: 'ropa', slot: 'pantalones', slotsBonus: 2, color: '#5a5230', desc: 'Bolsillos everywhere. +2 espacios.' },
+  pantalon_cargo_mil: { name: 'Pantalón de campaña', cat: 'ropa', slot: 'pantalones', armor: 0.08, slotsBonus: 4, color: '#454d36', desc: 'Pantalón militar de ripstop. 8% reducción y +4 espacios de carga: el mejor del juego.' },
   shorts: { name: 'Shorts deportivos', cat: 'ropa', slot: 'pantalones', color: '#7a7a8a', desc: 'Aerodinámico. Nada útil.' },
+  // ---- v0.16: ración militar (EXCLUSIVA de la Base Militar) ----
+  racion_combate: { name: 'Ración de combate', cat: 'comida', hunger: 55, stamina: 20, color: '#4a5238', stack: 4, desc: 'Ración militar de campaña calórica y estable. +55 hambre, +20 energía. La mejor comida del juego.' },
 };
 
 // Slots de ropa (orden de render del equipo) — DOS ranuras de accesorio:
@@ -350,6 +434,11 @@ export const CONTAINER_DEFS = {
   armeria: { name: 'Armería', color: '#3a4a6a', letter: 'W', slots: 6 },
   // solo dentro de la tienda (estructura única)
   estanteria: { name: 'Estantería', color: '#a84a3a', letter: 'E', slots: 6 },
+  // ---- v0.16: solo dentro de la BASE MILITAR ----
+  taquilla_mil: { name: 'Taquilla militar', color: '#3f4a3f', letter: 'M', slots: 6 },
+  caja_municion: { name: 'Caja de munición', color: '#5a5240', letter: 'X', slots: 6 },
+  armeria_mil: { name: 'Armería militar', color: '#2f3a2f', letter: 'G', slots: 6 },
+  estanteria_mil: { name: 'Estantería de suministros', color: '#6a6a4a', letter: 'S', slots: 6 },
 };
 
 // Tablas de botín ponderadas [idItem, peso]
@@ -362,15 +451,18 @@ export const LOOT = {
   nevera: [['agua', 24], ['refresco', 14], ['manzana', 12], ['lata_frijoles', 9], ['lata_atun', 7], ['venda', 4]],
   alacena: [['lata_frijoles', 20], ['lata_atun', 16], ['papas', 16], ['chocolate', 12], ['refresco', 8], ['agua', 6]],
   armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3]],
-  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['escopeta_guardian', 2.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['cartucho_12', 8], ['bala_556', 5], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6]],
+  // v0.16: revólver tan común como la VP-9 (peso 4 = pistola); doble Yarará
+  // más común que la corredera (3.2 > 2.2); Ñandú a la par de la Yarará.
+  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['revolver_aspid', 4], ['escopeta_guardian', 2.2], ['escopeta_yarara', 3.2], ['rifle_nandu', 3.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['bala_357', 11], ['cartucho_12', 8], ['bala_556', 5], ['bala_308', 4], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6]],
   botiquin_pared: [['venda', 30], ['botiquin', 12], ['antibioticos', 9], ['agua', 6]],
-  // ARMERÍA (comisaría): la ÚNICA fuente del Cóndor AR-56 (v0.12: rifle y
-  // familia 5.56 bastante más raros — saquear las 3 armerías se lleva un
-  // rifle ~55% de las veces, y la munición escasea en el resto del mapa)
+  // ARMERÍA (comisaría): la ÚNICA fuente del Cóndor AR-56 fuera de la base
+  // militar (v0.12: rifle y familia 5.56 bastante más raros). v0.16: también
+  // suelta las armas nuevas comunes.
   armeria: [
-    ['rifle_condor', 9], ['pistola_vibora', 8], ['escopeta_guardian', 6],
+    ['rifle_condor', 9], ['pistola_vibora', 8], ['revolver_aspid', 7],
+    ['escopeta_guardian', 6], ['escopeta_yarara', 5], ['rifle_nandu', 5],
     ['cargador_556', 9], ['cargador_9mm', 8],
-    ['bala_556', 18], ['bala_9mm', 14], ['cartucho_12', 9],
+    ['bala_556', 18], ['bala_9mm', 14], ['bala_357', 12], ['cartucho_12', 9], ['bala_308', 8],
     ['chaleco', 7], ['casco_tactico', 6], ['funda_tactica', 4],
     ['botiquin', 5], ['antibioticos', 3],
   ],
@@ -379,10 +471,36 @@ export const LOOT = {
     ['lata_frijoles', 30], ['lata_atun', 26], ['agua', 22], ['refresco', 18],
     ['papas', 15], ['chocolate', 13], ['manzana', 11], ['venda', 3],
   ],
+  // ---- v0.16: BASE MILITAR — el mejor botín del juego, más abundante que
+  // la comisaría. El Subfusil Cuervo y el equipo militar viven SOLO aquí. ----
+  taquilla_mil: [
+    ['uniforme_cargo', 16], ['casco_combate', 12], ['racion_combate', 12],
+    ['pantalon_cargo_mil', 10], ['respirador_tactico', 8], ['funda_muslera', 8],
+    ['mascara_cm4', 7], ['chaleco_balistico', 4],
+    ['venda', 6], ['agua', 5], ['antibioticos', 3],
+  ],
+  caja_municion: [
+    ['bala_9mm', 22], ['bala_556', 20], ['cartucho_12', 16],
+    ['bala_357', 14], ['bala_308', 12],
+    ['cargador_9mm', 8], ['cargador_556', 8], ['cargador_cuervo', 7],
+  ],
+  armeria_mil: [
+    ['subfusil_cuervo', 12], ['cargador_cuervo', 12], ['rifle_condor', 10],
+    ['cargador_556', 10], ['rifle_nandu', 8], ['escopeta_yarara', 8],
+    ['revolver_aspid', 8], ['escopeta_guardian', 6], ['pistola_vibora', 6],
+    ['cargador_9mm', 8], ['bala_556', 18], ['bala_9mm', 16],
+    ['cartucho_12', 12], ['bala_357', 12], ['bala_308', 10],
+    ['funda_muslera', 6], ['chaleco_balistico', 5], ['casco_combate', 5],
+    ['botiquin', 6], ['antibioticos', 4],
+  ],
+  estanteria_mil: [
+    ['racion_combate', 30], ['agua', 22], ['venda', 12],
+    ['antibioticos', 8], ['botiquin', 6], ['refresco', 6],
+  ],
 };
 
 // Probabilidad de que la comida generada esté podrida, por contenedor
-export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0, armeria: 0, estanteria: 0.12 };
+export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0, armeria: 0, estanteria: 0.12, taquilla_mil: 0, caja_municion: 0, armeria_mil: 0, estanteria_mil: 0.05 };
 
 // ---------- Aparición de armas encontradas ----------
 // Un arma hallada SIEMPRE trae algo dentro (cargador con balas o tubo cargado):

@@ -15,11 +15,13 @@ import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISI
 import { Rng } from '../rng.js';
 import { hash2, angDiff } from '../utils.js';
 
-// v0.10: mapa ampliado 130×104 → 5 columnas × 4 filas de manzanas útiles
-const V_ROADS = [[16, 19], [46, 49], [76, 79], [106, 109]]; // bandas verticales [ini, fin] inclusive
-const H_ROADS = [[14, 17], [42, 45], [70, 73], [92, 95]];  // bandas horizontales
-const X_BLOCKS = [[1, 14], [21, 44], [51, 74], [81, 104], [111, 128]];
-const Y_BLOCKS = [[1, 12], [19, 40], [47, 68], [75, 90], [99, 102]];
+// v0.16: mapa ampliado al DOBLE → 7 columnas × 6 filas de manzanas útiles
+// (184×148 tiles · 27.232 m² · 5.888×4.736 px). Calles de 4 tiles con
+// márgenes de hierba/acera de 1 a cada lado (huecos de 6 entre manzanas).
+const V_ROADS = [[16, 19], [46, 49], [76, 79], [106, 109], [136, 139], [166, 169]]; // bandas verticales [ini, fin] inclusive
+const H_ROADS = [[14, 17], [42, 45], [70, 73], [98, 101], [126, 129]];  // bandas horizontales
+const X_BLOCKS = [[1, 14], [21, 44], [51, 74], [81, 104], [111, 134], [141, 164], [171, 182]];
+const Y_BLOCKS = [[1, 12], [19, 40], [47, 68], [75, 96], [103, 124], [131, 146]];
 
 function shuffle(arr, rng) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -458,9 +460,12 @@ export class GameMap {
       }
     }
 
-    // --- Estructuras especiales ÚNICAS: comisaría y tienda ---
-    // Se eligen DOS manzanas distintas lo bastante grandes (nunca la central,
+    // --- Estructuras especiales ÚNICAS: comisaría, tienda y base militar ---
+    // Se eligen manzanas distintas lo bastante grandes (nunca la central,
     // donde aparece el jugador) y se dedican por completo al edificio.
+    // v0.16: la BASE MILITAR se queda con una de las manzanas 24×22 MÁS
+    // LEJANAS del centro (top-3 por distancia, elección aleatoria entre
+    // ellas): cruzar media ciudad para alcanzarla es parte del riesgo.
     const allBlocks = [];
     for (const [bx0, bx1] of X_BLOCKS)
       for (const [by0, by1] of Y_BLOCKS)
@@ -468,7 +473,13 @@ export class GameMap {
     const cTx = Math.floor(MAP_W / 2), cTy = Math.floor(MAP_H / 2);
     const isCenter = (b) => cTx >= b.bx0 && cTx <= b.bx1 && cTy >= b.by0 && cTy <= b.by1;
     const bigEnough = (b, w, h) => b.bw >= w + 2 && b.bh >= h + 2;
-    const pool = shuffle(allBlocks.filter((b) => !isCenter(b)), rng);
+    const distC = (b) => Math.hypot((b.bx0 + b.bx1) / 2 - cTx, (b.by0 + b.by1) / 2 - cTy);
+    const farBig = allBlocks
+      .filter((b) => !isCenter(b) && bigEnough(b, SPECIALS.military.w, SPECIALS.military.h))
+      .sort((a, b) => distC(b) - distC(a));
+    const farPool = farBig.slice(0, Math.min(3, farBig.length));
+    const militaryBlock = farPool.length ? farPool[rng.index(farPool.length)] : null;
+    const pool = shuffle(allBlocks.filter((b) => !isCenter(b) && b !== militaryBlock), rng);
     const policeBlock = pool.find((b) => bigEnough(b, SPECIALS.police.w, SPECIALS.police.h)) || null;
     const storeBlock = pool.find((b) => b !== policeBlock && bigEnough(b, SPECIALS.store.w, SPECIALS.store.h)) || null;
 
@@ -481,14 +492,16 @@ export class GameMap {
         // manzana dedicada a una estructura especial → edificiio único + salir
         const isPolice = policeBlock && policeBlock.bx0 === bx0 && policeBlock.by0 === by0;
         const isStore = storeBlock && storeBlock.bx0 === bx0 && storeBlock.by0 === by0;
-        if (isPolice || isStore) {
-          const sp = isPolice ? SPECIALS.police : SPECIALS.store;
+        const isMilitary = militaryBlock && militaryBlock.bx0 === bx0 && militaryBlock.by0 === by0;
+        if (isPolice || isStore || isMilitary) {
+          const sp = isPolice ? SPECIALS.police : isStore ? SPECIALS.store : SPECIALS.military;
           const w = Math.min(sp.w, bw - 2), h = Math.min(sp.h, bh - 2);
           const x0 = bx0 + 1 + rng.int(0, Math.max(0, bw - 2 - w));
           const y0 = by0 + 1 + rng.int(0, Math.max(0, bh - 2 - h));
-          placed.push({ x0, y0, x1: x0 + w - 1, y0: y0 + h - 1 });
+          placed.push({ x0, y0, x1: x0 + w - 1, y1: y0 + h - 1 });
           if (isPolice) this._placePoliceStation(x0, y0, x0 + w - 1, y0 + h - 1);
-          else this._placeStore(x0, y0, x0 + w - 1, y0 + h - 1);
+          else if (isStore) this._placeStore(x0, y0, x0 + w - 1, y0 + h - 1);
+          else this._placeMilitaryBase(x0, y0, x0 + w - 1, y0 + h - 1);
           continue;
         }
 
@@ -530,7 +543,7 @@ export class GameMap {
       }
       return false;
     };
-    outer: for (let r = 0; r < 44; r++) {
+    outer: for (let r = 0; r < 60; r++) {
       const ring = [];        // tiles elegibles del primer anillo con candidatos
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;   // solo el anillo r
@@ -548,7 +561,7 @@ export class GameMap {
     this.spawnTile = { tx: sx, ty: sy };   // para el guardián de árboles
 
     // --- Árboles ---
-    const treeTries = 210;
+    const treeTries = 430;   // v0.16: mapa al doble → misma densidad arbolada
     // v0.13: sin árboles pegados al punto de aparición (chebyshev ≤ 2)
     const sTx = this.spawnTile.tx, sTy = this.spawnTile.ty;
     for (let i = 0; i < treeTries; i++) {
@@ -576,7 +589,7 @@ export class GameMap {
     // --- Coches abandonados en la calle ---
     const carColors = ['#7a3030', '#3a4a5a', '#6a6a3a', '#54423a', '#42548a'];
     let carTries = 0;
-    while (this.cars.length < 10 && carTries < 400) {
+    while (this.cars.length < 20 && carTries < 900) {   // v0.16: 10 → 20 coches
       carTries++;
       const tx = rng.int(2, MAP_W - 4), ty = rng.int(2, MAP_H - 3);
       if (this.tileAtIdx(tx, ty) !== T.ROAD || this.tileAtIdx(tx + 1, ty) !== T.ROAD) continue;
@@ -695,7 +708,7 @@ export class GameMap {
       return false;
     };
     let tries = 0;
-    while (this.manholes.length < 34 && tries < 600) {
+    while (this.manholes.length < 64 && tries < 1200) {   // v0.16: 34 → 64 tapas
       tries++;
       let x, y;
       if (this.rng.chance(0.5)) {
@@ -942,6 +955,313 @@ export class GameMap {
       roof: this._buildStoreRoofCanvas(x0, y0, x1, y1),
       roofW: w * TILE, roofH: h * TILE,
     });
+  }
+
+  /**
+   * BASE MILITAR (estructura única, v0.16). Instalación fortificada: muros
+   * macizos con ranuras de ventilación escasas, doble puerta peatonal al sur
+   * + puerta de servicio al norte, sala de armas vallada en el tercio derecho
+   * (armerías militares G y cajas de munición X), taquillas M en el
+   * vestíbulo y dormitorios tras un divisorio — y una ESCALERA al
+   * SÓTANO-ARSENAL donde vive el mejor botín del juego (ver
+   * _buildMilitaryBasement). La planta baja está INFESTADA (zombie.js:
+   * 18 dentro, 4 de ellos brutos de guarnición, + 4 guardianes abajo).
+   * Tejado: plataforma oliva con helipuerto, radar y red de camuflaje.
+   */
+  _placeMilitaryBase(x0, y0, x1, y1) {
+    const rng = this.rng;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+
+    // perímetro + interior
+    for (let x = x0; x <= x1; x++) { this.setTile(x, y0, T.WALL); this.setTile(x, y1, T.WALL); }
+    for (let y = y0; y <= y1; y++) { this.setTile(x0, y, T.WALL); this.setTile(x1, y, T.WALL); }
+    for (let y = y0 + 1; y < y1; y++)
+      for (let x = x0 + 1; x < x1; x++) this.setTile(x, y, T.FLOOR);
+
+    // ranuras de ventilación escasas (cada 4, sin esquinas): instalación cerrada
+    for (let x = x0 + 3; x <= x1 - 3; x += 4) {
+      this.setTile(x, y0, T.WINDOW);
+      this.setTile(x, y1, T.WINDOW);
+    }
+    for (let y = y0 + 3; y <= y1 - 3; y += 4) {
+      this.setTile(x0, y, T.WINDOW);
+      this.setTile(x1, y, T.WINDOW);
+    }
+
+    // doble puerta peatonal al sur (centro) + puerta de servicio al norte
+    const dx = x0 + Math.floor(w / 2) - 1;
+    for (const d of [dx, dx + 1]) {
+      this.setTile(d, y1, T.DOOR_CLOSED);
+      this.doors.push({ tx: d, ty: y1 });
+    }
+    const sx = x0 + 3 + rng.int(0, Math.max(0, w - 8));
+    this.setTile(sx, y0, T.DOOR_CLOSED);
+    this.doors.push({ tx: sx, ty: y0 });
+
+    // ---- sala de armas vallada (tercio derecho, como la comisaría) ----
+    const awx = x1 - 4;                 // muro vertical de la sala
+    const agy = y0 + 2;                 // hueco de acceso (2 tiles)
+    for (let y = y0 + 1; y < y1; y++) {
+      if (y !== agy && y !== agy + 1) this.setTile(awx, y, T.WALL);
+    }
+    this._addContainer('armeria_mil', x1 - 2, y1 - 2, 0);
+    this._addContainer('armeria_mil', x1 - 2, y1 - 4, 0);
+    this._addContainer('caja_municion', x1 - 3, y1 - 2, 0);
+
+    // ---- muro divisorio del cuartel (dormitorios al sur) con hueco ----
+    const dgy = y0 + Math.floor(h / 2);
+    const dwx = x0 + Math.floor(w * 0.42);
+    for (let x = x0 + 2; x < awx - 1; x++) {
+      if (x !== dwx && x !== dwx + 1) this.setTile(x, dgy, T.WALL);
+    }
+
+    // ---- escalera al SÓTANO: posición semifija en el cuartel sur, con 4
+    // vecinos FLOOR y lejos de puertas (verificada; si no, búsqueda) ----
+    let stairs = null;
+    const fixedX = x0 + Math.max(3, Math.floor(w * 0.32));
+    const fixedY = y0 + Math.min(h - 3, Math.floor(h * 0.65));
+    const okFixed = this.tileAtIdx(fixedX, fixedY) === T.FLOOR &&
+      this.tileAtIdx(fixedX - 1, fixedY) === T.FLOOR && this.tileAtIdx(fixedX + 1, fixedY) === T.FLOOR &&
+      this.tileAtIdx(fixedX, fixedY - 1) === T.FLOOR && this.tileAtIdx(fixedX, fixedY + 1) === T.FLOOR;
+    if (okFixed) {
+      this.setTile(fixedX, fixedY, T.STAIRS);
+      stairs = { tx: fixedX, ty: fixedY };
+    } else {
+      const cands = [];
+      for (let y = y0 + 3; y <= y1 - 3; y++) {
+        for (let x = x0 + 3; x < awx - 1; x++) {
+          if (this.tileAtIdx(x, y) !== T.FLOOR) continue;
+          if (this.tileAtIdx(x - 1, y) !== T.FLOOR || this.tileAtIdx(x + 1, y) !== T.FLOOR ||
+              this.tileAtIdx(x, y - 1) !== T.FLOOR || this.tileAtIdx(x, y + 1) !== T.FLOOR) continue;
+          cands.push({ x, y });
+        }
+      }
+      if (cands.length) {
+        const s = cands[rng.index(cands.length)];
+        this.setTile(s.x, s.y, T.STAIRS);
+        stairs = { tx: s.x, ty: s.y };
+      }
+    }
+
+    // ---- vestíbulo: taquillas militares contra la fachada norte ----
+    this._addContainer('taquilla_mil', x0 + 3, y0 + 1, 0);
+    this._addContainer('taquilla_mil', x0 + 6, y0 + 1, 0);
+    this._addContainer('taquilla_mil', x0 + 9, y0 + 1, 0);
+    this._addContainer('taquilla_mil', x0 + 12, y0 + 1, 0);
+    // ---- dormitorios: taquillas + suministros ----
+    this._addContainer('taquilla_mil', x0 + 2, y1 - 2, 0);
+    this._addContainer('estanteria_mil', x0 + 4, y1 - 2, 0);
+    this._addContainer('estanteria_mil', x0 + 6, y1 - 2, 0);
+    // ---- botiquín de pared junto a la puerta de servicio ----
+    this._addContainer('botiquin_pared', x0 + 1, y0 + 3, 0);
+
+    // ---- SÓTANO-ARSENAL (la misma posición de mundo para la escalera) ----
+    const basement = stairs ? this._buildMilitaryBasement(x0, y0, x1, y1, stairs) : null;
+
+    this.buildings.push({
+      x0, y0, x1, y1,
+      cx: (x0 + x1) / 2 * TILE + TILE / 2,
+      cy: (y0 + y1) / 2 * TILE + TILE / 2,
+      kind: 'military',
+      upper: null, basement, stairs,
+      roof: this._buildMilitaryRoofCanvas(x0, y0, x1, y1),
+      roofW: w * TILE, roofH: h * TILE,
+    });
+  }
+
+  /**
+   * SÓTANO-ARSENAL de la base militar (v0.16): un hangar subterráneo de
+   * hormigón con filas de armerías militares, cajas de munición y taquillas,
+   * más una CÁMARA ACORAZADA al este tras un hueco estrecho. Aquí vive el
+   * mejor botín del juego (incluido el Subfusil Cuervo en exclusiva).
+   * La escalera ocupa la misma posición de mundo que en planta baja.
+   * 4 zombis guardianes esperan abajo (ver zombie.js).
+   */
+  _buildMilitaryBasement(x0, y0, x1, y1, stairs) {
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    const tiles = new Uint8Array(w * h);
+    const set = (lx, ly, v) => { tiles[ly * w + lx] = v; };
+
+    // perímetro macizo (sin ventanas: está bajo tierra)
+    for (let x = 0; x < w; x++) { set(x, 0, T.WALL); set(x, h - 1, T.WALL); }
+    for (let y = 0; y < h; y++) { set(0, y, T.WALL); set(w - 1, y, T.WALL); }
+    for (let y = 1; y < h - 1; y++)
+      for (let x = 1; x < w - 1; x++) set(x, y, T.FLOOR);
+
+    // hueco de la escalera (misma posición de mundo que en planta baja)
+    const stx = stairs.tx - x0, sty = stairs.ty - y0;
+    set(stx, sty, T.STAIRS);
+
+    // ---- muro de la CÁMARA ACORAZADA (este) con hueco de acceso ----
+    const vx = Math.floor(w * 0.68);
+    const vgy = Math.floor(h * 0.45);
+    for (let y = 1; y < h - 1; y++) {
+      if (y !== vgy && y !== vgy + 1 && vx > 0) set(vx, y, T.WALL);
+    }
+    // ---- pilares de hormigón del hangar (nunca sobre la escalera) ----
+    for (const [px, py] of [[Math.floor(w * 0.35), Math.floor(h * 0.3)],
+                            [Math.floor(w * 0.35), Math.floor(h * 0.7)]]) {
+      if (px !== stx || py !== sty) set(px, py, T.WALL);
+    }
+
+    // ---- contenedores: filas del ARSENAL (oeste/centro) ----
+    const z = -1;
+    const put = (type, lx, ly) => {
+      if (lx < 1 || ly < 1 || lx >= w - 1 || ly >= h - 1) return;      // fuera de rango: ignora
+      if (tiles[ly * w + lx] !== T.FLOOR) return;                       // no pisa muro/escalera
+      this._addContainer(type, x0 + lx, y0 + ly, z);
+    };
+    // fila 1: munición a porrillo
+    put('caja_municion', 3, 4); put('caja_municion', 6, 4);
+    put('caja_municion', 9, 4); put('caja_municion', 12, 4);
+    // fila 2: la panoplia (armerías militares)
+    put('armeria_mil', 3, 7); put('armeria_mil', 6, 7);
+    put('armeria_mil', 9, 7); put('armeria_mil', 12, 7);
+    // fila 3: taquillas del pelotón
+    put('taquilla_mil', 3, 11); put('taquilla_mil', 6, 11);
+    put('taquilla_mil', 12, 11);
+    // fila 4: suministros (la escalera queda libre)
+    put('estanteria_mil', 3, 15); put('estanteria_mil', 6, 15);
+    // ---- CÁMARA ACORAZADA (este): lo más exclusivo ----
+    put('armeria_mil', vx + 2, 3); put('armeria_mil', vx + 2, 6);
+    put('caja_municion', vx + 2, 9); put('caja_municion', vx + 2, 12);
+    put('taquilla_mil', vx + 4, 5); put('taquilla_mil', vx + 4, 10);
+    put('estanteria_mil', vx + 4, 15);
+
+    const containers = this.containers.filter((c) => c.z === z &&
+      c.x >= x0 * TILE && c.x <= (x1 + 1) * TILE && c.y >= y0 * TILE && c.y <= (y1 + 1) * TILE);
+    const fl = {
+      kind: 'basement', z, tiles, w, h, x0, y0, containers,
+      stairs: { tx: stairs.tx, ty: stairs.ty },
+    };
+    fl.canvas = this._buildFloorCanvas(fl);
+    return fl;
+  }
+
+  /**
+   * Tejado PLANO de la BASE MILITAR: losa de hormigón verde oliva, HELIPUERTO
+   * con círculo y H desgastado, radar con mástil, retícula de camuflaje,
+   * ESTRELLA blanca de 5 puntas, parapeto de sacos de arena en el frente y
+   * bandas de peligro amarillo/negro en la puerta sur. 100% determinista
+   * (sin rng) → firma de píxel estable para tests.
+   */
+  _buildMilitaryRoofCanvas(x0, y0, x1, y1) {
+    const w = (x1 - x0 + 1) * TILE, h = (y1 - y0 + 1) * TILE;
+    const rc = document.createElement('canvas');
+    rc.width = w; rc.height = h;
+    const c = rc.getContext('2d');
+
+    // base: losa de hormigón verde oliva
+    c.fillStyle = '#3f4636';
+    c.fillRect(0, 0, w, h);
+    // juntas de losa (rejilla 48px)
+    c.fillStyle = 'rgba(0,0,0,0.22)';
+    for (let x = 0; x < w; x += 48) c.fillRect(x, 0, 2, h);
+    for (let y = 0; y < h; y += 48) c.fillRect(0, y, w, 2);
+    // desgaste determinista
+    c.fillStyle = 'rgba(255,255,255,0.03)';
+    for (let i = 0; i < w * h / 2400; i++) c.fillRect((i * 149) % w, (i * 97) % h, 3, 2);
+
+    // retícula de CAMUFLAJE: manchas oliva alternas (patrón fijo)
+    const camo = ['rgba(46,54,38,0.55)', 'rgba(72,82,58,0.45)', 'rgba(30,36,26,0.4)'];
+    for (let i = 0; i < 26; i++) {
+      const cx = (i * 197 + 61) % w, cy = (i * 131 + 37) % h;
+      c.fillStyle = camo[i % 3];
+      c.beginPath();
+      c.ellipse(cx, cy, 26 + (i % 5) * 9, 16 + (i % 3) * 7, (i * 1.3) % 3, 0, Math.PI * 2);
+      c.fill();
+    }
+
+    // parapeto perimetral
+    c.fillStyle = '#4a5340';
+    c.fillRect(0, 0, w, 5); c.fillRect(0, h - 5, w, 5);
+    c.fillRect(0, 0, 5, h); c.fillRect(w - 5, 0, 5, h);
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.fillRect(0, h - 8, w, 3); c.fillRect(w - 8, 0, 3, h);
+
+    // ---- HELIPUERTO (centro): círculo desgastado + H ----
+    const hx = w * 0.4, hy = h * 0.46;
+    const HR = Math.min(w, h) * 0.26;
+    c.strokeStyle = 'rgba(214,208,180,0.55)';
+    c.lineWidth = 5;
+    c.beginPath(); c.arc(hx, hy, HR, 0, Math.PI * 2); c.stroke();
+    c.strokeStyle = 'rgba(0,0,0,0.25)';
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(hx, hy, HR - 7, 0, Math.PI * 2); c.stroke();
+    // la H
+    c.strokeStyle = 'rgba(224,218,190,0.75)';
+    c.lineWidth = 7;
+    c.beginPath();
+    c.moveTo(hx - HR * 0.42, hy - HR * 0.45); c.lineTo(hx - HR * 0.42, hy + HR * 0.45);
+    c.moveTo(hx + HR * 0.42, hy - HR * 0.45); c.lineTo(hx + HR * 0.42, hy + HR * 0.45);
+    c.moveTo(hx - HR * 0.42, hy); c.lineTo(hx + HR * 0.42, hy);
+    c.stroke();
+
+    // ---- RADAR (esquina NE): pedestal + parábola orientada + mástil ----
+    const rx = w * 0.82, ry = h * 0.18;
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.fillRect(rx - 14, ry - 6, 30, 26);
+    c.fillStyle = '#5a6450';
+    c.fillRect(rx - 16, ry - 8, 30, 26);          // pedestal
+    c.fillStyle = '#6a745e';
+    c.beginPath(); c.ellipse(rx + 2, ry - 14, 16, 9, -0.5, 0, Math.PI * 2); c.fill();  // parábola
+    c.strokeStyle = 'rgba(0,0,0,0.45)';
+    c.lineWidth = 2;
+    c.beginPath(); c.ellipse(rx + 2, ry - 14, 16, 9, -0.5, 0, Math.PI * 2); c.stroke();
+    c.fillStyle = '#39412e';
+    c.fillRect(rx - 2, ry - 22, 4, 12);           // mástil de la parábola
+
+    // ---- ESTRELLA blanca de 5 puntas (oeste) ----
+    const px = w * 0.16, py = h * 0.3;
+    const R = Math.min(w, h) * 0.09;
+    c.fillStyle = 'rgba(0,0,0,0.3)';
+    c.beginPath(); c.arc(px + 3, py + 3, R, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(220,216,196,0.8)';
+    c.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? R * 0.95 : R * 0.4;
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const vx2 = px + Math.cos(a) * r, vy2 = py + Math.sin(a) * r;
+      if (i === 0) c.moveTo(vx2, vy2); else c.lineTo(vx2, vy2);
+    }
+    c.closePath(); c.fill();
+
+    // ---- sacos de arena en el frente sur ----
+    const bagY = h - 14;
+    for (let x = 8; x < w - 10; x += 13) {
+      c.fillStyle = '#7a6f50';
+      c.beginPath(); c.ellipse(x, bagY, 7, 4.5, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = 'rgba(0,0,0,0.25)';
+      c.beginPath(); c.ellipse(x, bagY + 2, 6, 2.5, 0, 0, Math.PI * 2); c.fill();
+    }
+
+    // ---- bandas de peligro amarillo/negro en la puerta sur ----
+    const bandH = Math.min(34, Math.floor(h * 0.13));
+    for (let x = -bandH; x < w + bandH; x += 22) {
+      c.fillStyle = '#8a7a20';
+      c.beginPath();
+      c.moveTo(x, h); c.lineTo(x + 11, h); c.lineTo(x + 11 + bandH, h - bandH);
+      c.lineTo(x + bandH, h - bandH); c.closePath(); c.fill();
+      c.fillStyle = '#1a1a16';
+      c.beginPath();
+      c.moveTo(x + 11, h); c.lineTo(x + 22, h); c.lineTo(x + 22 + bandH, h - bandH);
+      c.lineTo(x + 11 + bandH, h - bandH); c.closePath(); c.fill();
+    }
+
+    // ---- antena con luz roja (esquina NO) ----
+    const ax = w * 0.08, ay = h * 0.12;
+    c.strokeStyle = '#7a8496';
+    c.lineWidth = 3;
+    c.beginPath(); c.moveTo(ax, ay); c.lineTo(ax, ay + 30); c.stroke();
+    c.beginPath(); c.moveTo(ax - 8, ay + 30); c.lineTo(ax + 8, ay + 30); c.stroke();
+    c.fillStyle = '#c0392b';
+    c.beginPath(); c.arc(ax, ay, 4, 0, Math.PI * 2); c.fill();
+
+    // contorno
+    c.strokeStyle = 'rgba(8,10,8,0.85)';
+    c.lineWidth = 2;
+    c.strokeRect(1, 1, w - 2, h - 2);
+    return rc;
   }
 
   /**
@@ -1427,6 +1747,11 @@ export class GameMap {
       botiquin_pared: { name: 'Botiquín', color: '#d94a4a', letter: '+' },
       armeria: { name: 'Armería', color: '#3a4a6a', letter: 'W' },
       estanteria: { name: 'Estantería', color: '#a84a3a', letter: 'E' },
+      // v0.16: base militar
+      taquilla_mil: { name: 'Taquilla militar', color: '#3f4a3f', letter: 'M' },
+      caja_municion: { name: 'Caja de munición', color: '#5a5240', letter: 'X' },
+      armeria_mil: { name: 'Armería militar', color: '#2f3a2f', letter: 'G' },
+      estanteria_mil: { name: 'Estantería de suministros', color: '#6a6a4a', letter: 'S' },
     };
     const d = defs[type];
     const c = {
@@ -1638,6 +1963,15 @@ export class GameMap {
               ctx.fillStyle = 'rgba(0,0,0,0.12)';
               ctx.fillRect(sx, sy + TILE - 2, TILE, 2);
               ctx.fillRect(sx + TILE - 2, sy, 2, TILE);
+            } else if (bk === 'military') {
+              // v0.16: base militar — hormigón verde oliva con juntas técnicas
+              ctx.fillStyle = h < 0.5 ? '#4c5344' : '#485040';
+              ctx.fillRect(sx, sy, TILE, TILE);
+              ctx.fillStyle = 'rgba(0,0,0,0.18)';
+              if (tx % 4 === 0) ctx.fillRect(sx, sy, 1, TILE);
+              if (ty % 4 === 0) ctx.fillRect(sx, sy, TILE, 1);
+              ctx.fillStyle = 'rgba(0,0,0,0.14)';
+              ctx.fillRect(sx, sy + TILE - 2, TILE, 2);
             } else {
               ctx.fillStyle = h < 0.5 ? '#6e5c44' : '#6a5840';
               ctx.fillRect(sx, sy, TILE, TILE);

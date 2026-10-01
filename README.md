@@ -1,6 +1,6 @@
 # ZONA CERO — Prototipo de supervivencia zombi 2D
 
-> **Sobrevive. Cada ruido cuenta.** · v0.15
+> **Sobrevive. Cada ruido cuenta.** · v0.16
 
 Videojuego de supervivencia zombi con **vista cenital (top-down)** inspirado en la tensión de *Project Zomboid* y *DayZ*. Programado en **JavaScript vanilla + Canvas 2D** con arquitectura modular por módulos ES, **sin dependencias ni pasos de compilación**: se juega directamente en el navegador.
 
@@ -74,6 +74,8 @@ js/
 ```
 
 ## Historial de versiones
+
+- **v0.16** — **Mapa al doble + BASE MILITAR + 4 armas nuevas + equipo militar**. El mundo crece a **184×148 tiles (27.232 m², el doble)** con retícula de **7×6 manzanas** y densidad intacta (~150 zombis de calle, respawn nocturno 10/hora con tope 220). La **BASE MILITAR** — la estructura más grande del juego, en una manzana de las más lejana del centro — tiene **planta baja fortificada e infestada** (18 zombis, 4 brutos de guarnición, 5 patrullando el perímetro) y un **sótano-arsenal** con filas de armerías militares, cajas de munición, taquillas y cámara acorazada, custodiado por **4 guardianes subterráneos** (la IA, colisión, visión y ataques de los zombis ahora respetan su planta). Su tejado plano oliva luce **helipuerto con H, radar, camuflaje y estrella**. Cuatro armas nuevas: **Áspid .357** (revólver común como la pistola, tambor de 5, recarga lenta, daño alto), **Yarará Doble** (dos cañones, más común que la corredera, 2 cartuchos, cadencia rapidísima), **Ñandú .308** (rifle de cerrojo, daño brutal 85, 5 balas internas de una en una) y **Cuervo SMG-9** (subfusil automático de 35 balas, **exclusivo de la base**) — más las municiones .357/.308 y sonidos propios. El **equipo militar** solo vive en la base: Uniforme de campaña, Chaleco balístico reforzado (34% reducción +5 espacios), Casco de combate M88 (30%), Máscara CM-4 (−85% infección), Respirador táctico, Funda de muslera (desenfunde récord) y Ración de combate (la mejor comida). Guardados v0.15 incompatibles (versión 2).
 
 - **v0.15** — **Clima (lluvia y neblina) + corredor rebalanceado**. Dos frentes climáticos con cadencia propia: cada **2-5 días de juego** llega **lluvia** (55%) o **neblina**, que dura **12-24 h de juego** con rampas suaves. La **lluvia enmascara el sonido** (radios de ruido −25% a plena intensidad: la lluvia "tapa" tus pasos y disparos) y baja un poco la visión (−12%); la **neblina** parte la visibilidad por la mitad (440→220 px) **y también la de los zombis** (112→56 px). El clima avanza solo jugando, viaja en el guardado y llega con toasts, indicador bajo el reloj, cortinas de lluvia animadas, bancos de niebla a la deriva, ambiente sonoro de agua y truenos lejanos. **Corredor más justo**: 174→148 px/s de persecución (esprintando le ganas por 40+ px/s en vez de 12-21), cadencia de golpe 0.8→1.05 s (ventana real de contragolpe), investigación 118→102 y suelta la persecución antes (3.2→2.8 s sin verte).
 

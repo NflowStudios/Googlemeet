@@ -12,7 +12,11 @@
  */
 
 import { angDiff } from '../utils.js';
+import { ITEMS } from '../config.js';
 import { gunRounds } from './inventory.js';
+
+// v0.16: armas cortas que se benefician de las fundas (desenfunde/recarga)
+const SIDEARMS = new Set(['pistola', 'revolver']);
 
 /** Entrada única del ataque: enruta a melee o a disparo según el arma. */
 export function playerAttack(game) {
@@ -107,6 +111,7 @@ export function fireRanged(game) {
   game.flashes.push({ x: bx, y: by, a: p.angle, t: 0.09, life: 0.09, big: w.pellets > 1 });
   game.audio.gunshot(w.sfx);
   if (w.gunClass === 'escopeta') game.audio.pump(); // accionar la corredera
+  if (w.gunClass === 'cerrojo') game.audio.boltCycle(); // v0.16: accionar el cerrojo
   game.noise.emit(p.x, p.y, w.noise, 'disparo');
   game.cam.shake(w.shake);
 
@@ -191,7 +196,7 @@ export function reloadRanged(game) {
   game.refillMags();
 
   if (w.magType) {
-    // ---- pistola / rifle: elegir el cargador más lleno ----
+    // ---- pistola / rifle / subfusil: elegir el cargador más lleno ----
     const inv = p.inventory;
     let best = gun.mag || null;
     for (const s of inv.slots) {
@@ -208,28 +213,34 @@ export function reloadRanged(game) {
       return false;
     }
     if (best.rounds <= 0) {
-      game.toasts.push('Sin ' + ITEMS_NAME(w) + ' para rellenar el cargador', 'warn');
+      game.toasts.push('Sin ' + ITEMS[w.ammo].name.toLowerCase() + ' para rellenar el cargador', 'warn');
       return false;
     }
 
     let time = w.reload;
-    if (w.gunClass === 'pistola') time *= p.pistolReloadMod();
+    // v0.16: las fundas aceleran las ARMAS CORTAS (pistola y revólver)
+    if (SIDEARMS.has(w.gunClass)) time *= p.pistolReloadMod();
     p.reloading = {
       left: time, total: time, gun,
       kind: 'mag', mag: best,
     };
     game.audio.reloadStart();
   } else {
-    // ---- escopeta: cartuchos al tubo ----
+    // ---- armas de TUBO/TAMBOR (v0.16: genérico): escopeta Guardián,
+    // doble Yarará, revólver Áspid y rifle de cerrojo Ñandú ----
     const inv = p.inventory;
     let shells = 0;
     for (const s of inv.slots) if (s && s.id === w.ammo) shells += s.count;
     const tube = gun.tube || 0;
     const need = (w.tubeCap || 0) - tube;
 
-    if (need <= 0) { game.toasts.push('Tubo lleno'); return false; }
+    if (need <= 0) {
+      game.toasts.push(w.gunClass === 'revolver' ? 'Tambor lleno' : 'Tubo lleno');
+      return false;
+    }
     if (shells <= 0) {
-      game.toasts.push(tube > 0 ? 'Sin cartuchos para recargar' : 'Sin cartuchos calibre 12', 'warn');
+      game.toasts.push(tube > 0 ? 'Sin ' + ITEMS[w.ammo].name.toLowerCase() + ' para recargar'
+        : 'Sin ' + ITEMS[w.ammo].name.toLowerCase(), 'warn');
       return false;
     }
 
@@ -239,10 +250,6 @@ export function reloadRanged(game) {
     game.audio.reloadStart();
   }
   return true;
-}
-
-function ITEMS_NAME(w) {
-  return w.ammo === 'bala_9mm' ? 'balas 9mm' : w.ammo === 'bala_556' ? 'balas 5.56' : 'cartuchos';
 }
 
 /** Completa la recarga cuando expira el temporizador (main.update). */
@@ -285,7 +292,7 @@ export function finishReload(game) {
     }
     gun.tube = (gun.tube || 0) + (r.shells - need);
     game.audio.reloadEnd();
-    game.toasts.push('Guardián 12 cargada (' + gun.tube + '/' + gun.def.tubeCap + ')');
+    game.toasts.push(gun.def.name + ' cargada (' + gun.tube + '/' + gun.def.tubeCap + ')');
   }
 }
 

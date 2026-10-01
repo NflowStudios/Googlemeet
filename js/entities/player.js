@@ -140,7 +140,10 @@ export class Player {
         this.recoil = 0;
         if (item.def.ranged && item.def.draw) {
           let draw = item.def.draw;
-          if (item.def.gunClass === 'pistola') draw *= this.pistolDrawMod();
+          // v0.16: la funda acelera el desenfunde de pistolas Y revólveres
+          if (item.def.gunClass === 'pistola' || item.def.gunClass === 'revolver') {
+            draw *= this.pistolDrawMod();
+          }
           this.cooldown = Math.max(this.cooldown, draw);
         }
       }
@@ -296,9 +299,9 @@ export class Player {
       ctx.strokeStyle = 'rgba(0,0,0,0.5)';
       ctx.lineWidth = 1;
       ctx.strokeRect(-4, -2.5, 8, 6);
-      // pistola enfundada (empuñadura asomando)
+      // arma corta enfundada (empuñadura asomando): pistola o revólver
       const pistola = this.inventory.slots.find(
-        (it) => it && it.def.gunClass === 'pistola');
+        (it) => it && (it.def.gunClass === 'pistola' || it.def.gunClass === 'revolver'));
       if (pistola) {
         ctx.fillStyle = '#20242a';
         ctx.fillRect(-1.5, -1.5, 5, 3);
@@ -401,6 +404,38 @@ export class Player {
       ctx.fillRect(R * 0.55 + L - 2, -1.4, 3.5, 2.8);       // boca del cañón
       ctx.fillStyle = '#22262c';
       ctx.fillRect(R * 0.3, 0.5, 4, 5.5);                    // empuñadura
+    } else if (wDef.gunClass === 'revolver') {
+      // v0.16 — revólver: tambor gordo + cañón largo + empuñadura de madera
+      ctx.fillStyle = body;
+      ctx.fillRect(R * 0.55, -1.8, L, 3.6);                  // cañón
+      ctx.fillStyle = '#22262c';
+      ctx.beginPath(); ctx.arc(R * 0.62, 0, 3.6, 0, Math.PI * 2); ctx.fill();  // tambor
+      ctx.fillStyle = '#6a4a2c';
+      ctx.fillRect(R * 0.3, 0.5, 4, 5.5);                    // empuñadura
+    } else if (wDef.gunClass === 'dobles') {
+      // v0.16 — doble cañón: dos tubos paralelos + culata
+      ctx.fillStyle = body;
+      ctx.fillRect(R * 0.5, -2.6, L + 5, 2.6);               // cañón superior
+      ctx.fillRect(R * 0.5, 0, L + 5, 2.6);                  // cañón inferior
+      ctx.fillStyle = '#5a4632';
+      ctx.fillRect(R * 0.1, -2, 5, 4);                       // culata
+    } else if (wDef.gunClass === 'cerrojo') {
+      // v0.16 — rifle de cerrojo: cañón MUY largo + mira telescópica + culata
+      ctx.fillStyle = body;
+      ctx.fillRect(R * 0.45, -1.6, L + 8, 3.2);              // cañón largo
+      ctx.fillStyle = '#1e2226';
+      ctx.fillRect(R * 0.7, -3.4, 8, 2.2);                   // mira telescópica
+      ctx.fillStyle = '#5a4632';
+      ctx.fillRect(R * 0.1, -1.8, 6, 3.6);                   // culata
+    } else if (wDef.gunClass === 'subfusil') {
+      // v0.16 — subfusil: cuerpo rectangular + cargador recto + cañón corto
+      ctx.fillStyle = body;
+      ctx.fillRect(R * 0.45, -2.6, L + 2, 5.2);              // cuerpo boxy
+      ctx.fillRect(R * 0.45 + L + 2, -1.2, 3.5, 2.4);        // cañón
+      ctx.fillStyle = '#20262a';
+      ctx.fillRect(R * 0.55 + 3, 1.5, 3.6, 7);               // cargador recto
+      ctx.fillStyle = '#171b16';
+      ctx.fillRect(R * 0.2, -1.6, 4.5, 3.2);                 // culata plegada
     } else if (wDef.gunClass === 'escopeta') {
       // tubo largo + bomba de corredera + culata
       ctx.fillStyle = body;
