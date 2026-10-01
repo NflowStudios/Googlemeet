@@ -145,6 +145,9 @@ export class AudioFX {
 
   drop() { this._tone('sine', 160, 90, 0.09, 0.25); }
 
+  // v0.17: clic del interruptor de la linterna (encender / apagar)
+  flashClick() { this._tone('square', 1150, 750, 0.035, 0.1); this._tone('square', 500, 380, 0.03, 0.06); }
+
   door() { this._tone('sawtooth', 150, 85, 0.25, 0.2); this._noise(0.1, 'lowpass', 250, 0.15); }
 
   // ---------- Armas de fuego (procedurales) ----------

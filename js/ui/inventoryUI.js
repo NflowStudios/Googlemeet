@@ -173,13 +173,20 @@ export class InventoryUI {
     if (it.def.cat === 'medico') mk('Usar', () => this.consume(this.selected));
     if (it.def.cat === 'arma' || it.def.cat === 'ropa') mk('Equipar', () => this.equipItem(this.selected));
     {
-      const slot = hotbarSlotFor(it);
+      // v0.17: la ranura se elige según categoría y disponibilidad
+      const slot = hotbarSlotFor(it, g.player);
       mk('A la barra (' + (slot + 1) + ')', () => this.toHotbar(this.selected));
     }
     if (it.def.cat === 'municion') {
       const n = document.createElement('span');
       n.className = 'action-note';
       n.textContent = 'Rellena sola tus cargadores compatibles';
+      bar.appendChild(n);
+    }
+    if (it.def.cat === 'bateria') {
+      const n = document.createElement('span');
+      n.className = 'action-note';
+      n.textContent = 'Alimentan la linterna automáticamente';
       bar.appendChild(n);
     }
     if (this.container) mk('Guardar', () => this.store(this.selected));
@@ -208,7 +215,8 @@ export class InventoryUI {
     if (!it) return;
     g.player.equip(it);
     g.audio.pickup();
-    g.toasts.push('Equipado: ' + itemLabel(it));
+    g.toasts.push('Equipado: ' + itemLabel(it) +
+      (it.def.flashlight && g.player.flashOn ? ' — encendida (L para apagarla)' : ''));
     this.selected = -1;
     this.render();
   }

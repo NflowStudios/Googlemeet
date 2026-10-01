@@ -73,6 +73,29 @@ export const SPECIALS = {
   military: { w: 22, h: 20, inside: 18, around: 5, basement: 4 },  // arsenal subterráneo
 };
 
+// ---------- Linterna (v0.17) ----------
+// Equipada en una ranura de ACCESORIO y encendida con L, extiende el cono de
+// visión según lo MALA que sea la luz ambiental: de noche, con neblina/lluvia
+// y en INTERIORES (edificios, 2º piso, sótanos). Las pilas funcionan como la
+// munición de las armas: mientras el haz está encendido se consume carga y
+// al quedar baja se cambia sola por una pila del inventario.
+//  - una pila entera = drainSec segundos de haz ENCENDIDO (240 s ≈ casi una
+//    noche completa: la noche dura 300 s reales);
+//  - el bono de alcance es el MAYOR de los que apliquen (no se apilan):
+//    noche ×1.35 · neblina ×1.5 · lluvia ×1.14 · interior ×1.25 ·
+//    día despejado en calle ×1.06 (apenas: hay sol).
+export const FLASH = {
+  cap: 100,             // carga interna de la linterna (porcentaje)
+  drainSec: 240,        // una pila completa = 240 s de juego con el haz ENCENDIDO
+  lowAt: 15,            // por debajo de esto → cambio automático de pila
+  rangeNight: 1.35,     // de noche cerrada (escala suave con la oscuridad)
+  rangeFog: 1.5,        // con neblina (recupera la mitad de lo perdido)
+  rangeRain: 1.14,      // bajo la lluvia (prácticamente lo recupera)
+  rangeIndoor: 1.25,    // dentro de estructuras (siempre que estés dentro)
+  rangeDay: 1.06,       // de día, en exterior y despejado (casi nada)
+  fogAlphaCap: 0.90,    // con el haz encendido la niebla nocturna no pasa de aquí
+};
+
 // ---------- Ciclo día/noche (v0.11) ----------
 // Un ciclo COMPLETO (día + noche) dura 12 min reales = 24 h de juego:
 // 1 hora del reloj = 30 s. La partida amanece a las 08:00 del día 1.
@@ -165,8 +188,8 @@ export const SURV = {
 // ---------- Zombis ----------
 // v0.14 — VARIANTES: además del zombi común existen CORREDORES (mitad de
 // vida, rápidos pero con margen real para escaparles y contragolpear desde
-// v0.15) y BRUTOS (escasos: comisaría/tienda + algún errante ocasional;
-// lentos, durísimos y brutales).
+// v0.15, y aún más lentos desde v0.17) y BRUTOS (escasos: comisaría/tienda +
+// algún errante ocasional; lentos, durísimos y brutales).
 // Los valores de la cabecera son el zombi NORMAL; las variantes los
 // sobreescriben en ZOMBIE_CFG.variants.
 export const ZOMBIE_CFG = {
@@ -195,19 +218,19 @@ export const ZOMBIE_CFG = {
   bruteSpecials: { police: 2, store: 1, military: 4 },  // brutos de guarnición por estructura
   bruteRoamChance: 0.55,     // probabilidad de que el mapa tenga brutos errantes
   variants: {
-    // CORREDOR: carne fresca. Mitad de vida y rápido, pero ya NO te pega
-    // pegado sin remedio (v0.15): 148 px/s de persecución (techo 155 con
-    // su variación) — caminando te alcanza, pero esprintando le ganas por
-    // 40+ px/s y abres hueco en segundos. Además su golpe deja respiro
-    // (cadencia 1.05 s) para que el contragolpe sea una opción real.
+    // CORREDOR: carne fresca. Mitad de vida y rápido. v0.15 lo bajó de 160 a
+    // 148 px/s; v0.17 lo deja en 128 (techo 134.4): caminando te alcanza
+    // (cierra 16 px/s), pero esprintando le ganas por 60+ px/s y, sobre
+    // todo, entre mordisco y mordisco queda hueco de sobra para contragolpear
+    // con cualquier melee y retirarte. Su golpe NO se ha tocado (1.05 s).
     runner: {
       hp: 50,
       radius: 9,
-      wanderSpeed: 46,
-      investigateSpeed: 102,
-      chaseSpeed: 148,             // ~0.76 × esprint del jugador: escapable de verdad
-      speedMulRange: [0.95, 1.05], // techo 155.4 < 195: esprintando SIEMPRE le ganas
-      attackCd: 1.05,              // v0.15: ventana de contragolpe entre mordiscos
+      wanderSpeed: 40,
+      investigateSpeed: 92,
+      chaseSpeed: 128,             // v0.17: ~0.66 × esprint — ventana de contragolpe real
+      speedMulRange: [0.95, 1.05], // techo 134.4 < 195: esprintando SIEMPRE le ganas
+      attackCd: 1.05,              // v0.15: ventana de contragolpe (INTACTA en v0.17)
       attackRange: 25,
       dmgMin: 8,
       dmgMax: 14,
@@ -385,6 +408,21 @@ export const ITEMS = {
   cargador_9mm: { name: 'Cargador VP-9', cat: 'cargador', cap: 15, ammo: 'bala_9mm', color: '#4a4f56', desc: 'Cargador extraíble de 15 balas 9mm. Se rellena solo con la munición que recogas.' },
   cargador_556: { name: 'Cargador AR-56', cat: 'cargador', cap: 30, ammo: 'bala_556', color: '#3a4232', desc: 'Cargador extraíble de 30 balas 5.56mm. Se rellena solo con la munición que recogas.' },
   cargador_cuervo: { name: 'Cargador Cuervo', cat: 'cargador', cap: 35, ammo: 'bala_9mm', color: '#23262a', desc: 'Cargador extraíble de 35 balas 9mm del subfusil Cuervo. Se rellena solo con la munición que recogas.' },
+  // ---- v0.17: linterna (accesorio) y pilas ----
+  // La linterna se EQUIPA en una ranura de accesorio (o se asigna a las
+  // ranuras 4/5 de la barra rápida) y se enciende/apaga con L. Las pilas
+  // (cat 'bateria', apilables) son su "munición": se gastan solas cuando el
+  // haz está encendido y la carga queda baja.
+  linterna: {
+    name: 'Linterna Faro 300', cat: 'ropa', slot: 'accesorios', flashlight: true,
+    color: '#c8a03a',
+    desc: 'Linterna de aluminio de 300 lúmenes. Enciéndela con L: de noche, con neblina o lluvia y en interiores verás mucho más lejos. Gasta pilas mientras esté encendida (una pila ≈ 4 minutos de haz).',
+  },
+  bateria: {
+    name: 'Pilas alcalinas', cat: 'bateria', color: '#3a76b8', stack: 12,
+    lootMin: 1, lootMax: 3,
+    desc: 'Pilas AA de larga duración. Alimentan la linterna automáticamente cuando su carga queda baja — no hace falta hacer nada.',
+  },
   // Ropa — slot: cabeza | accesorios | torso | pantalones
   gorra: { name: 'Gorra', cat: 'ropa', slot: 'cabeza', armor: 0.03, color: '#2b2b30', desc: 'Protección simbólica. 3% reducción de daño.' },
   casco_obra: { name: 'Casco de obra', cat: 'ropa', slot: 'cabeza', armor: 0.15, color: '#d9a520', desc: 'Amarillo y sólido. 15% reducción de daño.' },
@@ -450,10 +488,10 @@ export const CONTAINER_DEFS = {
 export const LOOT = {
   nevera: [['agua', 24], ['refresco', 14], ['manzana', 12], ['lata_frijoles', 9], ['lata_atun', 7], ['venda', 4]],
   alacena: [['lata_frijoles', 20], ['lata_atun', 16], ['papas', 16], ['chocolate', 12], ['refresco', 8], ['agua', 6]],
-  armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3]],
+  armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3], ['linterna', 3], ['bateria', 4]],
   // v0.16: revólver tan común como la VP-9 (peso 4 = pistola); doble Yarará
   // más común que la corredera (3.2 > 2.2); Ñandú a la par de la Yarará.
-  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['revolver_aspid', 4], ['escopeta_guardian', 2.2], ['escopeta_yarara', 3.2], ['rifle_nandu', 3.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['bala_357', 11], ['cartucho_12', 8], ['bala_556', 5], ['bala_308', 4], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6]],
+  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['revolver_aspid', 4], ['escopeta_guardian', 2.2], ['escopeta_yarara', 3.2], ['rifle_nandu', 3.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['bala_357', 11], ['cartucho_12', 8], ['bala_556', 5], ['bala_308', 4], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6], ['linterna', 3], ['bateria', 5]],
   botiquin_pared: [['venda', 30], ['botiquin', 12], ['antibioticos', 9], ['agua', 6]],
   // ARMERÍA (comisaría): la ÚNICA fuente del Cóndor AR-56 fuera de la base
   // militar (v0.12: rifle y familia 5.56 bastante más raros). v0.16: también
@@ -465,11 +503,14 @@ export const LOOT = {
     ['bala_556', 18], ['bala_9mm', 14], ['bala_357', 12], ['cartucho_12', 9], ['bala_308', 8],
     ['chaleco', 7], ['casco_tactico', 6], ['funda_tactica', 4],
     ['botiquin', 5], ['antibioticos', 3],
+    ['linterna', 2], ['bateria', 3],
   ],
-  // ESTANTERÍA (tienda): comida y bebida a porrillo
+  // ESTANTERÍA (tienda): comida y bebida a porrillo — y linternas/pilas
+  // (v0.17), que en una tienda es donde tocaría encontrarlas.
   estanteria: [
     ['lata_frijoles', 30], ['lata_atun', 26], ['agua', 22], ['refresco', 18],
     ['papas', 15], ['chocolate', 13], ['manzana', 11], ['venda', 3],
+    ['linterna', 5], ['bateria', 7],
   ],
   // ---- v0.16: BASE MILITAR — el mejor botín del juego, más abundante que
   // la comisaría. El Subfusil Cuervo y el equipo militar viven SOLO aquí. ----
@@ -478,11 +519,13 @@ export const LOOT = {
     ['pantalon_cargo_mil', 10], ['respirador_tactico', 8], ['funda_muslera', 8],
     ['mascara_cm4', 7], ['chaleco_balistico', 4],
     ['venda', 6], ['agua', 5], ['antibioticos', 3],
+    ['linterna', 2], ['bateria', 5],
   ],
   caja_municion: [
     ['bala_9mm', 22], ['bala_556', 20], ['cartucho_12', 16],
     ['bala_357', 14], ['bala_308', 12],
     ['cargador_9mm', 8], ['cargador_556', 8], ['cargador_cuervo', 7],
+    ['bateria', 4],
   ],
   armeria_mil: [
     ['subfusil_cuervo', 12], ['cargador_cuervo', 12], ['rifle_condor', 10],
@@ -496,6 +539,7 @@ export const LOOT = {
   estanteria_mil: [
     ['racion_combate', 30], ['agua', 22], ['venda', 12],
     ['antibioticos', 8], ['botiquin', 6], ['refresco', 6],
+    ['linterna', 3], ['bateria', 8],
   ],
 };
 

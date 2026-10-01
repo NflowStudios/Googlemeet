@@ -20,6 +20,7 @@ import { Survival } from './systems/survival.js';
 import { Inventory, makeItem, fillContainer, itemLabel, refillMagazines } from './systems/inventory.js';
 import { playerAttack, zombieHit, reloadRanged, finishReload } from './systems/combat.js';
 import { hotbarUse, hotbarValidate } from './systems/hotbar.js';
+import { toggleFlashlight, updateFlashlight } from './systems/flashlight.js';
 import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, AUTOSAVE_SEC } from './systems/save.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
@@ -299,6 +300,9 @@ class Game {
       case 'hot1': hotbarUse(this, 0); break;
       case 'hot2': hotbarUse(this, 1); break;
       case 'hot3': hotbarUse(this, 2); break;
+      case 'hot4': hotbarUse(this, 3); break;
+      case 'hot5': hotbarUse(this, 4); break;
+      case 'flash': toggleFlashlight(this); break;   // v0.17: linterna
       case 'sneak': {
         this.player.sneak = !this.player.sneak;
         this.toasts.push(this.player.sneak ? 'Modo sigilo: más lento, más silencioso' : 'Sigilo desactivado');
@@ -544,6 +548,11 @@ class Game {
     }
     this.noise.mul = this.weather.noiseMul();
     this.audio.setRain(wt === 'rain' ? this.weather.intensity : 0, dt);
+
+    // v0.17: linterna — descarga de pilas + cambio automático (solo jugando,
+    // igual que el día/noche y el clima; los multiplicadores de visión los
+    // lee vision.js vía flashRangeMul)
+    updateFlashlight(this, dt);
 
     this.player.update(dt, this);
     this.player.inventory.setCapacity(this.player.capacity());

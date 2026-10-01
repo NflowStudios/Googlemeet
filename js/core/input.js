@@ -32,8 +32,9 @@ export class Input {
         'KeyE': 'interact', 'Tab': 'inventory', 'KeyI': 'inventory',
         'KeyC': 'sneak', 'KeyP': 'pause', 'KeyM': 'mute',
         'KeyF': 'attack', 'KeyR': 'reload', 'Escape': 'escape', 'Enter': 'enter',
-        'Digit1': 'hot1', 'Digit2': 'hot2', 'Digit3': 'hot3',
-        'Numpad1': 'hot1', 'Numpad2': 'hot2', 'Numpad3': 'hot3',
+        'KeyL': 'flash',   // v0.17: encender / apagar la linterna
+        'Digit1': 'hot1', 'Digit2': 'hot2', 'Digit3': 'hot3', 'Digit4': 'hot4', 'Digit5': 'hot5',
+        'Numpad1': 'hot1', 'Numpad2': 'hot2', 'Numpad3': 'hot3', 'Numpad4': 'hot4', 'Numpad5': 'hot5',
       };
       const action = map[e.code] || map[code];
       if (action && this.onAction) this.onAction(action);

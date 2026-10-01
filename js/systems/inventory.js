@@ -21,9 +21,9 @@ export function makeItem(id, rotten = false) {
   return { uid: uidCounter++, id, def, count: 1, rotten };
 }
 
-/** ¿Es apilable? (comida/bebida/medico/munición sí; armas, ropa y cargadores no) */
+/** ¿Es apilable? (comida/bebida/medico/munición/pilas sí; armas, ropa y cargadores no) */
 function stackable(item) {
-  return ['comida', 'bebida', 'medico', 'municion'].includes(item.def.cat);
+  return ['comida', 'bebida', 'medico', 'municion', 'bateria'].includes(item.def.cat);
 }
 
 /** Cantidad de balas dentro de un arma (cargador insertado o tubo). */
@@ -52,11 +52,14 @@ function _fillMag(mag, rng) {
 /** Prepara un objeto recién generado según su categoría. */
 function _setupLootItem(item, rng) {
   const def = item.def;
-  if (def.cat === 'municion') {
-    // pila de munición con cantidad variable
+  if (def.cat === 'municion' || def.cat === 'bateria') {
+    // pila de munición o de pilas con cantidad variable
     item.count = rng.int(def.lootMin || 5, def.lootMax || 15);
   } else if (def.cat === 'cargador') {
     _fillMag(item, rng);
+  } else if (def.flashlight) {
+    // v0.17: una linterna hallada trae la primera pila a medias (30-90%)
+    item.charge = rng.int(30, 90);
   } else if (def.cat === 'arma' && def.ranged) {
     // un arma hallada SIEMPRE trae algo dentro:
     // cargador insertado con balas (pistola/rifle) o tubo cargado (escopeta)
@@ -89,8 +92,8 @@ export function fillContainer(container, rng) {
     const isFood = def.cat === 'comida' || def.cat === 'bebida';
     const item = makeItem(picked, isFood && rng.chance(rottenP));
     _setupLootItem(item, rng);
-    // doble apilado solo para consumibles (la munición ya trae su cantidad)
-    if (stackable(item) && item.def.cat !== 'municion' && rng.chance(0.25)) item.count = 2;
+    // doble apilado solo para consumibles (la munición y las pilas ya traen su cantidad)
+    if (stackable(item) && item.def.cat !== 'municion' && item.def.cat !== 'bateria' && rng.chance(0.25)) item.count = 2;
     container.items.push(item);
   }
 }
@@ -156,6 +159,8 @@ export function itemLabel(item) {
     if (d.magType) n += item.mag ? ` [${item.mag.rounds}/${item.mag.def.cap}]` : ' [sin cargador]';
     else n += ` [${item.tube || 0}/${d.tubeCap}]`;
   }
+  // v0.17: la carga de la linterna se lee en la etiqueta
+  if (item.charge !== undefined && d.flashlight) n += ` [${Math.round(item.charge)}%]`;
   if (d.cat === 'comida' || d.cat === 'bebida') {
     return item.rotten ? n + ' (podrida)' : n;
   }

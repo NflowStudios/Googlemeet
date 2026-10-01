@@ -43,6 +43,7 @@
     <div id="equip-quick">
       <div id="eq-weapon">PUÑOS</div>
       <div id="eq-ammo" class="hidden">—</div>
+      <div id="eq-flash" class="hidden">—</div>
       <div id="eq-armor">BLINDAJE 0%</div>
       <div id="eq-slots">MOCHILA 2/10</div>
     </div>
@@ -50,14 +51,17 @@
 
   <div id="prompt" class="hidden"></div>
 
-  <!-- Barra rápida: 1 = arma a distancia · 2 = arma melee · 3 = objeto -->
+  <!-- Barra rápida (v0.17, 5 ranuras): 1 = arma de fuego · 2 = arma de fuego
+       secundaria · 3 = melee · 4 y 5 = misceláneo (la linterna vive aquí) -->
   <div id="hotbar">
     <div class="hb-slot" data-hb="0"><span class="hb-key">1</span><span class="hb-tag">FUEGO</span><div class="hb-item"></div></div>
-    <div class="hb-slot" data-hb="1"><span class="hb-key">2</span><span class="hb-tag">MELEE</span><div class="hb-item"></div></div>
-    <div class="hb-slot" data-hb="2"><span class="hb-key">3</span><span class="hb-tag">OBJETO</span><div class="hb-item"></div></div>
+    <div class="hb-slot" data-hb="1"><span class="hb-key">2</span><span class="hb-tag">FUEGO 2</span><div class="hb-item"></div></div>
+    <div class="hb-slot" data-hb="2"><span class="hb-key">3</span><span class="hb-tag">MELEE</span><div class="hb-item"></div></div>
+    <div class="hb-slot" data-hb="3"><span class="hb-key">4</span><span class="hb-tag">OBJETO</span><div class="hb-item"></div></div>
+    <div class="hb-slot" data-hb="4"><span class="hb-key">5</span><span class="hb-tag">OBJETO</span><div class="hb-item"></div></div>
   </div>
 
-  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar · 1·2·3 barra rápida · E interactuar · TAB inventario · P pausa · M audio</div>
+  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar · 1-5 barra rápida · L linterna · E interactuar · TAB inventario · P pausa · M audio</div>
   <div id="toasts"></div>
 </div>
 
@@ -90,13 +94,15 @@
         <h3>MOCHILA</h3>
         <div id="inv-grid"></div>
         <div id="inv-hotbar">
-          <h3>BARRA RÁPIDA — 1 · 2 · 3</h3>
+          <h3>BARRA RÁPIDA — 1 · 2 · 3 · 4 · 5</h3>
           <div id="inv-hb-row">
-            <div class="ihb-slot" data-ihb="0"><span class="ihb-key">1</span><span class="ihb-tag">ARMA FUEGO</span><div class="ihb-item">— vacía —</div></div>
-            <div class="ihb-slot" data-ihb="1"><span class="ihb-key">2</span><span class="ihb-tag">ARMA MELEE</span><div class="ihb-item">— vacía —</div></div>
-            <div class="ihb-slot" data-ihb="2"><span class="ihb-key">3</span><span class="ihb-tag">OBJETO</span><div class="ihb-item">— vacía —</div></div>
+            <div class="ihb-slot" data-ihb="0"><span class="ihb-key">1</span><span class="ihb-tag">ARMA DE FUEGO</span><div class="ihb-item">— vacía —</div></div>
+            <div class="ihb-slot" data-ihb="1"><span class="ihb-key">2</span><span class="ihb-tag">ARMA SECUNDARIA</span><div class="ihb-item">— vacía —</div></div>
+            <div class="ihb-slot" data-ihb="2"><span class="ihb-key">3</span><span class="ihb-tag">ARMA MELEE</span><div class="ihb-item">— vacía —</div></div>
+            <div class="ihb-slot" data-ihb="3"><span class="ihb-key">4</span><span class="ihb-tag">OBJETO</span><div class="ihb-item">— vacía —</div></div>
+            <div class="ihb-slot" data-ihb="4"><span class="ihb-key">5</span><span class="ihb-tag">OBJETO</span><div class="ihb-item">— vacía —</div></div>
           </div>
-          <p class="cont-hint">Selecciona un objeto de la mochila y pulsa «A la barra» para asignarlo aquí; clic en una ranura llena para quitarla. Teclas 1·2·3 para usarlas en partida.</p>
+          <p class="cont-hint">Selecciona un objeto de la mochila y pulsa «A la barra» para asignarlo aquí; clic en una ranura llena para quitarla. Teclas 1-5 para usarlas en partida. Las armas de fuego van a las ranuras 1-2, el melee a la 3 y cualquier otra cosa a las 4-5.</p>
         </div>
         <div id="action-bar" class="hidden"></div>
       </section>
@@ -114,7 +120,7 @@
 <div id="menu">
   <div class="menu-inner">
     <h1>ZONA<em>CERO</em></h1>
-    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.16</span></p>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.17</span></p>
     <div class="menu-controls">
       <div><kbd>W A S D</kbd><span>Moverse</span></div>
       <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
@@ -122,7 +128,8 @@
       <div><kbd>RATÓN</kbd><span>Apuntar</span></div>
       <div><kbd>CLIC / F</kbd><span>Atacar / disparar</span></div>
       <div><kbd>R</kbd><span>Recargar el arma de fuego</span></div>
-      <div><kbd>1 · 2 · 3</kbd><span>Barra rápida: arma de fuego / melee / objeto</span></div>
+      <div><kbd>1 · 2 · 3 · 4 · 5</kbd><span>Barra rápida: arma de fuego · secundaria · melee · objetos</span></div>
+      <div><kbd>L</kbd><span>Linterna (encender / apagar — gasta pilas)</span></div>
       <div><kbd>E</kbd><span>Interactuar · puertas · botín · escaleras</span></div>
       <div><kbd>TAB / I</kbd><span>Inventario y equipo</span></div>
       <div><kbd>P</kbd><span>Pausa</span> <kbd>M</kbd><span>Audio</span></div>
@@ -132,7 +139,7 @@
       <button id="btn-continue" class="hidden">CONTINUAR PARTIDA</button>
       <p id="continue-info" class="hidden"></p>
     </div>
-    <p class="menu-tip">Consejo: el mapa es el doble de grande y en su rincón más lejano espera la BASE MILITAR — el sótano-arsenal guarda el mejor botín del juego (subfusil Cuervo, equipo militar) entre una guarnición infestada. Hay más armas por las calles: revólver .357, escopeta de dos cañones y rifle de cerrojo. El clima cambia cada pocos días — la LLUVIA enmascara tu ruido y la NEBLINA reduce la visibilidad a la mitad, también la de ellos. Autoguardado cada 5 minutos; si mueres, el guardado se borra. Cuidado con los CORREDORES (esprintando les ganas) y los BRUTOS (masa oscura: la comisaría y la tienda guardan los suyos).</p>
+    <p class="menu-tip">Consejo: el mapa es el doble de grande y en su rincón más lejano espera la BASE MILITAR — el sótano-arsenal guarda el mejor botín del juego (subfusil Cuervo, equipo militar) entre una guarnición infestada. Hay más armas por las calles: revólver .357, escopeta de dos cañones y rifle de cerrojo. Cuando anochezca, hazte con una LINTERNA y pilas: con el haz encendido (tecla L) verás mucho mejor de noche, con neblina o lluvia y en interiores — una pila aguanta casi una noche entera. El clima cambia cada pocos días — la LLUVIA enmascara tu ruido y la NEBLINA reduce la visibilidad a la mitad, también la de ellos. Autoguardado cada 5 minutos; si mueres, el guardado se borra. Cuidado con los CORREDORES (esprintando les ganas) y los BRUTOS (masa oscura: la comisaría y la tienda guardan los suyos).</p>
   </div>
 </div>
 

@@ -6,6 +6,7 @@
  */
 
 import { DAYNIGHT } from './config.js';
+import { flashActive } from './systems/flashlight.js';
 
 export function renderGame(ctx, game) {
   const cam = game.cam;
@@ -81,6 +82,10 @@ export function renderGame(ctx, game) {
   // vision.js (neblina −50%, lluvia −12%).
   drawWeatherFX(ctx, game);
 
+  // ---- v0.17: haz de la linterna (si está encendida) — se dibuja ENCIMA de
+  // los velos de noche y clima para iluminar de verdad el cono de visión ----
+  drawFlashlightFX(ctx, game);
+
   // ---- espacio de pantalla ----
   drawCrosshair(ctx, game);
   drawVignettes(ctx, game);
@@ -100,6 +105,55 @@ function drawDayNightTint(ctx, game) {
     ctx.fillStyle = `rgba(9, 13, 30, ${(DAYNIGHT.tintNight * dark).toFixed(3)})`;
     ctx.fillRect(0, 0, w, h);
   }
+}
+
+// ================== Linterna (v0.17) ==================
+
+/**
+ * Haz de la linterna: cuña cálida ADITIVA sobre el cono de visión (encima
+ * del velo nocturno y del clima, así "ilumina" de verdad) con un degradado
+ * que se apaga hacia el alcance efectivo, un halo suave alrededor del
+ * jugador (luz derramada) y un parpadeo sutil determinista del tiempo.
+ */
+function drawFlashlightFX(ctx, game) {
+  if (!flashActive(game)) return;
+  const cam = game.cam, p = game.player;
+  const cone = game.vision.cone;
+  if (!cone || cone.length < 2) return;
+  const r = Math.max(60, game.vision.rangeNow || 440);
+  // parpadeo sutil (función del tiempo: nada de estado que serializar)
+  const t = game.time;
+  const flick = 0.9 + 0.08 * Math.sin(t * 11.3) * Math.sin(t * 3.7);
+  const s = cam.worldToScreen(p.x, p.y);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  // cuña cálida sobre el cono (más ámbar y presente: se LEE como linterna)
+  const grad = ctx.createRadialGradient(s.x, s.y, 8, s.x, s.y, r);
+  grad.addColorStop(0, `rgba(255, 228, 150, ${(0.34 * flick).toFixed(3)})`);
+  grad.addColorStop(0.5, `rgba(255, 222, 140, ${(0.18 * flick).toFixed(3)})`);
+  grad.addColorStop(1, 'rgba(255, 216, 130, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(s.x, s.y);
+  for (const q of cone) {
+    const ss = cam.worldToScreen(q[0], q[1]);
+    ctx.lineTo(ss.x, ss.y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // halo suave alrededor del jugador (la luz que se derrama a la espalda)
+  const halo = ctx.createRadialGradient(s.x, s.y, 2, s.x, s.y, 52);
+  halo.addColorStop(0, `rgba(255, 232, 160, ${(0.14 * flick).toFixed(3)})`);
+  halo.addColorStop(1, 'rgba(255, 232, 160, 0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, 52, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
 }
 
 // ================== Clima (v0.15) ==================

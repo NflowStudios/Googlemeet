@@ -43,10 +43,14 @@ export class Player {
     this.z = 0;
     this.climb = null;
     this._climbStepAcc = 0;
-    // Barra rápida (teclas 1·2·3): [arma a distancia, arma melee, objeto].
-    // Guarda REFERENCIAS a objetos de la mochila (o empuñados); se asigna
-    // desde el inventario y se vacía sola si el objeto deja de estar contigo.
-    this.hotbar = [null, null, null];
+    // Barra rápida (teclas 1·2·3·4·5 — v0.17): [arma de fuego principal,
+    // arma de fuego secundaria, arma melee, misceláneo, misceláneo]. Guarda
+    // REFERENCIAS a objetos de la mochila (o empuñados); se asigna desde el
+    // inventario y se vacía sola si el objeto deja de estar contigo.
+    this.hotbar = [null, null, null, null, null];
+    // v0.17: linterna encendida (solo tiene efecto con una equipada en un
+    // accesorio; el consumo de pilas vive en systems/flashlight.js)
+    this.flashOn = false;
     this.inventory = new Inventory(BASE_SLOTS);
     this.inventory.add(makeItem('agua'));
     this.inventory.add(makeItem('lata_frijoles'));
@@ -159,6 +163,8 @@ export class Player {
       const old = this.equipment[slot];
       this.equipment[slot] = item;
       if (old) this.inventory.add(old);
+      // v0.17: equipar la linterna la ENCIENDE (se apaga con L)
+      if (item.def.flashlight) this.flashOn = true;
       return true;
     }
     return false;

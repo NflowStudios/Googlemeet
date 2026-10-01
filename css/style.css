@@ -177,6 +177,7 @@ canvas#game {
 .chip.bad { color: #e05a4f; border-color: #8a2a22; animation: critPulse 1.1s infinite; }
 .chip.heal { color: #d8d5cc; }
 .chip.reload { color: #7ab0d8; border-color: #3a5a74; animation: critPulse 1.4s infinite; }
+.chip.flash { color: #e8c66a; border-color: #8a7430; }   /* v0.17: linterna encendida */
 
 /* derecha: ruido + equipo */
 #hud-right {
@@ -227,6 +228,14 @@ canvas#game {
   font-variant-numeric: tabular-nums;
 }
 #eq-ammo.empty { color: #e05a4f; }
+#eq-flash {                         /* v0.17: estado de la linterna */
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #e8c66a;
+  font-variant-numeric: tabular-nums;
+}
+#eq-flash.empty { color: #e05a4f; }
 .action-note { align-self: center; font-size: 11px; color: var(--text-dim); letter-spacing: 0.5px; }
 
 /* prompt de interacción */
@@ -244,7 +253,7 @@ canvas#game {
   letter-spacing: 1px;
 }
 
-/* barra rápida (1·2·3): arma de fuego / melee / objeto */
+/* barra rápida (1-5, v0.17): arma de fuego / secundaria / melee / objeto / objeto */
 #hotbar {
   position: absolute;
   bottom: 46px;

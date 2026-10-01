@@ -18,13 +18,15 @@
  *   casas solo se ve por lo que se cuela por ventanas y puertas abiertas.
  */
 
-import { VISION, TILE, MAP_W, MAP_H, T } from '../config.js';
+import { VISION, TILE, MAP_W, MAP_H, T, FLASH } from '../config.js';
 import { angDiff } from '../utils.js';
+import { flashActive, flashRangeMul } from '../systems/flashlight.js';
 
-/** Alcance efectivo del cono en este frame (v0.15: el clima lo contrae —
- *  neblina −50%, lluvia −12%). Con clima despejado es VISION.range. */
+/** Alcance efectivo del cono en este frame: base × clima (v0.15) × linterna
+ *  (v0.17: el haz lo estira de noche, con neblina/lluvia y en interiores). */
 function effRange(game) {
-  return game.weather ? VISION.range * game.weather.visionMul() : VISION.range;
+  let r = game.weather ? VISION.range * game.weather.visionMul() : VISION.range;
+  return r * flashRangeMul(game);
 }
 
 export class Vision {
@@ -56,7 +58,8 @@ export class Vision {
 
     this.cone.length = 0;
     const n = VISION.coneRays;
-    const range = effRange(game);   // v0.15: cono contraído por neblina/lluvia
+    const range = effRange(game);   // v0.15: clima · v0.17: linterna
+    this.rangeNow = range;          // v0.17: para el haz visual (render.js)
     for (let i = 0; i <= n; i++) {
       const a = this.aim - VISION.halfAngle + (2 * VISION.halfAngle * i) / n;
       const d = map.castRayZ(px, py, a, range, vz);
@@ -144,14 +147,19 @@ export class Vision {
     const f = this.fctx;
     const w = this.fog.width, h = this.fog.height;
     // v0.15: el gradiente del cono termina en el alcance EFECTIVO (clima)
+    // v0.17: con el haz encendido el alcance crece aún más (flashRangeMul)
     const range = effRange(game);
+    // v0.17: el haz "empuja" la niebla — el cono recalca más y de noche la
+    // oscuridad global no estrangula tanto (tope suave FLASH.fogAlphaCap)
+    const beam = flashActive(game);
 
     f.setTransform(1, 0, 0, 1, 0, 0);
     f.globalCompositeOperation = 'source-over';
     f.globalAlpha = 1;
     f.clearRect(0, 0, w, h);
     // Oscuridad con la hora del día: día 78% · noche 93% (petición v0.8/v0.11)
-    const fa = game.daynight ? game.daynight.fogAlpha : VISION.fogAlpha;
+    let fa = game.daynight ? game.daynight.fogAlpha : VISION.fogAlpha;
+    if (beam) fa = Math.min(fa, FLASH.fogAlphaCap);
     f.fillStyle = `rgba(3, 5, 3, ${fa.toFixed(3)})`;
     f.fillRect(0, 0, w, h);
 
@@ -160,9 +168,16 @@ export class Vision {
     // 1) Visión actual: cono frontal con caída radial
     const ps = cam.worldToScreen(player.x, player.y);
     const grad = f.createRadialGradient(ps.x, ps.y, 12, ps.x, ps.y, Math.max(24, range));
-    grad.addColorStop(0, 'rgba(0,0,0,0.97)');
-    grad.addColorStop(0.72, 'rgba(0,0,0,0.88)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    if (beam) {
+      // v0.17: con la linterna el cono abre paso con más contundencia
+      grad.addColorStop(0, 'rgba(0,0,0,1)');
+      grad.addColorStop(0.8, 'rgba(0,0,0,0.95)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.72)');
+    } else {
+      grad.addColorStop(0, 'rgba(0,0,0,0.97)');
+      grad.addColorStop(0.72, 'rgba(0,0,0,0.88)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    }
     f.fillStyle = grad;
     f.beginPath();
     f.moveTo(ps.x, ps.y);

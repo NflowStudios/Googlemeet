@@ -3,9 +3,11 @@
  * estadísticas de partida y prompt de interacción.
  */
 
-import { SURV } from '../config.js';
+import { SURV, FLASH } from '../config.js';
 import { fmtTime } from '../utils.js';
 import { gunRounds } from '../systems/inventory.js';
+import { HOTBAR_N } from '../systems/hotbar.js';
+import { flashlightItem, countBatteries } from '../systems/flashlight.js';
 
 export class HUD {
   constructor(game) {
@@ -33,6 +35,7 @@ export class HUD {
     this.eqArmor = document.getElementById('eq-armor');
     this.eqSlots = document.getElementById('eq-slots');
     this.eqAmmo = document.getElementById('eq-ammo');
+    this.eqFlash = document.getElementById('eq-flash');   // v0.17: linterna
     this.hbEls = Array.from(document.querySelectorAll('#hotbar .hb-slot'));
     this._hbSig = '';
     this.hintEl = document.getElementById('controls-hint');
@@ -52,15 +55,15 @@ export class HUD {
   flashDamage(d) { this.dmgFlash = Math.max(this.dmgFlash, d); }
 
   /**
-   * Barra rápida (1·2·3): solo re-pinta el DOM cuando algo cambia (firma).
-   *  - ranura resaltada = su arma está actualmente EN LA MANO
-   *  - armas de fuego muestran las balas listas (cargador o tubo)
+   * Barra rápida (1·2·3·4·5 — v0.17): solo re-pinta el DOM cuando algo cambia
+   * (firma). Ranura resaltada = su arma está actualmente EN LA MANO; las
+   * armas de fuego muestran las balas listas (cargador o tubo).
    */
   renderHotbar(g) {
     const p = g.player;
     if (!p || !p.hotbar || !this.hbEls.length) return;
     let sig = '';
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < HOTBAR_N; i++) {
       const it = p.hotbar[i];
       sig += (it ? it.uid + ':' + (it.count || 1) + ':' + (p.equipment.arma === it ? 1 : 0) : '-') + '|';
     }
@@ -141,6 +144,7 @@ export class HUD {
     // chips de estado
     let chips = '';
     if (g.player.sneak) chips += '<span class="chip sneak">AGACHADO</span>';
+    if (g.player.flashOn) chips += '<span class="chip flash">LINTERNA</span>';
     if (g.player.exhausted) chips += '<span class="chip warn">AGOTADO</span>';
     if (g.player.reloading) chips += '<span class="chip reload">RECARGANDO</span>';
     if (s.intoxicated > 0) chips += '<span class="chip bad">INTOXICADO</span>';
@@ -177,6 +181,21 @@ export class HUD {
       this.eqAmmo.classList.toggle('empty', gunRounds(gun) === 0 && !p.reloading);
     } else if (this.eqAmmo) {
       this.eqAmmo.classList.add('hidden');
+    }
+
+    // v0.17: linterna — estado del haz, carga y pilas de repuesto
+    const fl = flashlightItem(p);
+    if (this.eqFlash) {
+      if (fl) {
+        const reserve = countBatteries(p);
+        const pct = Math.round(fl.charge ?? 0);
+        this.eqFlash.textContent = (p.flashOn ? 'LINTERNA ON' : 'LINTERNA OFF') +
+          ' · ' + pct + '% · pilas ' + reserve;
+        this.eqFlash.classList.remove('hidden');
+        this.eqFlash.classList.toggle('empty', p.flashOn && pct <= FLASH.lowAt && reserve === 0);
+      } else {
+        this.eqFlash.classList.add('hidden');
+      }
     }
 
     // prompt de interacción

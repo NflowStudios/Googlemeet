@@ -1,9 +1,12 @@
 /**
- * hotbar.js — Barra rápida de 3 ranuras (teclas 1 · 2 · 3).
+ * hotbar.js — Barra rápida de 5 ranuras (teclas 1 · 2 · 3 · 4 · 5). (v0.17)
  *
- *  - Ranura 1: ARMA A DISTANCIA (arma de fuego)  → tecla 1 la empuña / guarda.
- *  - Ranura 2: ARMA MELEE                        → tecla 2 la empuña / guarda.
- *  - Ranura 3: OBJETO cualquiera                 → tecla 3 lo usa/consume.
+ *  - Ranura 1: ARMA DE FUEGO principal      → tecla 1 la empuña / guarda.
+ *  - Ranura 2: ARMA DE FUEGO SECUNDARIA     → tecla 2 (pistola de respaldo,
+ *              revólver, lo que sea: otra arma de fuego).
+ *  - Ranura 3: ARMA MELEE                   → tecla 3.
+ *  - Ranuras 4 y 5: MISCELÁNEO              → teclas 4 y 5 (comida, bebida,
+ *              medicina, ropa — la linterna vive aquí: equípala al vuelo).
  *
  * Las asignaciones se eligen DESDE EL INVENTARIO (botón «A la barra» o el
  * panel de barra rápida del modal). Las ranuras guardan una REFERENCIA al
@@ -11,11 +14,31 @@
  * suelta o se guarda en un contenedor, la ranura se vacía sola.
  */
 
-/** Ranura de hotbar que le corresponde a un objeto según su categoría. */
-export function hotbarSlotFor(item) {
+/** Número de ranuras de la barra rápida (v0.17: 3 → 5). */
+export const HOTBAR_N = 5;
+
+/**
+ * Ranura que le corresponde a un objeto según su categoría (v0.17):
+ *  - arma de fuego → la principal (0) si está libre; si no, la secundaria (1);
+ *    si las dos están ocupadas, reemplaza la principal.
+ *  - arma melee → siempre la 2.
+ *  - cualquier otra cosa (misceláneo) → la 3 si está libre; si no, la 4;
+ *    si las dos están ocupadas, reemplaza la 3.
+ * `player` es opcional (solo para elegir la primera ranura LIBRE).
+ */
+export function hotbarSlotFor(item, player) {
   const cat = item.def.cat;
-  if (cat === 'arma') return item.def.ranged ? 0 : 1; // 0 = a distancia, 1 = melee
-  return 2;                                            // 2 = objeto cualquiera
+  if (cat === 'arma') {
+    if (!item.def.ranged) return 2;                 // melee → ranura 3
+    if (!player) return 0;
+    if (!player.hotbar[0]) return 0;                // principal libre
+    if (!player.hotbar[1]) return 1;                // secundaria libre
+    return 0;                                       // ambas llenas → principal
+  }
+  if (!player) return 3;
+  if (!player.hotbar[3]) return 3;                  // primer misceláneo
+  if (!player.hotbar[4]) return 4;                  // segundo misceláneo
+  return 3;
 }
 
 /** ¿El objeto de una ranura sigue con el jugador (mochila o empuñada)? */
@@ -29,8 +52,8 @@ function stillOwned(player, it) {
  * objeto ya estaba en otra ranura, se quita de ahí. Devuelve la ranura.
  */
 export function hotbarAssign(player, item) {
-  const slot = hotbarSlotFor(item);
-  for (let i = 0; i < 3; i++) {
+  const slot = hotbarSlotFor(item, player);
+  for (let i = 0; i < HOTBAR_N; i++) {
     if (player.hotbar[i] === item) player.hotbar[i] = null;
   }
   player.hotbar[slot] = item;
@@ -51,7 +74,7 @@ export function hotbarClear(player, i) {
  */
 export function hotbarValidate(player) {
   let changed = false;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < HOTBAR_N; i++) {
     const it = player.hotbar[i];
     if (it && !stillOwned(player, it)) {
       player.hotbar[i] = null;
@@ -62,10 +85,11 @@ export function hotbarValidate(player) {
 }
 
 /**
- * Tecla 1/2/3 pulsada: usar lo que haya en la ranura.
+ * Tecla 1-5 pulsada: usar lo que haya en la ranura.
  *  - Arma: se empuña (si estaba en la mochila) o se guarda (si ya la llevas).
  *  - Comida/bebida/medicina: se consume una unidad al instante.
- *  - Ropa: se equipa en su ranura.
+ *  - Ropa (incluida la linterna): se equipa en su ranura.
+ *  - Pilas: aviso de que se gestionan solas.
  *  - Otros: aviso de que no tienen uso rápido.
  */
 export function hotbarUse(game, i) {
@@ -124,8 +148,14 @@ export function hotbarUse(game, i) {
     p.inventory.slots[idx] = null;
     p.equip(it);
     game.audio.pickup();
-    game.toasts.push('Equipado: ' + it.def.name);
+    game.toasts.push('Equipado: ' + it.def.name +
+      (it.def.flashlight ? ' — encendida (L para apagarla)' : ''));
     if (game.hud) game.hud.renderHotbar(game);
+    return;
+  }
+
+  if (cat === 'bateria') {
+    game.toasts.push('Las pilas alimentan la linterna solas mientras esté encendida', 'info');
     return;
   }
 

@@ -29,6 +29,8 @@ import { makeItem, Inventory } from './inventory.js';
 import { Survival } from './survival.js';
 import { Player } from '../entities/player.js';
 import { zombieToData, zombieFromData } from '../entities/zombie.js';
+import { flashlightItem } from './flashlight.js';
+import { HOTBAR_N } from './hotbar.js';
 
 // v0.16: bump a 2 — el mapa se regeneró al DOBLE con la base militar y las
 // posiciones guardadas de la v1 ya no son válidas (los guardados viejos se
@@ -55,6 +57,7 @@ function makeRegistry() {
     const o = { iid: it.id, c: it.count, r: it.rotten ? 1 : 0 };
     if (it.rounds !== undefined) o.ro = it.rounds;          // cargador
     if (it.tube !== undefined) o.tb = it.tube;              // escopeta
+    if (it.charge !== undefined) o.ch = Math.round(it.charge); // v0.17: carga de la linterna
     if (it.mag) o.mg = reg(it.mag);                         // cargador insertado
     o.id = items.length + 1;
     ids.set(it, o.id);
@@ -73,6 +76,7 @@ function buildItems(data) {
     it.count = o.c || 1;
     if (o.ro !== undefined) it.rounds = o.ro;
     if (o.tb !== undefined) it.tube = o.tb;
+    if (o.ch !== undefined) it.charge = o.ch;   // v0.17: carga de la linterna
     byId.set(o.id, it);
   }
   for (const o of data.items) {
@@ -93,6 +97,7 @@ export function buildSaveData(game) {
     x: +p.x.toFixed(1), y: +p.y.toFixed(1),
     a: +p.angle.toFixed(3),
     sk: p.sneak ? 1 : 0,
+    fl: p.flashOn ? 1 : 0,   // v0.17: linterna encendida
     z: p.z || 0,
     // si se guardó a mitad de escalera: se da por terminada la subida/bajada
     zc: p.climb ? p.climb.to : null,
@@ -248,8 +253,18 @@ export function restoreGame(game, data) {
       pantalones: get(pd.eq.pantalones),
       arma: get(pd.eq.arma),
     };
-    p.hotbar = (pd.hb || [null, null, null]).slice(0, 3).map(get);
-    while (p.hotbar.length < 3) p.hotbar.push(null);
+    // ---- barra rápida (v0.17: 5 ranuras) ----
+    // Los guardados de la v0.16 traen 3 ranuras con el ORDEN ANTIGUO
+    // [fuego, melee, objeto]: se remapean a la nueva disposición
+    // [fuego, fuego-secundaria, melee, objeto, objeto].
+    let hbData = pd.hb || [];
+    if (hbData.length === 3) {
+      hbData = [hbData[0], null, hbData[1], hbData[2], null];
+    }
+    p.hotbar = hbData.slice(0, HOTBAR_N).map(get);
+    while (p.hotbar.length < HOTBAR_N) p.hotbar.push(null);
+    // v0.17: el estado de la linterna viaja con el jugador (si sigue equipada)
+    p.flashOn = !!pd.fl && !!flashlightItem(p);
     game.player = p;
 
     // ---- contadores vitales ----
