@@ -1,6 +1,6 @@
 # ZONA CERO — Prototipo de supervivencia zombi 2D
 
-> **Sobrevive. Cada ruido cuenta.** · v0.18
+> **Sobrevive. Cada ruido cuenta.** · v0.19
 
 Videojuego de supervivencia zombi con **vista cenital (top-down)** inspirado en la tensión de *Project Zomboid* y *DayZ*. Programado en **JavaScript vanilla + Canvas 2D** con arquitectura modular por módulos ES, **sin dependencias ni pasos de compilación**: se juega directamente en el navegador.
 
@@ -78,6 +78,8 @@ js/
 ```
 
 ## Historial de versiones
+
+- **v0.19** — **Corrección crítica: zombis visibles en el sótano y el 2º piso**. Bug reportado: en el sótano de la base militar «no había zombis» y entrabas a recibir daño constante «sin nadie». Causa raíz: los zombis de las plantas extra se dibujaban ANTES del canvas opaco de su planta (hormigón del sótano / linóleo del hospital), así que quedaban tapados — existían, con IA, colisión y ataques plenamente operativos (por eso el daño), pero INVISIBLES. Ahora el canvas de la planta se pinta primero y las entidades encima: los 4 guardianes del sótano-arsenal y los 10 zombis de la planta de hospitalización se ven venir y se pueden pelear. Al usar las escaleras, las entidades de la planta destino aparecen con el mismo fundido que la planta. Además, los objetos del suelo ahora tienen PLANTA: lo que sueltes en el sótano o el 2º piso nace allí (antes nacían "en la calle" y eran irrecuperables), se recogen donde se sueltan, su visibilidad es de tu planta y el guardado conserva la z (compatible con v0.18). Suite nueva con prueba A/B de píxeles (con y sin zombi, el píxel cambia) para que nunca vuelva a haber un invisible mordiendo.
 
 - **v0.18** — **Tercer accesorio + HOSPITAL con apagón y objetos médicos exclusivos**. El inventario gana una **TERCERA ranura de accesorio** (máscara + funda + linterna a la vez; cualquier accesorio vale en cualquiera de las tres). Nueva estructura única: el **Hospital San Rafael**, grande y de **DOS PISOS** — planta baja con farmacia vallada y urgencias, planta de hospitalización con cuatro habitaciones — colocado en una manzana grande del cuadrante lejano (tras la base militar; el mapa se AJUSTA para acogerlo, misma superficie). **Mecánica del APAGÓN**: no hay luz eléctrica — de día se ve casi normal por las ventanas (×0,88), **de noche es casi negro sin linterna** (×0,42: 440→185 px + velo oscuro) y el haz de la linterna lo despeja por completo (×1,35: 440→594 px). **Cuatro objetos EXCLUSIVOS** en sus armarios de medicina y carritos de curas: **suero médico** (sed al 100%), **inyección de adrenalina** (energía infinita 25 s), **antibióticos potentes** (+20% vida y curan la infección <35%) y **morfina** (daño recibido −50% durante 45 s) — jamás en tablas civiles o militares. **Ambos pisos infestados**: 15 abajo (2 brutos) + 10 arriba (1 bruto + 3 corredores) + 5 alrededor; tope nocturno 220→240. Tejado con **cruz roja en círculo blanco**, franjas de ambulancia y extractor. Guardados v0.17 incompatibles (versión 3: la disposición del mapa cambió).
 

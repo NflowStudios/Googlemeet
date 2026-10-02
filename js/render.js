@@ -14,6 +14,22 @@ export function renderGame(ctx, game) {
   // suelo, marcas, coches, decals, contenedores
   game.map.drawGround(ctx, cam);
 
+  // PLANTA EXTRA (2º piso / sótano) del edificio en el que está el jugador:
+  // en planta baja es invisible (alpha 0 — no se ve el otro piso), mientras
+  // subes/bajas las escaleras va apareciendo con un fundido progresivo y al
+  // llegar es opaca (tapa lo que hay debajo).
+  // v0.19: se dibuja ANTES de las entidades — el canvas OPACO de la planta
+  // (hormigón del sótano, linóleo del hospital) debe quedar DEBAJO de los
+  // zombis y objetos de esa planta: si se pintara después, los taparía y
+  // recibirías daño de enemigos invisibles (bug del sótano v0.18).
+  game.map.drawFloorLayer(ctx, cam, game);
+
+  // entidades de la planta: fundido escalonado al subir/bajar (aparecen con
+  // la planta destino, no de golpe)
+  const _p = game.player;
+  const entA = (_p && _p.climb && _p.climb.to !== 0) ? _p.climb.k : 1;
+  if (entA < 1) ctx.globalAlpha = entA;
+
   // objetos del suelo (solo si son visibles ahora)
   for (const gi of game.groundItems) {
     if (!gi.visibleNow) continue;
@@ -37,12 +53,7 @@ export function renderGame(ctx, game) {
     if (z.visibleNow) z.draw(ctx, cam);
   }
 
-  // PLANTA EXTRA (2º piso / sótano) del edificio en el que está el jugador:
-  // en planta baja es invisible (alpha 0 — no se ve el otro piso), mientras
-  // subes/bajas las escaleras va apareciendo con un fundido progresivo y al
-  // llegar es opaca (tapa lo que hay debajo). Encima de zombis/contenedores
-  // de la planta baja, debajo del jugador y de la niebla.
-  game.map.drawFloorLayer(ctx, cam, game);
+  if (entA < 1) ctx.globalAlpha = 1;
 
   // jugador
   if (game.player) game.player.draw(ctx, cam);

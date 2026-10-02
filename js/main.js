@@ -401,7 +401,9 @@ class Game {
       }
     }
     for (const gi of this.groundItems) {
-      if (pz !== 0) continue;     // los objetos del suelo están en la baja
+      // v0.19: los objetos del suelo son de TU planta (los que sueltes en el
+      // sótano o el 2º piso se recogen allí, no a través del techo)
+      if ((gi.z || 0) !== pz) continue;
       const d = Math.hypot(gi.x - p.x, gi.y - p.y);
       if (d < 38 && (!best || d < best.d)) {
         best = { kind: 'item', obj: gi, d, label: 'Recoger ' + itemLabel(gi.item) };
@@ -621,7 +623,10 @@ class Game {
     for (const z of this.zombies) {
       z.visibleNow = ((z.z || 0) === _pz) && this.vision.isVisible(z.x, z.y, this);
     }
-    for (const gi of this.groundItems) gi.visibleNow = this.vision.isVisible(gi.x, gi.y, this);
+    for (const gi of this.groundItems) {
+      // v0.19: la visibilidad de los objetos del suelo es de TU planta
+      gi.visibleNow = ((gi.z || 0) === _pz) && this.vision.isVisible(gi.x, gi.y, this);
+    }
 
     const mw = this.cam.screenToWorld(this.input.mouse.x, this.input.mouse.y);
     this.cam.follow(this.player, mw.x, mw.y, dt);

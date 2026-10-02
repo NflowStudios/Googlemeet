@@ -241,6 +241,7 @@ export class InventoryUI {
     g.groundItems.push({
       x: g.player.x + Math.cos(a) * 26,
       y: g.player.y + Math.sin(a) * 26,
+      z: g.player.z || 0,          // v0.19: la planta donde se suelta
       item: it, visibleNow: true,
     });
     g.noise.emit(g.player.x, g.player.y, 30, 'soltar');

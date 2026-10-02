@@ -142,7 +142,7 @@ export function buildSaveData(game) {
   }));
 
   const ground = game.groundItems.map((gi) => ({
-    x: +gi.x.toFixed(1), y: +gi.y.toFixed(1), id: reg(gi.item),
+    x: +gi.x.toFixed(1), y: +gi.y.toFixed(1), z: gi.z || 0, id: reg(gi.item),
   }));
 
   return {
@@ -312,9 +312,9 @@ export function restoreGame(game, data) {
       c.items = (cs.items || []).map(get).filter(Boolean);
     }
 
-    // ---- objetos del suelo ----
+    // ---- objetos del suelo (v0.19: con su planta) ----
     game.groundItems = (data.ground || [])
-      .map((g) => ({ x: g.x, y: g.y, item: get(g.id) }))
+      .map((g) => ({ x: g.x, y: g.y, z: g.z || 0, item: get(g.id) }))
       .filter((g) => g.item);
 
     // ---- decals: reproducir sangre y cadáveres ----
