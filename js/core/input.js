@@ -56,6 +56,9 @@ export class Input {
       if (e.button === 0) {
         this.mouse.down = true;
         if (this.onAction && this.enabled) this.onAction('attack');
+      } else if (e.button === 2) {
+        // v0.20: clic derecho — confirma la colocación en modo construcción
+        if (this.onAction && this.enabled) this.onAction('place');
       }
     });
     window.addEventListener('mouseup', (e) => {

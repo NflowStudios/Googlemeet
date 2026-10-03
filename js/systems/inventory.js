@@ -21,9 +21,10 @@ export function makeItem(id, rotten = false) {
   return { uid: uidCounter++, id, def, count: 1, rotten };
 }
 
-/** ¿Es apilable? (comida/bebida/medico/munición/pilas sí; armas, ropa y cargadores no) */
+/** ¿Es apilable? (comida/bebida/medico/munición/pilas/materiales sí; armas,
+ *  ropa y cargadores no) */
 function stackable(item) {
-  return ['comida', 'bebida', 'medico', 'municion', 'bateria'].includes(item.def.cat);
+  return ['comida', 'bebida', 'medico', 'municion', 'bateria', 'material'].includes(item.def.cat);
 }
 
 /** Cantidad de balas dentro de un arma (cargador insertado o tubo). */
@@ -52,8 +53,8 @@ function _fillMag(mag, rng) {
 /** Prepara un objeto recién generado según su categoría. */
 function _setupLootItem(item, rng) {
   const def = item.def;
-  if (def.cat === 'municion' || def.cat === 'bateria') {
-    // pila de munición o de pilas con cantidad variable
+  if (def.cat === 'municion' || def.cat === 'bateria' || def.cat === 'material') {
+    // pila de munición, pilas o MATERIAL DE CRAFTEO con cantidad variable
     item.count = rng.int(def.lootMin || 5, def.lootMax || 15);
   } else if (def.cat === 'cargador') {
     _fillMag(item, rng);
@@ -93,8 +94,9 @@ export function fillContainer(container, rng) {
     const isFood = def.cat === 'comida' || def.cat === 'bebida';
     const item = makeItem(picked, isFood && rng.chance(rottenP));
     _setupLootItem(item, rng);
-    // doble apilado solo para consumibles (la munición y las pilas ya traen su cantidad)
-    if (stackable(item) && item.def.cat !== 'municion' && item.def.cat !== 'bateria' && rng.chance(0.25)) item.count = 2;
+    // doble apilado solo para consumibles (la munición, las pilas y los
+    // materiales ya traen su cantidad)
+    if (stackable(item) && item.def.cat !== 'municion' && item.def.cat !== 'bateria' && item.def.cat !== 'material' && rng.chance(0.25)) item.count = 2;
     container.items.push(item);
   }
 }
@@ -149,6 +151,13 @@ export class Inventory {
   }
 
   isFull() { return this.slots.indexOf(null) === -1; }
+}
+
+/** Cantidad total de un id de objeto en la mochila (v0.20: recetas). */
+export function countItem(inv, id) {
+  let n = 0;
+  for (const s of inv.slots) if (s && s.id === id) n += s.count;
+  return n;
 }
 
 /** Etiqueta legible de un objeto (con estado de descomposición y munición). */

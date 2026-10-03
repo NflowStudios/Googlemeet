@@ -152,6 +152,9 @@ export class HUD {
     if (s.healEffects.length > 0) chips += '<span class="chip heal">VENDADO</span>';
     if (s.adrenaline > 0) chips += '<span class="chip adren">ADRENALINA ' + Math.ceil(s.adrenaline) + 's</span>';
     if (s.morphine > 0) chips += '<span class="chip morph">MORFINA ' + Math.ceil(s.morphine) + 's</span>';
+    // v0.20: modo construcción y sueño
+    if (g.build) chips += '<span class="chip build">CONSTRUYENDO: ' + g.build.recipe.name.toUpperCase() + '</span>';
+    if (g.sleepT > 0) chips += '<span class="chip sleep">DURMIENDO…</span>';
     this.chips.innerHTML = chips;
 
     // equipo rápido

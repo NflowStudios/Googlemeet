@@ -1,17 +1,25 @@
 /**
  * inventoryUI.js — Pantalla de inventario: equipo vestible + mochila +
- * panel de contenedor para saquear. Llamar openUI(contenedor|null).
+ * panel de contenedor para saquear + PESTAÑA DE CRAFTEO (v0.20: recetas de
+ * objetos y construcciones con validación de materiales y mesa de trabajo).
+ * Llamar openUI(contenedor|null).
  */
 
-import { EQUIP_SLOTS, EQUIP_LABELS } from '../config.js';
-import { itemLabel } from '../systems/inventory.js';
+import { EQUIP_SLOTS, EQUIP_LABELS, ITEMS } from '../config.js';
+import { itemLabel, countItem } from '../systems/inventory.js';
 import { hotbarAssign, hotbarClear, hotbarSlotFor } from '../systems/hotbar.js';
+import {
+  RECIPES_OBJ, RECIPES_CON, canCraft, missingMaterials, nearWorkbench,
+  craftObject, startBuild, cancelBuild,
+} from '../systems/crafting.js';
 
 export class InventoryUI {
   constructor(game) {
     this.game = game;
     this.container = null;
     this.selected = -1;
+    this.tab = 'inv';        // v0.20: 'inv' | 'craft'
+    this.craftTab = 'obj';   // v0.20: 'obj' | 'con'
 
     this.el = document.getElementById('inv-modal');
     this.gridEl = document.getElementById('inv-grid');
@@ -20,6 +28,30 @@ export class InventoryUI {
     this.contName = document.getElementById('cont-name');
     this.actionBar = document.getElementById('action-bar');
     this.capEl = document.getElementById('inv-cap');
+    this.craftEl = document.getElementById('inv-craft');
+    this.craftListEl = document.getElementById('craft-list');
+    this.equipAside = document.getElementById('inv-equip');
+    this.gridWrap = document.getElementById('inv-grid-wrap');
+
+    // v0.20: pestañas superiores INVENTARIO | CRAFTEO
+    document.querySelectorAll('#inv-tabs button').forEach((el) => {
+      el.addEventListener('click', () => {
+        if (this.tab === el.dataset.tab) return;
+        this.tab = el.dataset.tab;
+        if (this.tab === 'craft') this.selected = -1;
+        this.game.audio.uiClick();
+        this.render();
+      });
+    });
+    // v0.20: sub-pestañas OBJETOS | CONSTRUCCIONES
+    document.querySelectorAll('#craft-subtabs button').forEach((el) => {
+      el.addEventListener('click', () => {
+        if (this.craftTab === el.dataset.ctab) return;
+        this.craftTab = el.dataset.ctab;
+        this.game.audio.uiClick();
+        this.render();
+      });
+    });
 
     // clic en una ranura de equipo → desequipar a la mochila
     document.querySelectorAll('#inv-equip .eq-slot').forEach(el => {
@@ -58,6 +90,10 @@ export class InventoryUI {
     this.container = container || null;
     this.selected = -1;
     const g = this.game;
+    // v0.20: abrir el inventario cancela el modo construcción (sin fantasma
+    // bajo el modal) y saquear un contenedor exige la pestaña del inventario
+    if (g.build) cancelBuild(g, true);
+    if (this.container) this.tab = 'inv';
     g.uiOpen = true;
     g.input.enabled = false;
     this.el.classList.remove('hidden');
@@ -79,6 +115,20 @@ export class InventoryUI {
     const g = this.game, p = g.player, inv = p.inventory;
     inv.setCapacity(p.capacity());
     this.capEl.textContent = inv.used() + ' / ' + inv.capacity;
+
+    // v0.20: estado de las pestañas + visibilidad de los paneles
+    document.querySelectorAll('#inv-tabs button').forEach((el) => {
+      el.classList.toggle('on', el.dataset.tab === this.tab);
+    });
+    const crafting = this.tab === 'craft';
+    this.craftEl.classList.toggle('hidden', !crafting);
+    this.equipAside.classList.toggle('hidden', crafting);
+    this.gridWrap.classList.toggle('hidden', crafting);
+    this.contWrap.classList.toggle('hidden', crafting || !this.container);
+    if (crafting) {
+      this._renderCraft();
+      return;
+    }
 
     // ranuras de equipo
     for (const slot of [...EQUIP_SLOTS, 'arma']) {
@@ -154,6 +204,79 @@ export class InventoryUI {
     }
 
     this._renderActions();
+  }
+
+  // ================== v0.20: panel de crafteo ==================
+
+  /** Lista de recetas con materiales, validez y botón CRAFTEAR/CONSTRUIR. */
+  _renderCraft() {
+    const g = this.game;
+    const list = this.craftListEl;
+    list.innerHTML = '';
+    document.querySelectorAll('#craft-subtabs button').forEach((el) => {
+      el.classList.toggle('on', el.dataset.ctab === this.craftTab);
+    });
+    const recipes = this.craftTab === 'obj' ? RECIPES_OBJ : RECIPES_CON;
+    const wb = nearWorkbench(g);
+
+    for (const r of recipes) {
+      const card = document.createElement('div');
+      card.className = 'craft-recipe';
+
+      // materiales: chips con lo que llevas de cada uno
+      const miss = missingMaterials(g, r);
+      const matsHtml = r.mats.map(([id, n]) => {
+        const have = countItem(g.player.inventory, id);
+        const ok = have >= n;
+        return `<span class="cr-mat ${ok ? 'ok' : 'lack'}">${n}× ${ITEMS[id].name} <i>${have}/${n}</i></span>`;
+      }).join('');
+
+      const needWb = !!r.wb;
+      const ok = canCraft(g, r);
+      let why = '';
+      if (miss.length) why = 'Faltan materiales';
+      else if (needWb && !wb) why = 'Requiere mesa de trabajo cerca';
+
+      card.innerHTML = `
+        <div class="cr-head">
+          <span class="cr-icon" style="background:${r.icon}"></span>
+          <span class="cr-name">${r.name}</span>
+          ${needWb ? `<span class="cr-wb ${wb ? 'ok' : 'lack'}">MESA DE TRABAJO</span>` : ''}
+        </div>
+        <p class="cr-desc">${r.desc}</p>
+        <div class="cr-mats">${matsHtml}</div>`;
+
+      const btn = document.createElement('button');
+      btn.className = 'cr-btn';
+      btn.textContent = this.craftTab === 'obj' ? 'CRAFTEAR' : 'CONSTRUIR';
+      if (!ok) {
+        btn.disabled = true;
+        btn.title = why;
+        card.classList.add('locked');
+      } else {
+        btn.title = this.craftTab === 'obj'
+          ? 'Craftear 1 unidad (va a la mochila)'
+          : 'Entra en modo construcción: R rota · clic derecho coloca · clic izquierdo cancela';
+        btn.addEventListener('click', () => {
+          if (this.craftTab === 'obj') {
+            if (craftObject(g, r)) this.render();
+          } else {
+            this.closeUI();
+            startBuild(g, r.id);
+          }
+        });
+      }
+      card.appendChild(btn);
+      list.appendChild(card);
+    }
+
+    // resumen de contexto (mesa cerca / planta)
+    const info = document.getElementById('craft-wbinfo');
+    if (info) {
+      info.textContent = (wb ? 'Mesa de trabajo: CERCA' : 'Mesa de trabajo: lejos (o sin construir)') +
+        ' · Construcciones solo en PLANTA BAJA';
+      info.className = wb ? 'ok' : '';
+    }
   }
 
   _renderActions() {

@@ -1,6 +1,6 @@
 # ZONA CERO — Prototipo de supervivencia zombi 2D
 
-> **Sobrevive. Cada ruido cuenta.** · v0.19
+> **Sobrevive. Cada ruido cuenta.** · v0.20
 
 Videojuego de supervivencia zombi con **vista cenital (top-down)** inspirado en la tensión de *Project Zomboid* y *DayZ*. Programado en **JavaScript vanilla + Canvas 2D** con arquitectura modular por módulos ES, **sin dependencias ni pasos de compilación**: se juega directamente en el navegador.
 
@@ -27,11 +27,12 @@ Luego abre `http://localhost:8000`. (Los módulos ES requieren servidor; no func
 | `W A S D` | Moverse |
 | `Ratón` | Apuntar (el cono de visión sigue tu mira) |
 | `Clic izq. / F` | Atacar / **disparar** el arma equipada |
-| `R` | **Recargar** el arma de fuego (cargador o cartuchos) |
+| `R` | **Recargar** el arma de fuego (cargador o cartuchos) · **rotar** la construcción en el modo de construcción |
+| `Clic der.` | **Colocar** la construcción (modo de construcción) |
 | `SHIFT` (mantener) | Correr — gasta energía y **hace mucho ruido** |
 | `C` | Agacharse (sigilo) — lento pero casi silencioso |
 | `E` | Interactuar: puertas, contenedores, recoger objetos, **subir/bajar escaleras** |
-| `TAB / I` | Inventario y equipo (pausa el mundo) |
+| `TAB / I` | Inventario, equipo y **pestaña CRAFTEO** (pausa el mundo) |
 | `1 · 2 · 3 · 4 · 5` | **Barra rápida** (v0.17): arma de fuego · secundaria · melee · 2 objetos |
 | `L` | **Linterna** (v0.17): encender / apagar — gasta pilas |
 | `P` | Pausa · `M` audio on/off |
@@ -78,6 +79,8 @@ js/
 ```
 
 ## Historial de versiones
+
+- **v0.20** — **EL CRAFTEO**. El inventario gana la pestaña **CRAFTEO** con dos familias: **OBJETOS** (recetas con materiales listados con lo que llevas/lo que hacen falta y botón CRAFTEAR que valida recursos) y **CONSTRUCCIONES** (no van a la mochila: CONSTRUIR activa el **modo de construcción** — un fantasma translúcido sigue al ratón sobre superficies válidas, **R lo rota**, **clic derecho coloca** y gasta los materiales, **clic izquierdo o ESC cancela**, verde = válido y rojo = colisión/demasiado lejos, con imán a puertas y ventanas para barricadas y tablones). **9 materiales nuevos** (clavos, tablas, tela, botellas, queroseno, alcohol etílico, cinta adhesiva, cuerda, chatarra) repartidos por el botín de todo el mapa + un kit inicial cerca del spawn. **6 objetos crafteables**: Venda (tela+alcohol), Botiquín, **Cóctel molotov** (botella+queroseno+tela: se LANZA equipado y atacando; al estallar deja una **zona de fuego de 10 s** que achicharra a los zombis dentro —y te quema a ti si te quedas—), **Antorcha** (golpe débil que PRENDE a los zombis: arden 3,5 s), **Bate con clavos** (daño 34→46) y **Lanza de chatarra** (alcance 66). **7 construcciones**: **Barricada** en puertas (bloquea paso y visión, 140 de vida, los zombis la golpean cuando se atascan), **Tablones de ventana** (tapan la vista y las balas), **Valla** (perímetros rotables, sólida sin tapar vista), **Trampa de pinchos** (30 de daño por pisada, 10 usos), **Caja de almacenamiento** (cofre real de 8 huecos con E), **Cama** (solo dentro de casas: la convierte en **REFUGIO** —nadie vuelve a aparecer dentro— y permite **DORMIR** con E: saltas a las 07:00 con energía al máximo y +10 de vida) y **Mesa de trabajo** (desbloquea las recetas avanzadas en 140 px). Todo persiste en el guardado (versión 4: las cajas conservan su contenido, la vida de cada pieza y los refugios se reconstruyen).
 
 - **v0.19** — **Corrección crítica: zombis visibles en el sótano y el 2º piso**. Bug reportado: en el sótano de la base militar «no había zombis» y entrabas a recibir daño constante «sin nadie». Causa raíz: los zombis de las plantas extra se dibujaban ANTES del canvas opaco de su planta (hormigón del sótano / linóleo del hospital), así que quedaban tapados — existían, con IA, colisión y ataques plenamente operativos (por eso el daño), pero INVISIBLES. Ahora el canvas de la planta se pinta primero y las entidades encima: los 4 guardianes del sótano-arsenal y los 10 zombis de la planta de hospitalización se ven venir y se pueden pelear. Al usar las escaleras, las entidades de la planta destino aparecen con el mismo fundido que la planta. Además, los objetos del suelo ahora tienen PLANTA: lo que sueltes en el sótano o el 2º piso nace allí (antes nacían "en la calle" y eran irrecuperables), se recogen donde se sueltan, su visibilidad es de tu planta y el guardado conserva la z (compatible con v0.18). Suite nueva con prueba A/B de píxeles (con y sin zombi, el píxel cambia) para que nunca vuelva a haber un invisible mordiendo.
 

@@ -493,6 +493,42 @@ export const ITEMS = {
   cargo: { name: 'Pantalón cargo', cat: 'ropa', slot: 'pantalones', slotsBonus: 2, color: '#5a5230', desc: 'Bolsillos everywhere. +2 espacios.' },
   pantalon_cargo_mil: { name: 'Pantalón de campaña', cat: 'ropa', slot: 'pantalones', armor: 0.08, slotsBonus: 4, color: '#454d36', desc: 'Pantalón militar de ripstop. 8% reducción y +4 espacios de carga: el mejor del juego.' },
   shorts: { name: 'Shorts deportivos', cat: 'ropa', slot: 'pantalones', color: '#7a7a8a', desc: 'Aerodinámico. Nada útil.' },
+  // ---- v0.20: MATERIALES DE CRAFTEO (cat 'material', apilables) ----
+  // La chatarra, la cuerda y el resto de la ferretería del apocalipsis: sin
+  // uso directo, son los ladrillos de TODAS las recetas de la pestaña Crafteo.
+  clavos: { name: 'Clavos', cat: 'material', color: '#b8b8c0', stack: 40, lootMin: 4, lootMax: 12, desc: 'Clavos de acero variados. El pegamento de todas las construcciones serias.' },
+  tablas: { name: 'Tablas de madera', cat: 'material', color: '#a87848', stack: 20, lootMin: 1, lootMax: 4, desc: 'Tablones rescatados de palés y derribos. Barricadas, vallas, camas…' },
+  tela: { name: 'Retazos de tela', cat: 'material', color: '#c8b8a0', stack: 30, lootMin: 2, lootMax: 6, desc: 'Jirones limpios de sábanas y cortinas. Vendas, mechas y colchones.' },
+  botella_vacia: { name: 'Botella vacía', cat: 'material', color: '#7ab8a0', stack: 10, lootMin: 1, lootMax: 3, desc: 'Botella de vidrio con la etiqueta lavada. Esperando un destino incendiario.' },
+  queroseno: { name: 'Lata de queroseno', cat: 'material', color: '#c8a03a', stack: 10, lootMin: 1, lootMax: 2, desc: 'Combustible de lámpara y estufa. Arde como la venganza.' },
+  alcohol_etilico: { name: 'Alcohol etílico', cat: 'material', color: '#d8e8e0', stack: 15, lootMin: 1, lootMax: 4, desc: 'Alcohol de botiquín al 96%. Desinfecta heridas… o enciende antorchas.' },
+  cinta_adhesiva: { name: 'Cinta adhesiva', cat: 'material', color: '#8a8a92', stack: 25, lootMin: 1, lootMax: 5, desc: 'Cinta plateada de aparatoso. Sujeta el fin del mundo con la esperanza.' },
+  cuerda: { name: 'Cuerda de nailon', cat: 'material', color: '#b0a078', stack: 10, lootMin: 1, lootMax: 2, desc: 'Cuerda trenzada de 5 m. Atar, tirar y colgar.' },
+  chatarra: { name: 'Chatarra metálica', cat: 'material', color: '#9aa0a6', stack: 20, lootMin: 1, lootMax: 4, desc: 'Recortes y tornillos oxidados. Punta de lanza y dientes de trampa.' },
+  // ---- v0.20: objetos CRAFTEABLES ----
+  molotov: {
+    name: 'Cóctel molotov', cat: 'arma', throwable: true, stack: 3,
+    color: '#b8c832',
+    desc: 'Botella incendiaria: al estallar deja una zona de FUEGO de 10 segundos que achicharra a los zombis dentro (y a ti, si te quedas). Equípala y ataca para lanzarla hacia donde apuntas.',
+  },
+  bate_con_clavos: {
+    name: 'Bate con clavos', cat: 'arma',
+    dmg: 46, range: 52, stamina: 17, cd: 0.62, noise: 140, kb: 38,
+    color: '#8a6a4a',
+    desc: 'Un bate de béisbol al que alguien quiso mal. Daño 46 (antes 34) y empuje brutal. La artillería artesanal de barricada en barricada. [Requiere mesa de trabajo]',
+  },
+  lanza_chatarra: {
+    name: 'Lanza de chatarra', cat: 'arma',
+    dmg: 26, range: 66, stamina: 12, cd: 0.65, noise: 120, kb: 16,
+    color: '#7a8a92',
+    desc: 'Tubo de acero con punta de chatarra afilada. Daño 26 pero ALCANCE 66: pincha antes de que te toquen. [Requiere mesa de trabajo]',
+  },
+  antorcha: {
+    name: 'Antorcha', cat: 'arma',
+    dmg: 16, range: 44, stamina: 10, cd: 0.55, noise: 110, kb: 10,
+    ignite: 3.5, color: '#d98a3a',
+    desc: 'Tabla envuelta en tela empapada de queroseno. Golpe débil (16) pero PRENDE a los zombis: arden 3,5 s achicharrándose.',
+  },
   // ---- v0.16: ración militar (EXCLUSIVA de la Base Militar) ----
   racion_combate: { name: 'Ración de combate', cat: 'comida', hunger: 55, stamina: 20, color: '#4a5238', stack: 4, desc: 'Ración militar de campaña calórica y estable. +55 hambre, +20 energía. La mejor comida del juego.' },
 };
@@ -536,12 +572,12 @@ export const CONTAINER_DEFS = {
 // raramente en casilleros de cualquier edificio del mapa.
 export const LOOT = {
   nevera: [['agua', 24], ['refresco', 14], ['manzana', 12], ['lata_frijoles', 9], ['lata_atun', 7], ['venda', 4]],
-  alacena: [['lata_frijoles', 20], ['lata_atun', 16], ['papas', 16], ['chocolate', 12], ['refresco', 8], ['agua', 6]],
-  armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3], ['linterna', 3], ['bateria', 4]],
+  alacena: [['lata_frijoles', 20], ['lata_atun', 16], ['papas', 16], ['chocolate', 12], ['refresco', 8], ['agua', 6], ['botella_vacia', 7], ['alcohol_etilico', 4]],
+  armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3], ['linterna', 3], ['bateria', 4], ['tela', 12], ['cinta_adhesiva', 7], ['botella_vacia', 5], ['cuerda', 3]],
   // v0.16: revólver tan común como la VP-9 (peso 4 = pistola); doble Yarará
   // más común que la corredera (3.2 > 2.2); Ñandú a la par de la Yarará.
-  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['revolver_aspid', 4], ['escopeta_guardian', 2.2], ['escopeta_yarara', 3.2], ['rifle_nandu', 3.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['bala_357', 11], ['cartucho_12', 8], ['bala_556', 5], ['bala_308', 4], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6], ['linterna', 3], ['bateria', 5]],
-  botiquin_pared: [['venda', 30], ['botiquin', 12], ['antibioticos', 9], ['agua', 6]],
+  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['revolver_aspid', 4], ['escopeta_guardian', 2.2], ['escopeta_yarara', 3.2], ['rifle_nandu', 3.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['bala_357', 11], ['cartucho_12', 8], ['bala_556', 5], ['bala_308', 4], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6], ['linterna', 3], ['bateria', 5], ['clavos', 14], ['tablas', 10], ['chatarra', 9], ['cinta_adhesiva', 8], ['tela', 7], ['alcohol_etilico', 4], ['botella_vacia', 5], ['cuerda', 3], ['queroseno', 2.5]],
+  botiquin_pared: [['venda', 30], ['botiquin', 12], ['antibioticos', 9], ['agua', 6], ['alcohol_etilico', 12]],
   // ARMERÍA (comisaría): la ÚNICA fuente del Cóndor AR-56 fuera de la base
   // militar (v0.12: rifle y familia 5.56 bastante más raros). v0.16: también
   // suelta las armas nuevas comunes.
@@ -553,13 +589,17 @@ export const LOOT = {
     ['chaleco', 7], ['casco_tactico', 6], ['funda_tactica', 4],
     ['botiquin', 5], ['antibioticos', 3],
     ['linterna', 2], ['bateria', 3],
+    ['cinta_adhesiva', 6], ['chatarra', 7],
   ],
   // ESTANTERÍA (tienda): comida y bebida a porrillo — y linternas/pilas
-  // (v0.17), que en una tienda es donde tocaría encontrarlas.
+  // (v0.17), que en una tienda es donde tocaría encontrarlas. v0.20: también
+  // la FERRETERÍA improvisada (clavos, tablas, tela, queroseno…).
   estanteria: [
     ['lata_frijoles', 30], ['lata_atun', 26], ['agua', 22], ['refresco', 18],
     ['papas', 15], ['chocolate', 13], ['manzana', 11], ['venda', 3],
     ['linterna', 5], ['bateria', 7],
+    ['clavos', 18], ['tablas', 14], ['tela', 12], ['cinta_adhesiva', 10],
+    ['botella_vacia', 9], ['queroseno', 6], ['alcohol_etilico', 5], ['cuerda', 5], ['chatarra', 4],
   ],
   // ---- v0.16: BASE MILITAR — el mejor botín del juego, más abundante que
   // la comisaría. El Subfusil Cuervo y el equipo militar viven SOLO aquí. ----
@@ -569,12 +609,13 @@ export const LOOT = {
     ['mascara_cm4', 7], ['chaleco_balistico', 4],
     ['venda', 6], ['agua', 5], ['antibioticos', 3],
     ['linterna', 2], ['bateria', 5],
+    ['cuerda', 8], ['chatarra', 7], ['cinta_adhesiva', 6],
   ],
   caja_municion: [
     ['bala_9mm', 22], ['bala_556', 20], ['cartucho_12', 16],
     ['bala_357', 14], ['bala_308', 12],
     ['cargador_9mm', 8], ['cargador_556', 8], ['cargador_cuervo', 7],
-    ['bateria', 4],
+    ['bateria', 4], ['chatarra', 7], ['cuerda', 4],
   ],
   armeria_mil: [
     ['subfusil_cuervo', 12], ['cargador_cuervo', 12], ['rifle_condor', 10],
@@ -584,11 +625,13 @@ export const LOOT = {
     ['cartucho_12', 12], ['bala_357', 12], ['bala_308', 10],
     ['funda_muslera', 6], ['chaleco_balistico', 5], ['casco_combate', 5],
     ['botiquin', 6], ['antibioticos', 4],
+    ['chatarra', 6], ['cuerda', 5],
   ],
   estanteria_mil: [
     ['racion_combate', 30], ['agua', 22], ['venda', 12],
     ['antibioticos', 8], ['botiquin', 6], ['refresco', 6],
     ['linterna', 3], ['bateria', 8],
+    ['tela', 10], ['cinta_adhesiva', 8], ['queroseno', 6], ['alcohol_etilico', 5],
   ],
   // ---- v0.18: HOSPITAL — los cuatro objetos EXCLUSIVOS viven SOLO aquí
   // (armarios de medicina F y carritos de curas T, en cualquiera de los dos
@@ -598,11 +641,13 @@ export const LOOT = {
     ['morfina', 6],
     ['venda', 18], ['botiquin', 10], ['antibioticos', 8],
     ['agua', 8], ['linterna', 2], ['bateria', 4],
+    ['alcohol_etilico', 14], ['tela', 7],
   ],
   carrito_curas: [
     ['venda', 24], ['suero_medico', 8], ['botiquin', 8],
     ['antibioticos', 6], ['adrenalina', 3], ['morfina', 2],
     ['agua', 10], ['refresco', 4],
+    ['alcohol_etilico', 10], ['tela', 6],
   ],
 };
 
@@ -613,6 +658,35 @@ export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, arma
 // Un arma hallada SIEMPRE trae algo dentro (cargador con balas o tubo cargado):
 // 50% llena del todo, 50% parcial (30%..95% de la capacidad).
 export const GUN_FOUND_FULL_CHANCE = 0.5;
+
+// ---------- Crafteo (v0.20) ----------
+// Dos familias de recetas: OBJETOS (van a la mochila al craftearlos) y
+// CONSTRUCCIONES (no se guardan en la mochila: al pulsar CONSTRUIR el
+// jugador entra en MODO CONSTRUCCIÓN — fantasma que sigue al ratón, R rota,
+// clic derecho coloca y gasta los materiales, clic izquierdo cancela).
+// Las recetas marcadas `wb: true` exigen una MESA DE TRABAJO a menos de
+// CRAFTEO.wbRange px (los avances "de taller", no a mano alzada).
+export const CRAFTEO = {
+  range: 150,        // alcance de construcción alrededor del jugador (px)
+  snapR: 96,         // radio de imán puerta/ventana para barricadas y tablones
+  wbRange: 140,      // radio de la mesa de trabajo (px)
+  fireR: 46,         // radio de la zona de fuego del molotov
+  fireDur: 10,       // segundos que arde la zona de fuego
+  fireDpsZ: 22,      // daño por segundo a los zombis dentro del fuego
+  fireDpsP: 9,       // daño por segundo al jugador si se queda dentro
+  burnDur: 3.5,      // quemadura del antorcha al impactar (s)
+  burnDps: 12,       // daño por segundo de la quemadura
+  throwSpd: 380,     // velocidad de vuelo del molotov (px/s)
+  throwMax: 0.95,    // vuelo máximo del molotov (s) ≈ 360 px
+  trapDmg: 30,       // daño por pisada de la trampa de pinchos
+  trapUses: 10,      // pisadas que aguanta la trampa
+  trapEvery: 0.5,    // cadencia de daño de la trampa (s)
+  sleepSafeR: 260,   // radio de "nadie cerca" para poder dormir
+  sleepHeal: 10,     // vida repuesta al dormir
+  conHp: {           // vida de cada construcción (a golpes de zombi/melee)
+    barricada: 140, tapiar: 100, valla: 90, trampa: 40, caja: 60, cama: 80, mesa: 50,
+  },
+};
 
 // ---------- Inventario ----------
 export const BASE_SLOTS = 10;

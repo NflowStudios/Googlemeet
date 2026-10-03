@@ -61,7 +61,7 @@
     <div class="hb-slot" data-hb="4"><span class="hb-key">5</span><span class="hb-tag">OBJETO</span><div class="hb-item"></div></div>
   </div>
 
-  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar · 1-5 barra rápida · L linterna · E interactuar · TAB inventario · P pausa · M audio</div>
+  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar/rotar · 1-5 barra rápida · L linterna · E interactuar · TAB inventario/crafteo · P pausa · M audio · CLIC DER. colocar construcción</div>
   <div id="toasts"></div>
 </div>
 
@@ -70,6 +70,11 @@
   <div class="inv-panel">
     <header>
       <h2>INVENTARIO</h2>
+      <!-- v0.20: pestañas INVENTARIO | CRAFTEO -->
+      <div id="inv-tabs">
+        <button data-tab="inv" class="on">INVENTARIO</button>
+        <button data-tab="craft">CRAFTEO</button>
+      </div>
       <span id="inv-cap">0 / 10</span>
       <span class="inv-hint">TAB / ESC para cerrar</span>
     </header>
@@ -113,6 +118,17 @@
         <div id="cont-grid"></div>
         <p class="cont-hint">Clic en un objeto para tomarlo.</p>
       </section>
+
+      <!-- v0.20: panel de CRAFTEO (sustituye a mochila/equipo al activarse) -->
+      <section id="inv-craft" class="hidden">
+        <div id="craft-subtabs">
+          <button data-ctab="obj" class="on">OBJETOS</button>
+          <button data-ctab="con">CONSTRUCCIONES</button>
+        </div>
+        <p id="craft-wbinfo"></p>
+        <div id="craft-list"></div>
+        <p class="cont-hint">Los OBJETOS crafteados van a la mochila. Las CONSTRUCCIONES activan el modo de construcción: el fantasma sigue al ratón · R lo rota · CLIC DERECHO coloca y gasta los materiales · CLIC IZQUIERDO (o ESC) cancela. Verde = sitio válido · rojo = colisión o demasiado lejos. Las recetas con «MESA DE TRABAJO» exigen una mesa a 140 px.</p>
+      </section>
     </div>
   </div>
 </div>
@@ -121,18 +137,19 @@
 <div id="menu">
   <div class="menu-inner">
     <h1>ZONA<em>CERO</em></h1>
-    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.19</span></p>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.20</span></p>
     <div class="menu-controls">
       <div><kbd>W A S D</kbd><span>Moverse</span></div>
       <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
       <div><kbd>C</kbd><span>Agacharse (sigilo)</span></div>
       <div><kbd>RATÓN</kbd><span>Apuntar</span></div>
       <div><kbd>CLIC / F</kbd><span>Atacar / disparar</span></div>
-      <div><kbd>R</kbd><span>Recargar el arma de fuego</span></div>
+      <div><kbd>R</kbd><span>Recargar / rotar la construcción</span></div>
       <div><kbd>1 · 2 · 3 · 4 · 5</kbd><span>Barra rápida: arma de fuego · secundaria · melee · objetos</span></div>
       <div><kbd>L</kbd><span>Linterna (encender / apagar — gasta pilas)</span></div>
       <div><kbd>E</kbd><span>Interactuar · puertas · botín · escaleras</span></div>
-      <div><kbd>TAB / I</kbd><span>Inventario y equipo</span></div>
+      <div><kbd>CLIC DER.</kbd><span>Colocar construcción (modo construcción)</span></div>
+      <div><kbd>TAB / I</kbd><span>Inventario, equipo y CRAFTEO</span></div>
       <div><kbd>P</kbd><span>Pausa</span> <kbd>M</kbd><span>Audio</span></div>
     </div>
     <div class="menu-buttons">
@@ -140,7 +157,7 @@
       <button id="btn-continue" class="hidden">CONTINUAR PARTIDA</button>
       <p id="continue-info" class="hidden"></p>
     </div>
-    <p class="menu-tip">Consejo: el mapa es el doble de grande y en su rincón más lejano espera la BASE MILITAR — el sótano-arsenal guarda el mejor botín del juego (subfusil Cuervo, equipo militar) entre una guarnición infestada. El HOSPITAL SAN RAFAEL, de dos pisos y en pleno APAGÓN, guarda SUS EXCLUSIVOS — suero médico (sed al 100%), adrenalina (energía infinita 25 s), antibióticos potentes y morfina — entre una infestación aún peor: ve de día o con la LINTERNA bien cargada, porque de noche no verás nada. Hay más armas por las calles: revólver .357, escopeta de dos cañones y rifle de cerrojo. Cuando anochezca, hazte con una linterna y pilas: con el haz encendido (tecla L) verás mucho mejor de noche, con neblina o lluvia y en interiores — una pila aguanta casi una noche entera. El clima cambia cada pocos días — la LLUVIA enmascara tu ruido y la NEBLINA reduce la visibilidad a la mitad, también la de ellos. Autoguardado cada 5 minutos; si mueres, el guardado se borra. Cuidado con los CORREDORES (esprintando les ganas) y los BRUTOS (masa oscura: la comisaría y la tienda guardan los suyos).</p>
+    <p class="menu-tip">Consejo: LLEGÓ EL CRAFTEO — abre el inventario (TAB) y entra en la pestaña CRAFTEO: con retazos de tela y alcohol haces VENDAS; con botella, queroseno y tela, un CÓCTEL MOLOTOV que deja 10 segundos de fuego; y junto a una MESA DE TRABAJO mejorarás el bate con clavos o forjarás una lanza. En CONSTRUCCIONES tienes barricadas para sellar puertas, tablones para tapiar ventanas (dejan de verte), vallas, trampas de pinchos, cajas para guardar equipo y la CAMA: montada dentro de una casa, convierte tu hogar en REFUGIO (nadie vuelve a aparecer dentro) y puedes DORMIR en ella para pasar la noche. El mapa es el doble de grande y en su rincón más lejano espera la BASE MILITAR — el sótano-arsenal guarda el mejor botín del juego (subfusil Cuervo, equipo militar) entre una guarnición infestada. El HOSPITAL SAN RAFAEL, de dos pisos y en pleno APAGÓN, guarda SUS EXCLUSIVOS — suero médico, adrenalina, antibióticos potentes y morfina — entre una infestación aún peor: ve de día o con la LINTERNA bien cargada. Hay más armas por las calles: revólver .357, escopeta de dos cañones y rifle de cerrojo. Cuando anochezca, hazte con una linterna y pilas (tecla L). El clima cambia cada pocos días — la LLUVIA enmascara tu ruido y la NEBLINA reduce la visibilidad a la mitad, también la de ellos. Autoguardado cada 5 minutos; si mueres, el guardado se borra. Cuidado con los CORREDORES (esprintando les ganas) y los BRUTOS (masa oscura: la comisaría y la tienda guardan los suyos).</p>
   </div>
 </div>
 

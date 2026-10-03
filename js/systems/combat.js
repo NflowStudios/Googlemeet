@@ -14,16 +14,19 @@
 import { angDiff } from '../utils.js';
 import { ITEMS } from '../config.js';
 import { gunRounds } from './inventory.js';
+import { throwMolotov, damageConstruction } from './crafting.js';
 
 // v0.16: armas cortas que se benefician de las fundas (desenfunde/recarga)
 const SIDEARMS = new Set(['pistola', 'revolver']);
 
-/** Entrada única del ataque: enruta a melee o a disparo según el arma. */
+/** Entrada única del ataque: enruta a melee, disparo o LANZAMIENTO según el arma. */
 export function playerAttack(game) {
   const p = game.player;
   if (p.climb) return false;   // en mitad de la escalera no se combate
+  if (game.build) return false; // v0.20: en modo construcción no se ataca
   const it = p.equipment.arma;
   if (it && it.def.ranged) return fireRanged(game);
+  if (it && it.def.throwable) return throwMolotov(game);   // v0.20: molotov
   return meleeAttack(game);
 }
 
@@ -62,6 +65,8 @@ function meleeAttack(game) {
 
     const dmg = w.dmg * (0.9 + Math.random() * 0.2);
     z.takeDamage(dmg, a, w.kb, game);
+    // v0.20: la ANTORCHA prende a quien toca (quemadura en el tiempo)
+    if (w.ignite) z.burn = Math.max(z.burn || 0, w.ignite);
     hits++;
     if (z.hp <= 0) game.killZombie(z);
   }
@@ -69,8 +74,30 @@ function meleeAttack(game) {
   if (hits > 0) {
     game.audio.hitFlesh();
     game.cam.shake(2.5);
+  } else {
+    // v0.20: sin zombi en el arco → el golpe cae sobre una CONSTRUCCIÓN
+    // (desmontar barricadas propias o ajenas a leñazos)
+    const c = constructionInArc(game, w.range);
+    if (c) {
+      damageConstruction(game, c, w.dmg, true);
+      game.noise.emit(c.x, c.y, 110, 'golpe');
+    }
   }
   return true;
+}
+
+/** Construcción delante del jugador, dentro del arco del golpe (v0.20). */
+function constructionInArc(game, range) {
+  const p = game.player;
+  for (const c of game.constructions) {
+    const dx = c.x - p.x, dy = c.y - p.y;
+    const d = Math.hypot(dx, dy);
+    if (d > range + 20) continue;
+    const a = Math.atan2(dy, dx);
+    if (Math.abs(angDiff(p.angle, a)) > 1.05) continue;
+    return c;
+  }
+  return null;
 }
 
 // ================== ARMAS DE FUEGO ==================

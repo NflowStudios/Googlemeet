@@ -31,12 +31,13 @@ import { Player } from '../entities/player.js';
 import { zombieToData, zombieFromData } from '../entities/zombie.js';
 import { flashlightItem } from './flashlight.js';
 import { HOTBAR_N } from './hotbar.js';
+import { addConstruction } from './crafting.js';
 
-// v0.18: bump a 3 — el mapa se AJUSTA para acoger al HOSPITAL (nueva
-// estructura única con dos pisos, contenedores y bloque dedicado), así que
-// la disposición de manzanas/contenedores de la v2 ya no coincide y los
-// guardados viejos se rechazan limpiamente (el menú arranca partida nueva).
-export const SAVE_VERSION = 3;
+// v0.20: bump a 4 — el mundo ganó CONSTRUCCIONES del jugador (barricadas,
+// vallas, trampas, cajas con su contenido, camas que hacen refugio y mesas
+// de trabajo). Los guardados de la v3 se rechazan limpiamente (el menú
+// arranca partida nueva), como en cada salto de versión.
+export const SAVE_VERSION = 4;
 export const AUTOSAVE_SEC = 300;        // autoguardado cada 5 min DE PARTIDA
 const KEY = 'zonacero.save.v' + SAVE_VERSION;
 
@@ -145,6 +146,18 @@ export function buildSaveData(game) {
     x: +gi.x.toFixed(1), y: +gi.y.toFixed(1), z: gi.z || 0, id: reg(gi.item),
   }));
 
+  // v0.20: CONSTRUCCIONES del jugador (con el contenido de las cajas vía
+  // registro de objetos) — el fuego y el fantasma de construcción son
+  // efímeros y NO viajan
+  const cons = game.constructions.map((c) => {
+    const o = {
+      t: c.type, tx: c.tx, ty: c.ty, rt: c.rot || 0,
+      hp: Math.round(c.hp), us: c.uses,
+      it: (c.type === 'caja' && c.items) ? c.items.map((x) => reg(x)) : undefined,
+    };
+    return o;
+  });
+
   return {
     v: SAVE_VERSION,
     seed: game.seedUsed,
@@ -159,7 +172,7 @@ export function buildSaveData(game) {
     wx: game.weather ? game.weather.toData() : null,   // v0.15: clima
     player, surv,
     zombies: game.zombies.map(zombieToData),
-    containers, ground, doors,
+    containers, ground, cons, doors,
     decals: game.map.decalOps.slice(-500),
     items,
   };
@@ -316,6 +329,17 @@ export function restoreGame(game, data) {
     game.groundItems = (data.ground || [])
       .map((g) => ({ x: g.x, y: g.y, z: g.z || 0, item: get(g.id) }))
       .filter((g) => g.item);
+
+    // ---- v0.20: CONSTRUCCIONES (materiales del registro para las cajas) ----
+    game.constructions = [];
+    for (const cs of data.cons || []) {
+      const c = addConstruction(game, cs.t, cs.tx, cs.ty, cs.rt || 0);
+      if (cs.hp !== undefined) c.hp = cs.hp;
+      if (cs.us !== undefined && c.uses !== undefined) c.uses = cs.us;
+      if (cs.t === 'caja' && cs.it) {
+        c.items = cs.it.map(get).filter(Boolean);
+      }
+    }
 
     // ---- decals: reproducir sangre y cadáveres ----
     for (const op of data.decals || []) {

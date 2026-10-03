@@ -7,6 +7,9 @@
 
 import { DAYNIGHT, HOSPITAL } from './config.js';
 import { flashActive, isInHospital } from './systems/flashlight.js';
+import {
+  drawConstructions, drawFires, drawMolotovs, drawBuildGhost,
+} from './systems/crafting.js';
 
 export function renderGame(ctx, game) {
   const cam = game.cam;
@@ -29,6 +32,11 @@ export function renderGame(ctx, game) {
   const _p = game.player;
   const entA = (_p && _p.climb && _p.climb.to !== 0) ? _p.climb.k : 1;
   if (entA < 1) ctx.globalAlpha = entA;
+
+  // v0.20: CONSTRUCCIONES del jugador (barricadas, vallas, trampas, cajas,
+  // camas, mesas) — bajo los zombis y objetos del suelo, como el mobiliario
+  // del mundo que son
+  drawConstructions(ctx, cam, game);
 
   // objetos del suelo (solo si son visibles ahora)
   for (const gi of game.groundItems) {
@@ -83,6 +91,15 @@ export function renderGame(ctx, game) {
   // dentro del cono; ocurren delante del jugador)
   drawGunFX(ctx, game);
 
+  // v0.20: botellas de molotov en vuelo y ZONAS DE FUEGO (aditivas, por
+  // encima de los velos para que iluminen de verdad)
+  drawMolotovs(ctx, cam, game);
+  drawFires(ctx, cam, game);
+
+  // v0.20: fantasma del modo construcción (encima de todo: es una decisión
+  // del jugador, no parte del mundo)
+  drawBuildGhost(ctx, cam, game);
+
   // ---- tinte ambiente del ciclo día/noche (v0.11) ----
   // Noche: velo azul oscuro sobre TODO el frame (con el cono encima se sigue
   // viendo, pero el mundo pesa). Amanecer/atardecer: golpe cálido anaranjado.
@@ -104,6 +121,13 @@ export function renderGame(ctx, game) {
   // ---- espacio de pantalla ----
   drawCrosshair(ctx, game);
   drawVignettes(ctx, game);
+
+  // v0.20: DORMIR — fundido a negro mientras el mundo espera al despertar
+  if (game.sleepT > 0) {
+    const k = Math.min(1, game.sleepT / 1.4);
+    ctx.fillStyle = `rgba(2, 3, 2, ${(k * k * 0.96).toFixed(3)})`;
+    ctx.fillRect(0, 0, game.cam.w, game.cam.h);
+  }
 }
 
 /** Velo de ambiente según la hora: azul de noche, cálido al alba/ocaso. */

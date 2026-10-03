@@ -43,6 +43,12 @@ export class GameMap {
     this.containers = [];   // {type, name, x, y, color, letter, searched, z}
     this.buildings = [];    // {x0, y0, x1, y1, cx, cy, upper, basement, stairs}
     this.doors = [];        // {tx, ty}
+    // v0.20: CONSTRUCCIONES del jugador — índice tile → objeto + máscara
+    // rápida de solidez/opacidad (z=0) para colisión y visión.
+    this.constrByTile = new Map();              // idx tile → construcción
+    this.constrMark = new Uint8Array(MAP_W * MAP_H);  // 1 = bloquea movimiento
+    this.constrSight = new Uint8Array(MAP_W * MAP_H); // 1 = bloquea visión
+    this.bedBuildings = new Set();              // idx de edificios con CAMA (refugio)
     // índice rápido tile → edificio (para el despacho por planta z)
     this._bIdx = new Int16Array(MAP_W * MAP_H).fill(-1);
     // Pintura vial PRECALCULADA en coordenadas de mundo (rects {x, y, w, h, c}):
@@ -89,6 +95,7 @@ export class GameMap {
     const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
     const t = this.tiles[this.idx(tx, ty)];
     if (t === T.TREE || t === T.CAR) return true;      // tile lleno
+    if (this.constrMark[this.idx(tx, ty)]) return true; // v0.20: construcción
     if (SOLID.has(t)) return this._inRuns(tx, ty, x, y); // franja delgada
     return false;
   }
@@ -315,6 +322,9 @@ export class GameMap {
     const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
     const t = this.tileAtZ(tx, ty, z);
     if (OPAQUE.has(t)) return this._inRunsZ(tx, ty, x, y, z);
+    // v0.20: barricadas y tablones tapan la vista (y las balas) — solo
+    // cuentan en su planta (z=0): abajo/arriba siguen viéndose de frente
+    if (z === 0 && this.constrSight[this.idx(tx, ty)]) return true;
     return false;
   }
 
@@ -355,7 +365,9 @@ export class GameMap {
           continue;
         }
         const t = this.tileAtZ(tx, ty, z);
-        if (t === T.TREE || t === T.CAR) {
+        // v0.20: una construcción que bloquea ocupa el tile ENTERO en su planta
+        const cMark = z === 0 && this.constrMark[this.idx(tx, ty)];
+        if (t === T.TREE || t === T.CAR || cMark) {
           if (this._circleRectHit(x, y, r, tx * TILE, ty * TILE, TILE, TILE)) return true;
           continue;
         }
@@ -367,6 +379,69 @@ export class GameMap {
       }
     }
     return false;
+  }
+
+  // ================== Construcciones del jugador (v0.20) ==================
+
+  /** Registra una construcción en el índice tile → objeto + máscaras. */
+  registerConstruction(c) {
+    const i = this.idx(c.tx, c.ty);
+    this.constrByTile.set(i, c);
+    if (c.type === 'barricada' || c.type === 'tapiar' || c.type === 'valla') {
+      this.constrMark[i] = 1;
+    }
+    if (c.type === 'barricada' || c.type === 'tapiar') {
+      this.constrSight[i] = 1;
+    }
+  }
+
+  /** Retira las marcas de una construcción. */
+  unregisterConstruction(c) {
+    const i = this.idx(c.tx, c.ty);
+    if (this.constrByTile.get(i) === c) this.constrByTile.delete(i);
+    this.constrMark[i] = 0;
+    this.constrSight[i] = 0;
+  }
+
+  /** Construcción en un tile (o null). */
+  constructionAtTile(tx, ty) {
+    return this.constrByTile.get(this.idx(tx, ty)) || null;
+  }
+
+  /** ¿Hay un contenedor del mundo en ese tile? (para no construir encima) */
+  containerAtTile(tx, ty) {
+    for (const c of this.containers) {
+      if (c.z === 0 && Math.floor(c.x / TILE) === tx && Math.floor(c.y / TILE) === ty) return c;
+    }
+    return null;
+  }
+
+  /** Recalcula qué edificios tienen CAMA (zonas sin spawns de interior). */
+  recalcBedBuildings(constructions) {
+    this.bedBuildings.clear();
+    for (const c of constructions) {
+      if (c.type !== 'cama') continue;
+      const b = this.buildingAtTile(c.tx, c.ty);
+      if (b) this.bedBuildings.add(this.buildings.indexOf(b));
+    }
+  }
+
+  /** ¿El edificio de este tile tiene cama (es refugio)? */
+  isSafehouseTile(tx, ty) {
+    const b = this.buildingAtTile(tx, ty);
+    return !!b && this.bedBuildings.has(this.buildings.indexOf(b));
+  }
+
+  /** Construcción DESTRUIBLE pegada a un punto (para zombis atascados). */
+  constructionNear(x, y) {
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const c = this.constructionAtTile(tx + dx, ty + dy);
+        if (c && (c.type === 'barricada' || c.type === 'tapiar' || c.type === 'valla')) return c;
+      }
+    }
+    return null;
   }
 
   /** ¿Hay una escalera bajo los pies del jugador en su planta actual? */
@@ -2153,16 +2228,23 @@ export class GameMap {
     return null;
   }
 
-  /** Tile de interior aleatorio (px). */
+  /** Tile de interior aleatorio (px). v0.20: los edificios con CAMA son
+   *  refugios — dentro de sus muros no vuelve a aparecer NADIE. */
   randomIndoor() {
     if (!this.indoorTiles.length) return null;
-    const ti = this.indoorTiles[this.rng.index(this.indoorTiles.length)];
-    const tx = ti % MAP_W, ty = Math.floor(ti / MAP_W);
-    return { x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 };
+    for (let k = 0; k < 40; k++) {
+      const ti = this.indoorTiles[this.rng.index(this.indoorTiles.length)];
+      const tx = ti % MAP_W, ty = Math.floor(ti / MAP_W);
+      if (this.bedBuildings.size && this.isSafehouseTile(tx, ty)) continue;
+      return { x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2 };
+    }
+    return null;
   }
 
-  /** Tile FLOOR aleatorio DENTRO de un edificio concreto (px). */
+  /** Tile FLOOR aleatorio DENTRO de un edificio concreto (px). v0.20: los
+   *  refugios (edificio con cama) no generan zombis de interior. */
   randomIndoorIn(b) {
+    if (this.bedBuildings.has(this.buildings.indexOf(b))) return null;
     for (let i = 0; i < 60; i++) {
       const tx = this.rng.int(b.x0 + 1, b.x1 - 1);
       const ty = this.rng.int(b.y0 + 1, b.y1 - 1);

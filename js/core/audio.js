@@ -226,6 +226,45 @@ export class AudioFX {
 
   container() { this._noise(0.12, 'lowpass', 350, 0.25); this._tone('sine', 120, 80, 0.1, 0.2); }
 
+  // ---- v0.20: sonidos del crafteo ----
+
+  /** Craftear un objeto: "cacharreo" satisfactorio. */
+  craft() {
+    this._tone('square', 520, 700, 0.06, 0.12);
+    setTimeout(() => this._noise(0.08, 'lowpass', 600, 0.14), 70);
+    setTimeout(() => this._tone('square', 700, 900, 0.07, 0.1), 150);
+  }
+
+  /** Clavar una construcción: martillazo seco (x2). */
+  hammer() {
+    this._noise(0.05, 'lowpass', 900, 0.3);
+    this._tone('sine', 210, 120, 0.08, 0.24);
+    setTimeout(() => {
+      this._noise(0.05, 'lowpass', 800, 0.24);
+      this._tone('sine', 180, 100, 0.07, 0.18);
+    }, 170);
+  }
+
+  /** Golpe contra madera (dañar construcciones). */
+  hitWood() {
+    this._noise(0.06, 'lowpass', 420, 0.26);
+    this._tone('sine', 160, 90, 0.07, 0.2);
+  }
+
+  /** Construcción destrozada: estruendo de tablas. */
+  crash() {
+    this._noise(0.3, 'lowpass', 300, 0.4);
+    this._tone('sawtooth', 120, 40, 0.3, 0.25);
+    setTimeout(() => this._noise(0.18, 'bandpass', 700, 0.18, 0, 0.7), 60);
+  }
+
+  /** Molotov al estallar: whoosh ígneo. */
+  ignite() {
+    this._noise(0.5, 'lowpass', 1600, 0.4);
+    this._tone('sawtooth', 300, 60, 0.4, 0.2);
+    setTimeout(() => this._noise(0.4, 'lowpass', 500, 0.16), 120);
+  }
+
   /** Latido cuando la vida es crítica. Llamar cada frame. */
   heartbeat(dt, active) {
     if (!this._ok() || !active) return;

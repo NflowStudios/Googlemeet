@@ -180,6 +180,8 @@ canvas#game {
 .chip.flash { color: #e8c66a; border-color: #8a7430; }   /* v0.17: linterna encendida */
 .chip.adren { color: #e8963a; border-color: #8a5a20; }   /* v0.18: adrenalina activa */
 .chip.morph { color: #b8a0d9; border-color: #5a4a74; }   /* v0.18: morfina activa */
+.chip.build { color: #e8c66a; border-color: #8a7430; animation: critPulse 1.6s infinite; }  /* v0.20: modo construcción */
+.chip.sleep { color: #9fc3d8; border-color: #3a6a8a; }   /* v0.20: durmiendo */
 
 /* derecha: ruido + equipo */
 #hud-right {
@@ -759,3 +761,160 @@ kbd {
   color: var(--text);
 }
 #pausescreen p { margin: 12px 0 26px; color: var(--text-dim); }
+
+/* ================= v0.20: Crafteo ================= */
+
+/* pestañas del inventario (header) */
+#inv-tabs { display: flex; gap: 6px; margin-left: 8px; }
+#inv-tabs button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 6px 16px;
+  background: #1a1e18;
+  color: var(--text-dim);
+  border: 1px solid #3a3f35;
+  border-bottom-width: 3px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+#inv-tabs button:hover { background: #232a20; color: var(--text); }
+#inv-tabs button.on {
+  background: #262e22;
+  color: #c9d6b8;
+  border-color: #6a705a;
+  border-bottom-color: #9fc37a;
+}
+
+/* panel de crafteo */
+#inv-craft { min-width: 0; }
+#craft-subtabs { display: flex; gap: 6px; margin-bottom: 10px; }
+#craft-subtabs button {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 5px 14px;
+  background: #131611;
+  color: var(--text-dim);
+  border: 1px dashed #33362c;
+  cursor: pointer;
+}
+#craft-subtabs button:hover { border-color: #6a705a; color: var(--text); }
+#craft-subtabs button.on {
+  border-style: solid;
+  border-color: #7ab85a;
+  color: #b9d69a;
+  background: #1a2118;
+}
+
+#craft-wbinfo {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #6d6f64;
+  margin-bottom: 10px;
+}
+#craft-wbinfo.ok { color: #9fc37a; }
+
+#craft-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+}
+
+.craft-recipe {
+  position: relative;
+  border: 1px solid #33362c;
+  background: #131611;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.craft-recipe.locked { opacity: 0.62; }
+.craft-recipe:hover { border-color: #6a705a; }
+
+.craft-recipe .cr-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.craft-recipe .cr-icon {
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.18);
+  flex: none;
+}
+.craft-recipe .cr-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.5px;
+}
+.craft-recipe .cr-wb {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  padding: 1px 6px;
+  border: 1px solid;
+}
+.craft-recipe .cr-wb.ok { color: #9fc37a; border-color: #55703c; }
+.craft-recipe .cr-wb.lack { color: #d9c34a; border-color: #8a7a24; }
+
+.craft-recipe .cr-desc {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #8a8f7a;
+}
+
+.craft-recipe .cr-mats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.craft-recipe .cr-mat {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border: 1px solid;
+  letter-spacing: 0.4px;
+}
+.craft-recipe .cr-mat i {
+  font-style: normal;
+  font-weight: 700;
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.craft-recipe .cr-mat.ok { color: #b9d69a; border-color: #456a2a; }
+.craft-recipe .cr-mat.lack { color: #e88a80; border-color: #8a2a22; }
+
+.craft-recipe .cr-btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 7px 14px;
+  background: #1c211b;
+  color: #c9d6b8;
+  border: 1px solid #4a4f42;
+  border-bottom-width: 3px;
+  border-bottom-color: #9fc37a;
+  cursor: pointer;
+  align-self: flex-start;
+  margin-top: 2px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.craft-recipe .cr-btn:hover:not(:disabled) {
+  background: #2a3325;
+  border-color: #6a705a;
+  color: #dcecc8;
+}
+.craft-recipe .cr-btn:disabled {
+  cursor: not-allowed;
+  color: #6d6f64;
+  border-bottom-color: #3a3f35;
+  background: #161a15;
+}

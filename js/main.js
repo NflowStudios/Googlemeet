@@ -21,6 +21,10 @@ import { Inventory, makeItem, fillContainer, itemLabel, refillMagazines } from '
 import { playerAttack, zombieHit, reloadRanged, finishReload } from './systems/combat.js';
 import { hotbarUse, hotbarValidate } from './systems/hotbar.js';
 import { toggleFlashlight, updateFlashlight } from './systems/flashlight.js';
+import {
+  startBuild, updateBuild, rotateBuild, cancelBuild, placeBuild,
+  updateFire, updateConstructions, sleepInBed, finishSleep, CON_NAMES,
+} from './systems/crafting.js';
 import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, AUTOSAVE_SEC } from './systems/save.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
@@ -55,6 +59,13 @@ class Game {
     this.uiOpen = false;
     this.zombies = [];
     this.groundItems = [];
+    // v0.20: sistema de crafteo/construcción
+    this.constructions = [];  // barricadas, vallas, trampas, cajas, camas, mesas
+    this.build = null;        // modo construcción activo (fantasma)
+    this.fires = [];          // zonas de fuego del molotov {x,y,z,r,t}
+    this.molotovs = [];       // botellas en vuelo {x,y,vx,vy,t,z}
+    this.sleepT = 0;          // fundido a negro mientras se duerme
+    this._sleepTarget = null; // hora objetivo del sueño
     // efectos de disparo (coordenadas de mundo, decaen en update)
     this.tracers = [];   // trazadoras {x1,y1,x2,y2,t,life}
     this.flashes = [];   // fogonazos {x,y,a,t,life,big}
@@ -137,6 +148,14 @@ class Game {
     this.groundItems = [];
     this._placeStartingLoot();
 
+    // v0.20: mundo limpio de crafteo (construcciones, fuego, fantasma)
+    this.constructions = [];
+    this.build = null;
+    this.fires = [];
+    this.molotovs = [];
+    this.sleepT = 0;
+    this._sleepTarget = null;
+
     // efectos de disparo limpios
     this.tracers.length = 0;
     this.flashes.length = 0;
@@ -186,6 +205,11 @@ class Game {
     this.tracers.length = 0;
     this.flashes.length = 0;
     this.impacts.length = 0;
+    this.fires.length = 0;        // v0.20: sin fuego al restaurar
+    this.molotovs.length = 0;
+    this.build = null;
+    this.sleepT = 0;
+    this._sleepTarget = null;
     this._dryToastT = 0;
     this._autosaveT = 0;
     this._seenVariants = {};   // v0.14: el bestiario se reavisa tras cargar
@@ -228,6 +252,8 @@ class Game {
     this.state = STATE.MENU;
     this.input.enabled = false;
     this.uiOpen = false;
+    this.build = null;            // v0.20: sin fantasma en el menú
+    this.sleepT = 0;
     this.invUI.closeUI();
     this.hud.hide();
     this.audio.setRain(0);   // v0.15: el mundo no se dibuja en el menú → sin lluvia
@@ -275,6 +301,20 @@ class Game {
       const pos = this.map.randomOutdoor(s, 150);
       if (pos) this.groundItems.push({ x: pos.x, y: pos.y, item: makeItem(id), visibleNow: true });
     }
+
+    // v0.20: materiales de arranque cerca del spawn — para estrenar el CRAFTEO
+    // (vendas caseras o la primera barricada) sin dar la vuelta al mapa
+    const mats = [
+      ['tela', 4], ['alcohol_etilico', 2], ['tablas', 5], ['clavos', 10],
+      ['botella_vacia', 2], ['queroseno', 1], ['cinta_adhesiva', 2], ['chatarra', 3],
+    ];
+    for (const [id, n] of mats) {
+      const pos = this.map.randomOutdoor(s, 170);
+      if (!pos) continue;
+      const it = makeItem(id);
+      it.count = n;
+      this.groundItems.push({ x: pos.x, y: pos.y, item: it, visibleNow: true });
+    }
   }
 
   // ================== Entrada ==================
@@ -295,10 +335,18 @@ class Game {
       return;
     }
     if (this.state !== STATE.PLAYING) return;
+    // ---- v0.20: modo construcción ----
+    if (this.build) {
+      if (name === 'reload') { rotateBuild(this); return; }        // R rota
+      if (name === 'attack') { cancelBuild(this); return; }        // clic izq.
+      if (name === 'escape') { cancelBuild(this); return; }
+      if (name === 'place') { placeBuild(this); return; }           // clic der.
+    }
     switch (name) {
       case 'interact': this.interact(); break;
       case 'inventory': this.invUI.openUI(null); break;
       case 'reload': reloadRanged(this); break;
+      case 'place': break;   // clic derecho fuera de construcción: nada
       case 'hot1': hotbarUse(this, 0); break;
       case 'hot2': hotbarUse(this, 1); break;
       case 'hot3': hotbarUse(this, 2); break;
@@ -400,6 +448,20 @@ class Game {
         best = { kind: 'container', obj: c, d, label: 'Registrar ' + c.name };
       }
     }
+    // v0.20: construcciones interactivas (caja de almacenamiento, cama)
+    for (const c of this.constructions) {
+      if (c.z !== 0 || pz !== 0) continue;
+      const d = Math.hypot(c.x - p.x, c.y - p.y);
+      if (d < 46 && (!best || d < best.d)) {
+        if (c.type === 'caja') {
+          best = { kind: 'constr', obj: c, d, label: 'Abrir ' + (c.name || CON_NAMES.caja) };
+        } else if (c.type === 'cama') {
+          best = { kind: 'constr', obj: c, d, label: 'Dormir en la cama' };
+        } else if (c.type === 'mesa') {
+          best = { kind: 'constr', obj: c, d, label: 'Mesa de trabajo (recetas avanzadas)' };
+        }
+      }
+    }
     for (const gi of this.groundItems) {
       // v0.19: los objetos del suelo son de TU planta (los que sueltes en el
       // sótano o el 2º piso se recogen allí, no a través del techo)
@@ -449,6 +511,18 @@ class Game {
         this.noise.emit(this.player.x, this.player.y, 70, 'registro');
         this.audio.container();
         this.invUI.openUI(c);
+        break;
+      }
+      case 'constr': {
+        // v0.20: caja de almacenamiento (abre como contenedor) o cama (dormir)
+        const c = target.obj;
+        if (c.type === 'caja') {
+          if (!c.searched) { c.searched = true; this.searchedCount++; }
+          this.audio.container();
+          this.invUI.openUI(c);
+        } else if (c.type === 'cama') {
+          sleepInBed(this);
+        }
         break;
       }
       case 'item': {
@@ -514,6 +588,8 @@ class Game {
     this.state = STATE.DEAD;
     this.input.enabled = false;
     this.deathCause = cause;
+    this.build = null;            // v0.20: sin fantasma tras morir
+    this.sleepT = 0;
     this.hud.hide();
     this.map.stampCorpse(this.player.x, this.player.y, this.player.angle);
     this.map.stampBlood(this.player.x, this.player.y, true);
@@ -527,6 +603,13 @@ class Game {
 
   update(dt) {
     if (this.state !== STATE.PLAYING || this.uiOpen) return;
+
+    // v0.20: DORMIR — fundido a negro: el mundo espera al despertar
+    if (this.sleepT > 0) {
+      this.sleepT -= dt;
+      if (this.sleepT <= 0) { this.sleepT = 0; finishSleep(this); }
+      return;
+    }
 
     this.time += dt;
 
@@ -558,6 +641,12 @@ class Game {
     // lee vision.js vía flashRangeMul)
     updateFlashlight(this, dt);
 
+    // v0.20: crafteo — fantasma del modo construcción, fuego del molotov y
+    // trampas de pinchos (las construcciones viven solo en planta baja)
+    if (this.build) updateBuild(this);
+    updateFire(this, dt);
+    updateConstructions(this, dt);
+
     this.player.update(dt, this);
     this.player.inventory.setCapacity(this.player.capacity());
 
@@ -588,8 +677,9 @@ class Game {
     }
 
     // fuego automático: mantener pulsado el botón con un rifle automático
+    // (v0.20: nunca en modo construcción — el clic izquierdo CANCELA)
     const eqGun = this.player.equipment.arma;
-    if (this.input.mouse.down && eqGun && eqGun.def.auto) playerAttack(this);
+    if (this.input.mouse.down && eqGun && eqGun.def.auto && !this.build) playerAttack(this);
 
     // Visión puramente en tiempo real: se recalcula cada frame, sin memoria
     this.vision.compute(this);

@@ -20,8 +20,9 @@
  * cosa de noise.js).
  */
 
-import { ZOMBIE_CFG as Z, TILE, T, SPECIALS } from '../config.js';
+import { ZOMBIE_CFG as Z, TILE, T, SPECIALS, CRAFTEO } from '../config.js';
 import { dist, angDiff } from '../utils.js';
+import { damageConstruction, drawBurnFlames } from '../systems/crafting.js';
 
 const ST = { IDLE: 'idle', WANDER: 'wander', INVESTIGATE: 'investigate', SEARCH: 'search', CHASE: 'chase' };
 
@@ -73,6 +74,7 @@ export class Zombie {
     this.groanT = rng.range(1, Z.groanMax);
     this.kbx = 0; this.kby = 0;
     this.stuckT = 0;
+    this.burn = 0;              // v0.20: segundos de QUemadura restantes (antorcha/molotov)
     this.face = rng.range(0, Math.PI * 2);
     this.visibleNow = false;
   }
@@ -115,6 +117,17 @@ export class Zombie {
 
     this.flash = Math.max(0, this.flash - dt);
     this.attackCd = Math.max(0, this.attackCd - dt);
+
+    // ---- v0.20: QUEMADURA (antorcha / molotov) — arde y se consume ----
+    if (this.burn > 0) {
+      this.burn -= dt;
+      this.hp -= CRAFTEO.burnDps * dt;
+      this.flash = Math.max(this.flash, 0.08);
+      if (this.hp <= 0) {
+        game.killZombie(this);
+        return;
+      }
+    }
 
     // ---- percepción: ruido ----
     if (this.state !== ST.CHASE) {
@@ -267,6 +280,16 @@ export class Zombie {
           map.moveCircle(this, px * speed * dt * 8, py * speed * dt * 8, this.z || 0);
           this.stuckT = 0.3;
         }
+        // v0.20: si lo que frena al zombi es una CONSTRUCCIÓN (barricada,
+        // valla, tablones), la golpea con su cadencia — PZ-style
+        if (this.stuckT > 0.45 && this.attackCd <= 0) {
+          const c = map.constructionNear(this.x + Math.cos(this.face) * 20, this.y + Math.sin(this.face) * 20);
+          if (c) {
+            this.attackCd = this.attackCdBase;
+            const dmg = this.dmgMin + Math.random() * (this.dmgMax - this.dmgMin);
+            damageConstruction(game, c, dmg, false);
+          }
+        }
       } else {
         this.stuckT = Math.max(0, this.stuckT - dt);
       }
@@ -396,6 +419,11 @@ export class Zombie {
     if (this.flash > 0) {
       ctx.fillStyle = `rgba(255,255,255,${this.flash * 4})`;
       ctx.beginPath(); ctx.arc(s.x, s.y, this.r + 1, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // v0.20: ardiendo — llamas encima del cuerpo
+    if (this.burn > 0) {
+      drawBurnFlames(ctx, s.x, s.y, this.r, performance.now() / 1000);
     }
 
     // barra de vida pequeña solo si está herido (ancho según el cuerpo)
