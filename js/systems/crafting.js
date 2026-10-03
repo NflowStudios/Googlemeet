@@ -113,6 +113,9 @@ export const RECIPES_CON = [
 /** ¿Hay una mesa de trabajo a menos de wbRange px del jugador? */
 export function nearWorkbench(game) {
   const p = game.player;
+  // v0.21: la mesa vive en la planta baja — desde el sótano o el 2º piso no
+  // cuenta (antes habilitaba recetas a través del techo)
+  if ((p.z || 0) !== 0 || p.climb) return false;
   for (const c of game.constructions) {
     if (c.type !== 'mesa') continue;
     if (Math.hypot(c.x - p.x, c.y - p.y) <= C.wbRange) return true;
@@ -725,8 +728,24 @@ export function drawConstruction(ctx, c, sx, sy) {
   }
 }
 
-/** Dibuja todas las construcciones visibles (render.js, capa de entidades). */
+/**
+ * Dibuja todas las construcciones visibles (render.js, capa de entidades).
+ * v0.21: las construcciones viven SOLO en la planta baja. Antes se pintaban
+ * siempre y, al subir al 2º piso o bajar al sótano, quedaban POR ENCIMA del
+ * canvas opaco de esa planta — «se veían a través del techo» (bug reportado:
+ * las barricadas/vallas de la baja flotaban sobre el sótano y el hospital).
+ * Ahora solo se dibujan desde la planta baja, y al empezar a subir/bajar la
+ * escalera se funden con la baja (simétrico al fundido de la planta destino).
+ */
 export function drawConstructions(ctx, cam, game) {
+  const p = game.player;
+  const pz = p ? (p.climb ? p.climb.to : (p.z || 0)) : 0;
+  if (pz !== 0) return;                       // en planta extra: nada de la baja
+  let fade = 1;
+  if (p && p.climb) fade = 1 - p.climb.k;     // escalera: la baja se desvanece
+  if (fade <= 0.02) return;
+  const prevA = ctx.globalAlpha;
+  if (fade < 1) ctx.globalAlpha = fade;       // sustituye al entA del bloque de entidades
   for (const c of game.constructions) {
     if (c.z !== 0) continue;
     const sx = Math.round(c.x - cam.x + cam.offX);
@@ -734,14 +753,23 @@ export function drawConstructions(ctx, cam, game) {
     if (sx < -40 || sy < -40 || sx > cam.w + 40 || sy > cam.h + 40) continue;
     drawConstruction(ctx, c, sx, sy);
   }
+  if (fade < 1) ctx.globalAlpha = prevA;
 }
 
-/** Fuego: llamas animadas + halo de luz aditivo (encima de todo). */
+/**
+ * Fuego: llamas animadas + halo de luz aditivo (encima de todo).
+ * v0.21: el fuego es de SU planta — un incendio de la baja no brilla a
+ * través del techo del sótano ni al revés (mismo arreglo que las
+ * construcciones).
+ */
 export function drawFires(ctx, cam, game) {
   const t = game.time;
+  const p = game.player;
+  const pz = p ? (p.climb ? p.climb.to : (p.z || 0)) : 0;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (const f of game.fires) {
+    if ((f.z || 0) !== pz) continue;
     const sx = f.x - cam.x + cam.offX, sy = f.y - cam.y + cam.offY;
     const k = Math.min(1, f.t / 1.5);                 // se apaga al final
     // halo de luz
@@ -770,9 +798,15 @@ export function drawFires(ctx, cam, game) {
   ctx.restore();
 }
 
-/** Molotovs volando: botella girando con estela ígnea. */
+/**
+ * Molotovs volando: botella girando con estela ígnea.
+ * v0.21: también son de su planta (no atraviesan techos al dibujarse).
+ */
 export function drawMolotovs(ctx, cam, game) {
+  const p = game.player;
+  const pz = p ? (p.climb ? p.climb.to : (p.z || 0)) : 0;
   for (const m of game.molotovs) {
+    if ((m.z || 0) !== pz) continue;
     const sx = m.x - cam.x + cam.offX, sy = m.y - cam.y + cam.offY;
     ctx.save();
     ctx.translate(sx, sy);

@@ -50,8 +50,12 @@ function _fillMag(mag, rng) {
   return mag;
 }
 
-/** Prepara un objeto recién generado según su categoría. */
-function _setupLootItem(item, rng) {
+/**
+ * Prepara un objeto recién generado según su categoría.
+ * v0.21: exportada — la garantía del Subfusil Cuervo (main.js) la usa para
+ * que el arma asegurada nazca igual que una hallada (cargador con balas).
+ */
+export function setupLootItem(item, rng) {
   const def = item.def;
   if (def.cat === 'municion' || def.cat === 'bateria' || def.cat === 'material') {
     // pila de munición, pilas o MATERIAL DE CRAFTEO con cantidad variable
@@ -93,7 +97,7 @@ export function fillContainer(container, rng) {
     const def = ITEMS[picked];
     const isFood = def.cat === 'comida' || def.cat === 'bebida';
     const item = makeItem(picked, isFood && rng.chance(rottenP));
-    _setupLootItem(item, rng);
+    setupLootItem(item, rng);
     // doble apilado solo para consumibles (la munición, las pilas y los
     // materiales ya traen su cantidad)
     if (stackable(item) && item.def.cat !== 'municion' && item.def.cat !== 'bateria' && item.def.cat !== 'material' && rng.chance(0.25)) item.count = 2;

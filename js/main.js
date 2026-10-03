@@ -17,7 +17,7 @@ import { DayNight } from './world/daynight.js';
 import { Weather } from './world/weather.js';
 import { NoiseSystem } from './systems/noise.js';
 import { Survival } from './systems/survival.js';
-import { Inventory, makeItem, fillContainer, itemLabel, refillMagazines } from './systems/inventory.js';
+import { Inventory, makeItem, fillContainer, itemLabel, refillMagazines, setupLootItem } from './systems/inventory.js';
 import { playerAttack, zombieHit, reloadRanged, finishReload } from './systems/combat.js';
 import { hotbarUse, hotbarValidate } from './systems/hotbar.js';
 import { toggleFlashlight, updateFlashlight } from './systems/flashlight.js';
@@ -110,6 +110,51 @@ class Game {
     requestAnimationFrame(frame);
   }
 
+  // ================== v0.21: garantía del Subfusil Cuervo ==================
+
+  /**
+   * EL CUERVO ASEGURADO. El subfusil exclusivo de la base militar es la
+   * recompensa señalada del riesgo de bajar al sótano-arsenal, y las tablas
+   * de botín podían dejarte una partida entera SIN ninguno (bug reportado:
+   * «no apareció en ningún contenedor»). Si en TODA la partida no hay ni un
+   * solo Cuervo — contenedores, mochila, equipo, barra rápida, suelo o cajas
+   * de almacenamiento — se coloca UNO garantizado en una armería militar,
+   * prefiriendo el sótano-arsenal y una armería sin registrar.
+   * El cargador se rellena con Math.random: NO consume nada del Rng con
+   * semilla de la partida (la disposición del mundo queda intacta). Se
+   * llama al generar el mundo y también al CARGAR (save.js), de modo que
+   * los guardados viejos sin Cuervo reciben el suyo.
+   * Devuelve true si inyectó uno.
+   */
+  _guaranteeCuervo() {
+    const has = (it) => !!it && it.id === 'subfusil_cuervo';
+    const anywhere =
+      this.map.containers.some((c) => c.items.some(has)) ||
+      this.player.inventory.slots.some(has) ||
+      Object.values(this.player.equipment).some(has) ||
+      (this.player.hotbar || []).some(has) ||
+      this.groundItems.some((gi) => has(gi.item)) ||
+      this.constructions.some((c) => c.type === 'caja' && c.items && c.items.some(has));
+    if (anywhere) return false;
+
+    // armerías militares (solo existen en la base): prefiere el sótano y sin registrar
+    const arms = this.map.containers.filter((c) => c.type === 'armeria_mil');
+    if (!arms.length) return false;
+    const target =
+      arms.find((c) => c.z === -1 && !c.searched) ||
+      arms.find((c) => !c.searched) ||
+      arms.find((c) => c.z === -1) ||
+      arms[0];
+
+    const it = makeItem('subfusil_cuervo');
+    setupLootItem(it, {
+      chance: (p) => Math.random() < p,
+      int: (a, b) => a + Math.floor(Math.random() * (b - a + 1)),
+    });
+    target.items.push(it);
+    return true;
+  }
+
   _resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.canvas.width = Math.round(w * this.dpr);
@@ -155,6 +200,10 @@ class Game {
     this.molotovs = [];
     this.sleepT = 0;
     this._sleepTarget = null;
+
+    // v0.21: garantía del Subfusil Cuervo (arma exclusiva de la base militar)
+    // — DESPUÉS de limpiar el mundo, para no ver restos de la partida anterior
+    this._guaranteeCuervo();
 
     // efectos de disparo limpios
     this.tracers.length = 0;

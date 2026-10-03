@@ -353,6 +353,11 @@ export function restoreGame(game, data) {
     game.searchedCount = data.searched || 0;
     game.deathCause = null;
 
+    // v0.21: garantía del Subfusil Cuervo también al CARGAR — un mundo
+    // guardado sin ninguno (mala suerte de las tablas en v0.20) recibe el
+    // suyo en una armería de la base militar
+    if (typeof game._guaranteeCuervo === 'function') game._guaranteeCuervo();
+
     return { day: game.daynight.day, clock: game.daynight.clock };
   } catch (e) {
     console.warn('restoreGame:', e);

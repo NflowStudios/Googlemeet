@@ -154,7 +154,9 @@ export const WEATHER = {
   gapDays: [2, 5],        // días de juego entre frentes (aleatorio en el rango)
   durHours: [12, 24],     // duración: medio día a un día de juego
   rampHours: 1,           // entrada/salida suaves (~1 h de juego)
-  rainChance: 0.55,       // probabilidad de que el frente sea lluvia (resto: neblina)
+  // v0.21: la lluvia es LIGERAMENTE más común a petición del usuario
+  // (0.55 → 0.70: 7 de cada 10 frentes llegan lloviendo, el resto neblina)
+  rainChance: 0.70,
   rainVisionMul: 0.88,    // lluvia: visibilidad −12% («un poco»)
   fogVisionMul: 0.5,      // neblina: visibilidad −50% («en gran medida»)
   rainNoiseMul: 0.75,     // lluvia: los ruidos se enmascaran (radio efectivo −25%)
