@@ -1,14 +1,20 @@
 /**
- * menus.js — Pantallas de título, pausa y muerte.
+ * menus.js — Pantallas de título, pausa y muerte + RANURAS DE PARTIDA.
  *
- * v0.13: el menú principal ofrece NUEVA PARTIDA y CONTINUAR PARTIDA (solo
- * si hay guardado, con su resumen: día, hora y bajas); el menú de pausa
- * añade GUARDAR Y SALIR AL MENÚ. La muerte borra el guardado (perma-muerte)
- * y la pantalla lo avisa.
+ * v0.22 — TRES RANURAS: el menú principal ya no tiene un único botón
+ * CONTINUAR: muestra tres tarjetas de ranura independientes. Una ranura
+ * vacía ofrece NUEVA PARTIDA; una ocupada muestra su resumen (día, hora,
+ * bajas, tiempo) con CONTINUAR y ELIMINAR. El borrado pide CONFIRMACIÓN
+ * en dos pasos (el botón se arma en rojo «¿SEGURO?» durante 4 s) para
+ * evitar el borrado accidental — sin diálogos nativos del navegador.
+ *
+ * La muerte sigue siendo definitiva, pero solo borra LA RANURA con la que
+ * se jugaba; REINTENTAR arranca partida nueva en esa misma ranura y ENTER
+ * continúa la partida más reciente.
  */
 
 import { fmtTime } from '../utils.js';
-import { saveSummary } from '../systems/save.js';
+import { listSlots, clearSave, SAVE_SLOTS } from '../systems/save.js';
 
 const DEATH_TEXT = {
   zombi: 'Los zombis te destrozaron en la calle.',
@@ -18,47 +24,113 @@ const DEATH_TEXT = {
   intoxicacion: 'Una comida podrida acabó con tu supervivencia.',
 };
 
+const HINT_DEFAULT = 'Tres ranuras independientes · la muerte borra SOLO la ranura con la que jugabas · autoguardado cada 5 min';
+
 export class Menus {
   constructor(game) {
     this.game = game;
     this.menuEl = document.getElementById('menu');
     this.deathEl = document.getElementById('deathscreen');
     this.pauseEl = document.getElementById('pausescreen');
-    this.contBtn = document.getElementById('btn-continue');
-    this.contInfo = document.getElementById('continue-info');
     this.saveGoneEl = document.getElementById('death-savegone');
+    this.slotsList = document.getElementById('slots-list');
+    this.slotsHint = document.querySelector('.slots-hint');
 
-    document.getElementById('btn-play').addEventListener('click', () => game.startRun());
-    document.getElementById('btn-retry').addEventListener('click', () => game.startRun());
+    // confirmación de borrado en 2 pasos (botón armado + auto-desarme)
+    this._delArm = null;
+    this._delTimer = 0;
+
+    // reintento de la muerte → MISMA ranura (su guardado ya se borró)
+    document.getElementById('btn-retry').addEventListener('click', () => game.startRun(game.saveSlot));
     document.getElementById('btn-resume').addEventListener('click', () => game.togglePause());
-    // v0.13: continuar partida guardada / guardar y salir al menú
-    if (this.contBtn) this.contBtn.addEventListener('click', () => game.continueRun());
     const saveQuit = document.getElementById('btn-savequit');
     if (saveQuit) saveQuit.addEventListener('click', () => game.saveAndQuit());
   }
 
-  /** Muestra/oculta CONTINUAR PARTIDA según haya guardado + su resumen. */
-  refreshContinue() {
-    if (!this.contBtn) return;
-    const sum = saveSummary();
-    if (sum) {
-      this.contBtn.classList.remove('hidden');
-      this.contBtn.disabled = false;
-      if (this.contInfo) {
-        this.contInfo.classList.remove('hidden');
-        this.contInfo.textContent =
-          'Día ' + sum.day + ' · ' + sum.clock + ' · ' + sum.kills +
-          ' baja' + (sum.kills === 1 ? '' : 's') + ' · ' + fmtTime(sum.time) + ' sobrevividos';
-      }
-    } else {
-      this.contBtn.classList.add('hidden');
-      this.contBtn.disabled = true;
-      if (this.contInfo) this.contInfo.classList.add('hidden');
+  // ================== v0.22: ranuras ==================
+
+  /** Redibuja las 3 tarjetas de ranura según los guardados actuales. */
+  renderSlots() {
+    if (!this.slotsList) return;
+    this._disarmDelete();
+    const sums = listSlots();
+
+    let html = '';
+    for (let s = 1; s <= SAVE_SLOTS; s++) {
+      const sum = sums[s - 1];
+      const detail = sum
+        ? sum.clock + ' · ' + sum.kills + ' baja' + (sum.kills === 1 ? '' : 's') +
+          ' · ' + fmtTime(sum.time) + ' sobrevividos'
+        : '— vacía — aquí puede nacer una nueva partida —';
+      html += '' +
+        '<div class="slot-row' + (sum ? '' : ' empty') + '" data-slot="' + s + '">' +
+          '<span class="slot-num">' + s + '</span>' +
+          '<div class="slot-main">' +
+            '<span class="slot-name">RANURA ' + s + (sum ? ' · DÍA ' + sum.day : '') + '</span>' +
+            '<span class="slot-sum">' + detail + '</span>' +
+          '</div>' +
+          '<div class="slot-actions">' +
+            '<button class="slot-btn play" data-slot="' + s + '">' +
+              (sum ? 'CONTINUAR' : 'NUEVA PARTIDA') +
+            '</button>' +
+            (sum ? '<button class="slot-btn del" data-slot="' + s + '">ELIMINAR</button>' : '') +
+          '</div>' +
+        '</div>';
+    }
+    this.slotsList.innerHTML = html;
+
+    // jugar: continuar si hay guardado, partida nueva si está vacía
+    for (const b of this.slotsList.querySelectorAll('.slot-btn.play')) {
+      b.addEventListener('click', () => {
+        const s = +b.dataset.slot;
+        if (listSlots()[s - 1]) this.game.continueRun(s);
+        else this.game.startRun(s);
+      });
+    }
+    // eliminar: confirmación en dos pasos
+    for (const b of this.slotsList.querySelectorAll('.slot-btn.del')) {
+      b.addEventListener('click', () => this._onDelete(b));
     }
   }
 
+  /** Primer clic: arma el botón («¿SEGURO?») 4 s. Segundo clic: borra. */
+  _onDelete(btn) {
+    if (btn.classList.contains('armed')) {
+      const s = +btn.dataset.slot;
+      clearSave(s);
+      if (this.game.audio && this.game.audio.uiClick) this.game.audio.uiClick();
+      if (this.slotsHint) this.slotsHint.textContent = 'Ranura ' + s + ' eliminada.';
+      this.renderSlots();
+      return;
+    }
+    this._disarmDelete();
+    btn.classList.add('armed');
+    btn.textContent = '¿SEGURO?';
+    btn.title = 'Pulsa OTRA VEZ para eliminar esta partida';
+    if (this.slotsHint) {
+      this.slotsHint.textContent = '¿Eliminar la partida de la ranura ' + btn.dataset.slot +
+        '? Pulsa el botón otra vez para confirmar.';
+    }
+    this._delArm = btn;
+    this._delTimer = setTimeout(() => this._disarmDelete(), 4000);
+  }
+
+  /** Desarma la confirmación pendiente (timeout, re-render o cierre). */
+  _disarmDelete() {
+    if (this._delTimer) { clearTimeout(this._delTimer); this._delTimer = 0; }
+    if (this._delArm) {
+      this._delArm.classList.remove('armed');
+      this._delArm.textContent = 'ELIMINAR';
+      this._delArm.title = '';
+      this._delArm = null;
+    }
+    if (this.slotsHint) this.slotsHint.textContent = HINT_DEFAULT;
+  }
+
+  // ================== pantallas ==================
+
   showMenu() {
-    this.refreshContinue();
+    this.renderSlots();
     this.menuEl.classList.remove('hidden');
     this.hideDeath();
     this.hidePause();
@@ -76,11 +148,11 @@ export class Menus {
     document.getElementById('ds-time').textContent = fmtTime(stats.time);
     document.getElementById('ds-kills').textContent = stats.kills;
     document.getElementById('ds-search').textContent = stats.searched;
-    // v0.13: aviso de guardado borrado (solo si había uno que borrar)
+    // v0.13/v0.22: aviso de guardado borrado (solo si esa ranura tenía uno)
     if (this.saveGoneEl) {
       this.saveGoneEl.classList.toggle('hidden', !hadSave);
       this.saveGoneEl.textContent =
-        'La partida guardada se ha eliminado: aquí la muerte es definitiva.';
+        'La partida de esta ranura se ha eliminado: aquí la muerte es definitiva. Tus otras ranuras siguen a salvo.';
     }
   }
 
@@ -90,5 +162,6 @@ export class Menus {
     this.hideMenu();
     this.hideDeath();
     this.hidePause();
+    this._disarmDelete();
   }
 }

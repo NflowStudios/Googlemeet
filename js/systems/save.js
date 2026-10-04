@@ -1,5 +1,12 @@
 /**
- * save.js — Guardado y carga de partidas (v0.13) en localStorage.
+ * save.js — Guardado y carga de partidas en localStorage.
+ *
+ * v0.22 — TRES RANURAS: en vez de un único guardado hay 3 partidas
+ * independientes (zonacero.save.v4.s1/.s2/.s3). El guardado único de la
+ * v0.21 (zonacero.save.v4) se MIGRA automáticamente a la ranura 1 la
+ * primera vez que se abre el juego, para no perder la partida en curso.
+ * Todas las funciones aceptan la ranura (1-3); sin argumento usan la
+ * ranura 1 por compatibilidad.
  *
  * QUÉ SE GUARDA:
  *  - Semilla del mapa + estado de puertas abiertas + decals (sangre y
@@ -17,7 +24,7 @@
  * retroceso). El guardado es instantáneo y a prueba de corrupción leve
  * (versión + forma validadas antes de restaurar).
  *
- * La muerte es DEFINITIVA: main.js borra el guardado al morir.
+ * La muerte es DEFINITIVA: main.js borra EL GUARDADO DE ESA RANURA al morir.
  */
 
 import { ITEMS, BASE_SLOTS, DAYNIGHT, T } from '../config.js';
@@ -37,9 +44,30 @@ import { addConstruction } from './crafting.js';
 // vallas, trampas, cajas con su contenido, camas que hacen refugio y mesas
 // de trabajo). Los guardados de la v3 se rechazan limpiamente (el menú
 // arranca partida nueva), como en cada salto de versión.
+// v0.22: el FORMATO no cambia (mismos campos); solo pasa de una clave
+// única a una por ranura → SAVE_VERSION se mantiene en 4 y los guardados
+// v0.21 migran solos a la ranura 1 (ver migrateLegacySave).
 export const SAVE_VERSION = 4;
 export const AUTOSAVE_SEC = 300;        // autoguardado cada 5 min DE PARTIDA
+export const SAVE_SLOTS = 3;            // v0.22: 3 partidas independientes
 const KEY = 'zonacero.save.v' + SAVE_VERSION;
+const slotKey = (slot) => KEY + '.s' + (slot || 1);
+
+/**
+ * v0.22: MIGRACIÓN — el guardado único de la v0.21 (clave sin sufijo) pasa
+ * a la ranura 1 si esta está libre. Se ejecuta una sola vez (al importar el
+ * módulo) y no toca nada más: las ranuras 2 y 3 nacen vacías.
+ */
+function migrateLegacySave() {
+  try {
+    const legacy = localStorage.getItem(KEY);
+    if (legacy !== null && localStorage.getItem(slotKey(1)) === null) {
+      localStorage.setItem(slotKey(1), legacy);
+    }
+    if (legacy !== null) localStorage.removeItem(KEY);
+  } catch (e) { /* sin localStorage: nada que migrar */ }
+}
+migrateLegacySave();
 
 // ================== Serialización de objetos ==================
 
@@ -178,12 +206,12 @@ export function buildSaveData(game) {
   };
 }
 
-/** Guarda en localStorage. true si todo fue bien. */
-export function saveGame(game) {
+/** Guarda en localStorage (ranura 1-3; por defecto, la 1). true si todo fue bien. */
+export function saveGame(game, slot) {
   const data = buildSaveData(game);
   if (!data) return false;
   try {
-    localStorage.setItem(KEY, JSON.stringify(data));
+    localStorage.setItem(slotKey(slot), JSON.stringify(data));
     return true;
   } catch (e) {
     console.warn('saveGame:', e && e.name);
@@ -193,10 +221,11 @@ export function saveGame(game) {
 
 // ================== Cargar ==================
 
-/** Datos del guardado (parseados y validados) o null si no hay/no valen. */
-export function loadSaveData() {
+/** Datos del guardado (parseados y validados) o null si no hay/no valen.
+ *  `slot`: 1-3 (por defecto, la 1). */
+export function loadSaveData(slot) {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(slotKey(slot));
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || data.v !== SAVE_VERSION) return null;
@@ -208,19 +237,41 @@ export function loadSaveData() {
   }
 }
 
-/** ¿Hay guardado utilizable? */
-export function hasSave() { return loadSaveData() !== null; }
+/** ¿Hay guardado utilizable? (ranura 1-3) */
+export function hasSave(slot) { return loadSaveData(slot) !== null; }
 
-/** Resumen para la etiqueta del botón CONTINUAR («Día 2 · 04:12 PM · 13 bajas»). */
-export function saveSummary() {
-  const d = loadSaveData();
+/** Resumen para la etiqueta de la ranura («Día 2 · 04:12 PM · 13 bajas»). */
+export function saveSummary(slot) {
+  const d = loadSaveData(slot);
   if (!d) return null;
-  return { day: d.day, clock: d.clock, kills: d.kills, time: d.time };
+  return { day: d.day, clock: d.clock, kills: d.kills, time: d.time, savedAt: d.savedAt || 0 };
 }
 
-/** Borra el guardado (muerte definitiva o nueva partida limpia). */
-export function clearSave() {
-  try { localStorage.removeItem(KEY); } catch (e) { /* sin localStorage */ }
+/** v0.22: resúmenes de TODAS las ranuras para el menú → [null|{...}] × 3. */
+export function listSlots() {
+  const out = [];
+  for (let s = 1; s <= SAVE_SLOTS; s++) out.push(saveSummary(s));
+  return out;
+}
+
+/** La ranura con el guardado MÁS RECIENTE (para Enter/integraciones) o null. */
+export function latestSlot() {
+  let best = null, bestAt = -1;
+  for (let s = 1; s <= SAVE_SLOTS; s++) {
+    const d = loadSaveData(s);
+    if (d && (d.savedAt || 0) > bestAt) { bestAt = d.savedAt || 0; best = s; }
+  }
+  return best;
+}
+
+/** Borra el guardado de una ranura (muerte definitiva o borrado a propósito). */
+export function clearSave(slot) {
+  try { localStorage.removeItem(slotKey(slot)); } catch (e) { /* sin localStorage */ }
+}
+
+/** v0.22: borra TODAS las ranuras (depuración/tests). */
+export function clearAllSaves() {
+  for (let s = 1; s <= SAVE_SLOTS; s++) clearSave(s);
 }
 
 // ================== Restaurar ==================

@@ -25,13 +25,14 @@ import {
   startBuild, updateBuild, rotateBuild, cancelBuild, placeBuild,
   updateFire, updateConstructions, sleepInBed, finishSleep, CON_NAMES,
 } from './systems/crafting.js';
-import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, AUTOSAVE_SEC } from './systems/save.js';
+import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, latestSlot, AUTOSAVE_SEC } from './systems/save.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
 import { HUD } from './ui/hud.js';
 import { Toasts } from './ui/toasts.js';
 import { InventoryUI } from './ui/inventoryUI.js';
 import { Menus } from './ui/menus.js';
+import { Encyclopedia } from './ui/encyclopedia.js';
 import { renderGame } from './render.js';
 
 const STATE = { MENU: 'menu', PLAYING: 'playing', PAUSED: 'paused', DEAD: 'dead' };
@@ -49,6 +50,7 @@ class Game {
     this.toasts = new Toasts();
     this.hud = new HUD(this);
     this.menus = new Menus(this);
+    this.ency = new Encyclopedia(this);   // v0.22: guía (menú principal y pausa)
     this.invUI = new InventoryUI(this);
     this.noise = new NoiseSystem();
     this.vision = new Vision();
@@ -75,6 +77,7 @@ class Game {
     this.searchedCount = 0;
     this.deathCause = null;
     this.seedUsed = 0;        // v0.13: semilla de la partida (para el guardado)
+    this.saveSlot = 1;        // v0.22: ranura de guardado de la partida en curso (1-3)
     this._autosaveT = 0;      // v0.13: cronómetro del autoguardado (5 min)
     this._seenVariants = {};  // v0.14: bestiario (toasts únicos por variante)
     this._weatherMark = 'clear';  // v0.15: para avisar de transiciones climáticas
@@ -167,7 +170,17 @@ class Game {
 
   // ================== Nueva partida ==================
 
-  startRun() {
+  /**
+   * v0.22: `slot` (1-3) fija la RANURA de esta partida. Si la ranura trae
+   * un guardado se limpia: una partida nueva SIEMPRE parte de cero (el
+   * menú solo ofrece «nueva» en ranuras vacías; esto protege llamadas
+   * directas como el REINTENTAR tras la muerte, que ya borró la suya).
+   */
+  startRun(slot) {
+    if (slot >= 1 && slot <= 3) {
+      this.saveSlot = slot;
+      clearSave(slot);   // punto de partida limpio (reemplaza al guardado)
+    }
     this.audio.init();
     const seed = (Math.random() * 2147483647) | 0;
     this.seedUsed = seed;               // v0.13: para regenerar el mapa al cargar
@@ -234,19 +247,23 @@ class Game {
 
   // ================== Continuar partida guardada (v0.13) ==================
 
-  /** Carga el guardado y sigue donde se quedó. Si no hay (o está roto),
-   *  arranca partida nueva para no dejar al jugador colgado en el menú. */
-  continueRun() {
-    const data = loadSaveData();
+  /**
+   * v0.22: carga la RANURA indicada (1-3). Si no hay guardado (o está roto),
+   * arranca partida nueva EN ESA MISMA RANURA para no dejar al jugador
+   * colgado en el menú.
+   */
+  continueRun(slot) {
+    if (slot >= 1 && slot <= 3) this.saveSlot = slot;
+    const data = loadSaveData(this.saveSlot);
     if (!data) {
-      this.startRun();
+      this.startRun(this.saveSlot);
       return;
     }
     this.audio.init();
     const info = restoreGame(this, data);
     if (!info) {
       // guardado corrupto: fuera del estado a medias → partida nueva
-      this.startRun();
+      this.startRun(this.saveSlot);
       return;
     }
 
@@ -283,10 +300,10 @@ class Game {
       '. El autoguardado te cubre cada 5 minutos.', 'info');
   }
 
-  /** Pausa → guardar y volver al menú principal (v0.13). */
+  /** Pausa → guardar y volver al menú principal (v0.13; v0.22: a SU ranura). */
   saveAndQuit() {
     if (this.state !== STATE.PAUSED && this.state !== STATE.PLAYING) return;
-    const ok = saveGame(this);
+    const ok = saveGame(this, this.saveSlot);
     if (!ok) {
       // sin guardar no se abandona la partida: avisa y se queda en pausa
       this.toasts.push('No se pudo guardar la partida (¿almacenamiento lleno?)', 'bad');
@@ -304,6 +321,7 @@ class Game {
     this.build = null;            // v0.20: sin fantasma en el menú
     this.sleepT = 0;
     this.invUI.closeUI();
+    this.ency.close();            // v0.22: sin enciclopedia abierta al volver
     this.hud.hide();
     this.audio.setRain(0);   // v0.15: el mundo no se dibuja en el menú → sin lluvia
     this.menus.hideAll();
@@ -369,8 +387,25 @@ class Game {
   // ================== Entrada ==================
 
   onAction(name) {
+    // v0.22: ENCICLOPEDIA abierta (desde el menú o la pausa) — ESC/VOLVER
+    // cierra y devuelve a la pantalla desde la que se abrió. Se maneja lo
+    // primero de todo para que P/ESC no despauseen por debajo.
+    if (this.ency && this.ency.isOpen) {
+      if (name === 'escape' || name === 'pause' || name === 'inventory') this.ency.close();
+      return;
+    }
     if (this.state === STATE.MENU || this.state === STATE.DEAD) {
-      if (name === 'enter') this.startRun();
+      // v0.22: Enter — en el menú continúa la partida MÁS RECIENTE (o arranca
+      // en la ranura 1 si no hay ninguna); en la pantalla de muerte reintenta
+      // en la MISMA ranura (su guardado ya se borró al morir)
+      if (name === 'enter') {
+        if (this.state === STATE.DEAD) this.startRun(this.saveSlot);
+        else {
+          const s = latestSlot();
+          if (s) this.continueRun(s);
+          else this.startRun(1);
+        }
+      }
       return;
     }
     if (name === 'mute') {
@@ -642,9 +677,10 @@ class Game {
     this.hud.hide();
     this.map.stampCorpse(this.player.x, this.player.y, this.player.angle);
     this.map.stampBlood(this.player.x, this.player.y, true);
-    // v0.13: la muerte es DEFINITIVA — el guardado de esta partida se borra
-    const hadSave = hasSave();
-    clearSave();
+    // v0.13: la muerte es DEFINITIVA — el guardado de ESTA ranura se borra
+    // (v0.22: las otras dos partidas siguen donde las dejaste)
+    const hadSave = hasSave(this.saveSlot);
+    clearSave(this.saveSlot);
     this.menus.showDeath(cause, { time: this.time, kills: this.kills, searched: this.searchedCount }, hadSave);
   }
 
@@ -713,7 +749,7 @@ class Game {
     this._autosaveT += dt;
     if (this._autosaveT >= AUTOSAVE_SEC) {
       this._autosaveT = 0;
-      if (saveGame(this)) this.toasts.push('Partida guardada (automático)', 'save');
+      if (saveGame(this, this.saveSlot)) this.toasts.push('Partida guardada (ranura ' + this.saveSlot + ')', 'save');
       else this.toasts.push('Autoguardado fallido: revisa el almacenamiento', 'bad');
     }
 

@@ -918,3 +918,350 @@ kbd {
   border-bottom-color: #3a3f35;
   background: #161a15;
 }
+
+/* ================= v0.22: Ranuras de partida ================= */
+
+/* el menú ahora es más alto (ranuras + enciclopedia): scroll correcto sin
+   perder el centrado (margin:auto en el hijo dentro del flex) */
+#menu { overflow-y: auto; }
+.menu-inner { margin: auto; }
+#menu .menu-controls { margin: 24px auto 20px; }
+
+#slots-panel {
+  margin: 18px auto 0;
+  max-width: 560px;
+  width: 100%;
+  text-align: left;
+}
+.slots-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: #6d6f64;
+  text-align: center;
+  margin-bottom: 10px;
+}
+.slots-title::before,
+.slots-title::after { content: ' — '; color: #3a3f35; }
+
+#slots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.slot-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 12px 9px 10px;
+  background: #131611;
+  border: 1px solid #33362c;
+  border-left: 3px solid #4a4f42;
+  transition: border-color 0.12s, background 0.12s;
+}
+.slot-row:hover { border-color: #6a705a; background: #161a15; }
+.slot-row.empty { border-left-color: #2c3028; opacity: 0.92; }
+
+.slot-num {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  background: #1c211b;
+  border: 1px solid #444a3e;
+  border-bottom-width: 3px;
+}
+.slot-row.empty .slot-num { color: #6d6f64; }
+
+.slot-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.slot-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--text);
+}
+.slot-row.empty .slot-name { color: #8a8f7a; }
+.slot-sum {
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  color: #7f8a70;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slot-row.empty .slot-sum { color: #565b4e; font-style: italic; }
+
+.slot-actions {
+  flex: none;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.slot-btn {
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 7px 14px;
+  background: #1c211b;
+  color: #c9d6b8;
+  border: 1px solid #4a4f42;
+  border-bottom-width: 3px;
+  border-bottom-color: #7ab85a;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.slot-btn:hover { background: #2a3325; border-color: #6a705a; color: #dcecc8; }
+
+.slot-btn.del {
+  border-bottom-color: #8a2a22;
+  color: #b07a72;
+  padding: 7px 10px;
+}
+.slot-btn.del:hover { color: #e8a09a; border-color: #6a3a34; background: #211615; }
+.slot-btn.del.armed {
+  background: #2a1210;
+  border-color: #c8341f;
+  border-bottom-color: #c8341f;
+  color: #ffb4a8;
+  animation: slotDelPulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes slotDelPulse {
+  from { box-shadow: 0 0 0 rgba(200, 52, 31, 0); }
+  to   { box-shadow: 0 0 16px rgba(200, 52, 31, 0.55); }
+}
+
+.slots-hint {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  color: #565b4e;
+  text-align: center;
+}
+
+/* botón ENCICLOPEDIA (menú principal y pausa) */
+.btn-ency {
+  font-size: 15px;
+  letter-spacing: 4px;
+  padding: 11px 40px;
+  background: #1a2118;
+  border: 1px solid #456a2a;
+  border-bottom: 4px solid #12150f;
+  color: #b9d69a;
+}
+.btn-ency:hover {
+  background: #22301f;
+  box-shadow: 0 0 26px rgba(122, 184, 90, 0.3);
+  color: #dcecc8;
+}
+
+.retry-hint {
+  margin: 14px 0 0;
+  font-size: 11.5px;
+  letter-spacing: 0.8px;
+  color: #6d6f64;
+}
+
+/* ================= v0.22: Enciclopedia ================= */
+
+#encyclopedia {
+  position: fixed;
+  inset: 0;
+  z-index: 60;   /* por encima de menús (40) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(8, 11, 8, 0.86) 0%, rgba(2, 4, 2, 0.97) 78%);
+  cursor: default;
+}
+
+.ency-panel {
+  width: min(940px, 95vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: #0d100c;
+  border: 1px solid #3a3f35;
+  border-top: 3px solid #7ab85a;
+  box-shadow: 0 22px 90px rgba(0, 0, 0, 0.8);
+  padding: 16px 18px 14px;
+}
+
+.ency-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #262b22;
+}
+.ency-head-txt h2 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  color: var(--text);
+}
+.ency-head-txt h2::first-letter { color: #9fc37a; }
+.ency-head-txt span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #6d6f64;
+}
+#btn-ency-close {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 8px 18px;
+  background: #1c211b;
+  color: #c9d6b8;
+  border: 1px solid #4a4f42;
+  border-bottom-width: 3px;
+  border-bottom-color: #8a2a22;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+#btn-ency-close:hover { background: #211615; color: #e8a09a; }
+
+#ency-tabs { display: flex; gap: 6px; margin: 12px 0 10px; flex-wrap: wrap; }
+#ency-tabs button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 7px 16px;
+  background: #131611;
+  color: var(--text-dim);
+  border: 1px solid #33362c;
+  border-bottom-width: 3px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+#ency-tabs button:hover { background: #1a1e18; color: var(--text); }
+#ency-tabs button.on {
+  background: #1a2118;
+  color: #c9d6b8;
+  border-color: #6a705a;
+  border-bottom-color: #9fc37a;
+}
+
+#ency-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 120px;
+  padding: 4px 10px 10px 2px;
+  scrollbar-width: thin;
+  scrollbar-color: #33362c #0d100c;
+}
+#ency-body::-webkit-scrollbar { width: 10px; }
+#ency-body::-webkit-scrollbar-thumb { background: #262b22; border: 2px solid #0d100c; }
+#ency-body::-webkit-scrollbar-track { background: transparent; }
+
+.ency-sec { margin: 14px 0 18px; }
+.ency-sec h3 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #c9d6b8;
+  padding-left: 10px;
+  border-left: 3px solid #7ab85a;
+  margin-bottom: 8px;
+}
+.ency-sec p {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #8a8f7a;
+  margin: 0 0 9px;
+}
+.ency-sec p b { color: #c9d6b8; letter-spacing: 0.3px; }
+
+.ency-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ency-card {
+  border: 1px solid #33362c;
+  background: #131611;
+  padding: 10px 12px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  transition: border-color 0.12s;
+}
+.ency-card:hover { border-color: #6a705a; }
+
+.ec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ec-icon {
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.18);
+  flex: none;
+}
+.ec-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.5px;
+}
+.ec-tag {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  padding: 1px 6px;
+  border: 1px solid;
+}
+.ec-tag.mil { color: #9fc37a; border-color: #55703c; }
+.ec-tag.hos { color: #7ac8d9; border-color: #2a5a6a; }
+.ec-tag.sto { color: #d9a520; border-color: #8a6a14; }
+
+.ec-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ec-chip {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  padding: 2px 7px;
+  border: 1px solid #3a3f35;
+  color: #a8ad96;
+  font-variant-numeric: tabular-nums;
+}
+.ec-chip.ok { color: #b9d69a; border-color: #456a2a; }
+.ec-chip.dmg { color: #e88a80; border-color: #8a2a22; }
+.ec-chip.noise { color: #d9c34a; border-color: #8a7a24; }
+.ec-chip.fire { color: #e8a05a; border-color: #8a5a1a; }
+.ec-chip.wb { color: #9a7ab8; border-color: #5a3f72; }
+.ec-chip.mat { color: #c8b8a0; border-color: #6a5a44; }
+
+.ec-desc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #8a8f7a;
+}
+.ec-where {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #6d6f64;
+  margin-top: -2px;
+}
+.ec-where::before { content: '⌖ '; color: #9fc37a; }
