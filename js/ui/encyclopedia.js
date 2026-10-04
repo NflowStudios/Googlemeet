@@ -6,11 +6,12 @@
  * Cuatro categorías, como pedía el usuario:
  *  - MECÁNICAS PRINCIPALES: supervivencia, infección, sigilo/ruido, visión,
  *    día/noche, clima, plantas, el mundo y sus rincones, refugio, ranuras.
- *  - COMBATE: los tres zombis (con sus stats), melee, las 7 armas de fuego
- *    con sus números reales, munición, fuego y curación de emergencia.
+ *  - COMBATE: los cuatro zombis (con sus stats), melee, las 7 armas de fuego
+ *    con sus números reales, munición, fuego (y su alarma) y curación de
+ *    emergencia.
  *  - CRAFTEOS: cómo se craftea, la mesa de trabajo, las 6 recetas de
- *    objetos y las 7 construcciones (materiales exactos), modo construcción
- *    y dónde salir cada material.
+ *    objetos y las 7 construcciones (materiales exactos), modo construcción,
+ *    REPARACIÓN de lo dañado y dónde salir cada material.
  *  - OBJETOS: catálogo completo por categoría (comida, bebida, medicina,
  *    munición, cargadores, ropa, herramientas, materiales) con dónde se
  *    encuentra cada uno — calculado de las TABLAS DE BOTÍO reales.
@@ -254,7 +255,14 @@ export class Encyclopedia {
         chip('vida ' + Z.variants.brute.hp, 'dmg') + chip('persecución ' + Z.variants.brute.chaseSpeed + ' px/s') +
         chip('daño ' + Z.variants.brute.dmgMin + '–' + Z.variants.brute.dmgMax, 'dmg') +
         chip('alcance ' + Z.variants.brute.attackRange) + chip('apenas retrocede'),
-        'Masa putrefacta: ' + Z.variants.brute.hp + ' de vida (más que tú y tu barricada juntos), golpes doblados y alcance largo — pero ' + Z.variants.brute.chaseSpeed + ' px/s: ' + b('hasta caminando lo dejas atrás') + '. Casi no retrocede con los golpes, así que no cuentes con aturdirlo. Guarnición fija: 2 en la comisaría, 1 en la tienda, 4 en la base militar y 2 en el hospital; a veces, alguno vaga por las calles.');
+        'Masa putrefacta: ' + Z.variants.brute.hp + ' de vida (más que tú y tu barricada juntos), golpes doblados y alcance largo — pero ' + Z.variants.brute.chaseSpeed + ' px/s: ' + b('hasta caminando lo dejas atrás') + '. Casi no retrocede con los golpes, así que no cuentes con aturdirlo. Guarnición fija: 2 en la comisaría, 1 en la tienda, 4 en la base militar y 2 en el hospital; a veces, alguno vaga por las calles.') +
+      zCard('GRITADOR', '#a8a460',
+        chip('vida ' + Z.variants.screamer.hp, 'dmg') + chip('CHILLIDO de ' + Z.variants.screamer.screamR + ' px', 'dmg') +
+        chip('aviso de ' + n(Z.variants.screamer.screamWindup) + ' s parado') +
+        chip('repite cada ' + Z.variants.screamer.screamCd + ' s') +
+        chip('daño ' + Z.variants.screamer.dmgMin + '–' + Z.variants.screamer.dmgMax) +
+        chip('raro: donde hay ' + Z.screamerPopNear + '+ zombis'),
+        'La ALARMA ambulante (v0.23). Pajizo, boca abierta, ojos lechosos: no forma parte de la horda — ' + b('EMERGE donde hay MUCHA población zombi') + ' (a ' + Z.screamerPopR + ' px a la redonda, máximo ' + Z.screamerMax + ' vivos). Al verte se PARA e hincha el pecho ' + n(Z.variants.screamer.screamWindup) + ' s: ' + b('ESA es tu ventana — mátalo ahí') + '. Si chilla, todo zombi en ' + Z.variants.screamer.screamR + ' px (varias manzanas; la lluvia lo amortigua) va a INVESTIGAR su posición, que persigue tu rastro. Su grito se ve como una ONDA ROJA en el suelo. Frágil (' + Z.variants.screamer.hp + ' de vida) y su golpe es flojo: el peligro no es él, es lo que trae.');
 
     // ---- melee ----
     const meleeIds = ['tubo', 'bate', 'hacha', 'bate_con_clavos', 'lanza_chatarra', 'antorcha'];
@@ -290,8 +298,8 @@ export class Encyclopedia {
       .map((id) => card(id, chip(ITEMS[id].cap + ' balas') + chip('se rellena solo'))).join('');
 
     return '' +
-      guide('Los tres rostros de la horda',
-        'Toda amenaza comparte base: oyen, olfatean y persiguen tu última posición conocida, y de noche la presión sube (+' + Z.nightBatch + ' zombis por hora, tope ' + Z.nightCap + '). Pero hay ' + b('tres variantes') + ' y confundirlas te mata: el común es lento pero tenaz, el corredor es un sprinter de vidrio y el bruto es un tanque que camina. Identifica la silueta y el gemido antes de comprometerte — el corredor chilla agudo y el bruto retumba grave.') +
+      guide('Los cuatro rostros de la horda',
+        'Toda amenaza comparte base: oyen, olfatean y persiguen tu última posición conocida, y de noche la presión sube (+' + Z.nightBatch + ' zombis por hora, tope ' + Z.nightCap + '). Pero hay ' + b('cuatro variantes') + ' y confundirlas te mata: el común es lento pero tenaz, el corredor es un sprinter de vidrio, el bruto es un tanque que camina… y el GRITADOR no mata: CONVOCA. Identifica la silueta y el gemido antes de comprometerte — el corredor chilla agudo, el bruto retumba grave y el gritador huele a paja mojada y abre la boca ANTES de gritar. Si oyes su chillido, no lo dudes: cambia de calle o prepárate para la avalancha.') +
         guideCards('Bestiario', null, zombis) +
       guide('Combate cuerpo a cuerpo',
         'Silencioso, barato y honesto: cada arma melee tiene daño, alcance, coste de energía, cadencia y EMPUJE (retroceso del zombi al golpearlo). El ritmo ganador es ' + b('golpe → retrocede → golpe') + ': dejas que el zombi entre en tu alcance, pegas y el empuje lo saca antes de que su cooldown de ' + n(Z.attackCd) + ' s le deje responder. Vigila la ENERGÍA: sin aliento no hay swings, y un cansado ante un corredor es comida. El ruido del melee (' + ITEMS.tubo.noise + '–' + ITEMS.hacha.noise + ' px) es casi susurro junto al de un disparo.') +
@@ -301,8 +309,8 @@ export class Encyclopedia {
         guideCards('Las siete armas', null, guns) +
       guide('Munición y cargadores',
         'La munición es apilable y se recolecta por lotes. Al recoger balas del calibre de un cargador que lleves, ' + b('pasan solas al cargador') + ' — el sobrante queda en la mochila. Las escopetas, el revólver y el cerrojo no usan cargadores: cargan su tubo/tambor bala a bala (recarga lenta: piénsalo antes del último cartucho).', ammo + mags) +
-      guide('El fuego: molotov y antorcha',
-        'El ' + b('cóctel molotov') + ' se LANZA equipándolo y atacando: estalla a los 360 px dejando una zona de fuego de ' + CRAFTEO.fireR + ' px durante ' + CRAFTEO.fireDur + ' s que hace ' + CRAFTEO.fireDpsZ + ' de daño por segundo a los zombis dentro… y ' + CRAFTEO.fireDpsP + '/s a ti si te quedas dentro. Es la respuesta de la barricada a una puerta apretada de brutos. La ' + b('antorcha') + ' es su prima pobre: golpe débil, pero PRENDE a los zombis (' + CRAFTEO.burnDur + ' s ardiendo a ' + CRAFTEO.burnDps + ' dps). El fuego no cruza plantas: un molotov estallando en la baja no te quema en el sótano.') +
+      guide('El fuego: molotov y antorcha (y su ALARMA)',
+        'El ' + b('cóctel molotov') + ' se LANZA equipándolo y atacando: estalla a los 360 px dejando una zona de fuego de ' + CRAFTEO.fireR + ' px durante ' + CRAFTEO.fireDur + ' s que hace ' + CRAFTEO.fireDpsZ + ' de daño por segundo a los zombis dentro… y ' + CRAFTEO.fireDpsP + '/s a ti si te quedas dentro. La ' + b('antorcha') + ' es su prima pobre: golpe débil, pero PRENDE a los zombis (' + CRAFTEO.burnDur + ' s ardiendo a ' + CRAFTEO.burnDps + ' dps). El fuego no cruza plantas: un molotov estallando en la baja no te quema en el sótano. ' + b('PERO (v0.23) el fuego es una ALARMA') + ': al estallar, el CRISTAL ROTO hace un ruido de ' + CRAFTEO.fireBreakNoise + ' px, y mientras arde las LLAMAS SE VEN desde lejos — cada ' + n(CRAFTEO.fireAlarmEvery) + ' s atraen a los zombis en ' + CRAFTEO.fireAlarmR + ' px a la redonda (verás el anillo naranja). Incendiar una zona la despeja… y luego la LLENA: úsalo lejos de tu refugio o cuando ya te hayas ido.') +
       guide('Curarse en plena batalla',
         'La ' + b('venda') + ' (+25 en 5 s) es el curita de cabecera; el ' + b('botiquín') + ' (+50 al instante) es el as bajo la barricada. Los dos exclusivos tácticos del hospital cambian peleas imposibles: la ' + b('adrenalina') + ' da energía infinita 25 s (corre sin agotarte, atraviesa la horda) y la ' + b('morfina') + ' reduce a la mitad todo el daño recibido durante 45 s. Lleva siempre una vía de escape curada: la barra rápida (ranuras 4-5) existe para eso.') +
       guide('Protección: armadura y máscaras',
@@ -346,6 +354,8 @@ export class Encyclopedia {
       guide('El modo construcción',
         'Al pulsar CONSTRUIR, un ' + b('fantasma transparente') + ' sigue al ratón: ' + b('verde') + ' = sitio válido, ' + b('rojo') + ' = colisión, demasiado lejos (' + C.range + ' px) o terreno inadecuado. ' + b('R') + ' rota la pieza (vallas y trampas), el ' + b('CLIC DERECHO la coloca') + ' gastando ahí los materiales, y el ' + b('CLIC IZQUIERDO o ESC cancela') + ' sin gastar nada. Las barricadas se imantan a puertas y los tablones a ventanas (' + C.snapR + ' px de imán). Todo se construye ' + b('solo en planta baja') + ', y las piezas aguantan daño de zombi antes de ceder — el fuego también las respeta.') +
       guideCards('Construcciones', null, conRecipes) +
+      guide('Reparar lo dañado (v0.23)',
+        'Barricadas, tablones, vallas, trampas y mesas se estropean a golpes de zombi (y a los tuyos). Acércate a una pieza dañada y ' + b('E') + ' ofrece REPARARLA con su coste REAL en el propio prompt: ' + b('cuanto más dañada, más materiales') + ' — la parte proporcional de lo que falta, redondeada hacia arriba y con mínimo de 1 por material. Una barricada al 50% pide ' + b('2 tablas + 2 clavos') + ' (de sus 3+4); al 90%, casi la receta entera. La reparación devuelve la pieza a su vida MÁXIMA (la trampa además re-arma sus 10 pisadas)… pero martillar hace el mismo ruido que construir (' + 140 + ' px): piénsalo con la horda llamando a la puerta. La caja y la cama no se reparan con E: su función (abrir/dormir) manda.') +
       guide('Materiales: la ferretería del apocalipsis',
         'Los materiales (cat MATERIAL) no tienen uso directo: son los ladrillos de todas las recetas. Salen de casilleros, estanterías de tienda y base, armarios y botiquines de pared — cada ficha dice dónde. Regla de oro del herrero urbano: ' + b('saquea la TIENDA') + ' (estanterías: clavos, tablas, tela, queroseno, cinta…) antes de comprometerte con la base militar; y recuerda que el punto de partida ya esparce tela, alcohol, tablas, clavos y chatarra para tus primeras vendas o barricada.', mats);
   }

@@ -27,12 +27,16 @@ export class NoiseSystem {
    * @param {number} y
    * @param {number} radius radio de audición en px
    * @param {string} kind etiqueta (paso, ataque, puerta…)
+   * @param {string} [ring] estilo del ANILLO visual: null → el tenue de
+   *        siempre (ruido propio); 'scream' → onda roja del chillido del
+   *        gritador; 'fire' → resplandor naranja de las llamas vistas de
+   *        lejos (v0.23: la alarma del fuego se ve, no se oye).
    */
-  emit(x, y, radius, kind = 'paso') {
+  emit(x, y, radius, kind = 'paso', ring = null) {
     radius *= this.mul;   // v0.15: la lluvia enmascara el sonido (radio menor)
     this.frame.push({ x, y, radius, kind });
     if (radius > 8) {
-      this.rings.push({ x, y, r: radius, t: 0, life: 0.55 });
+      this.rings.push({ x, y, r: radius, t: 0, life: ring ? 0.9 : 0.55, ring });
     }
     const lvl = radius > 140 ? 4 : radius > 90 ? 3 : radius > 45 ? 2 : radius > 15 ? 1 : 0;
     if (lvl >= this.lastLevel) {
@@ -61,18 +65,37 @@ export class NoiseSystem {
     this.frame.length = 0;
   }
 
-  /** Dibuja los anillos tenues del ruido propio del jugador. */
+  /** Dibuja los anillos tenues del ruido propio del jugador.
+   *  v0.23: los anillos de ALARMA ajenos (chillido/fuego) van en su color
+   *  y duran más — el jugador debe VER de dónde viene la desgracia. */
   draw(ctx, cam) {
     ctx.save();
     for (const r of this.rings) {
       const k = r.t / r.life;
       const sx = r.x - cam.x + cam.offX;
       const sy = r.y - cam.y + cam.offY;
-      ctx.strokeStyle = `rgba(220, 220, 200, ${0.16 * (1 - k)})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(sx, sy, r.r * k, 0, Math.PI * 2);
-      ctx.stroke();
+      if (r.ring === 'scream') {
+        // onda del CHILLIDO: círculo rojo expansivo con eco
+        ctx.strokeStyle = `rgba(226, 88, 58, ${0.5 * (1 - k)})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(sx, sy, r.r * k, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = `rgba(226, 88, 58, ${0.28 * (1 - k)})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(sx, sy, r.r * Math.max(0, k - 0.18), 0, Math.PI * 2); ctx.stroke();
+      } else if (r.ring === 'fire') {
+        // resplandor de las LLAMAS vistas de lejos: naranja cálido
+        ctx.strokeStyle = `rgba(232, 150, 60, ${0.4 * (1 - k)})`;
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([10, 8]);
+        ctx.beginPath(); ctx.arc(sx, sy, r.r * k, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = `rgba(220, 220, 200, ${0.16 * (1 - k)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r.r * k, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }

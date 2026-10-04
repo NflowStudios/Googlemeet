@@ -24,8 +24,9 @@ import { toggleFlashlight, updateFlashlight } from './systems/flashlight.js';
 import {
   startBuild, updateBuild, rotateBuild, cancelBuild, placeBuild,
   updateFire, updateConstructions, sleepInBed, finishSleep, CON_NAMES,
+  needsRepair, repairCost, repairCostLabel, repairConstruction,
 } from './systems/crafting.js';
-import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, latestSlot, AUTOSAVE_SEC } from './systems/save.js';
+import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, latestSlot, updateRecords, AUTOSAVE_SEC } from './systems/save.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
 import { HUD } from './ui/hud.js';
@@ -76,11 +77,16 @@ class Game {
     this.kills = 0;
     this.searchedCount = 0;
     this.deathCause = null;
+    // v0.23: OBITUARIO — contadores vivos de la partida
+    this.stats = { shots: 0, molotovs: 0, crafted: 0, built: 0, dist: 0 };
     this.seedUsed = 0;        // v0.13: semilla de la partida (para el guardado)
     this.saveSlot = 1;        // v0.22: ranura de guardado de la partida en curso (1-3)
     this._autosaveT = 0;      // v0.13: cronómetro del autoguardado (5 min)
     this._seenVariants = {};  // v0.14: bestiario (toasts únicos por variante)
     this._weatherMark = 'clear';  // v0.15: para avisar de transiciones climáticas
+    this._screamerCheckT = 0;     // v0.23: cronómetro del chequeo de población
+    this._screamedOnce = false;   // v0.23: aviso único del primer chillido
+    this._fireAlertSeen = false;  // v0.23: aviso único de la alarma del fuego
 
     this.input.attach(canvas, (a) => this.onAction(a));
     this._resize();
@@ -228,10 +234,14 @@ class Game {
     this.kills = 0;
     this.searchedCount = 0;
     this.deathCause = null;
+    this.stats = { shots: 0, molotovs: 0, crafted: 0, built: 0, dist: 0 };   // v0.23
     this._autosaveT = 0;
     this._seenVariants = {};   // v0.14: aviso único por variante en esta partida
     this._militarySeen = false;  // v0.16: aviso único al entrar en la base militar
     this._hospitalSeen = false;  // v0.18: aviso único al entrar en el hospital
+    this._screamerCheckT = 0;    // v0.23: el chequeo de población arranca fresco
+    this._screamedOnce = false;
+    this._fireAlertSeen = false;
     this.cam.y = this.player.y - this.cam.h / 2;
 
     this.menus.hideAll();
@@ -281,6 +291,9 @@ class Game {
     this._seenVariants = {};   // v0.14: el bestiario se reavisa tras cargar
     this._militarySeen = false;  // v0.16: el aviso de la base se reactiva tras cargar
     this._hospitalSeen = false;  // v0.18: el aviso del hospital se reactiva tras cargar
+    this._screamerCheckT = 0;    // v0.23: chequeo de población reprogramado tras cargar
+    this._screamedOnce = false;
+    this._fireAlertSeen = false;
     this._weatherMark = this.weather.type;   // v0.15: sin toast de clima al restaurar
     this.noise = new NoiseSystem();
     this.vision = new Vision();
@@ -298,6 +311,33 @@ class Game {
     this.state = STATE.PLAYING;
     this.toasts.push('Partida restaurada — ' + info.clock + ', DÍA ' + info.day +
       '. El autoguardado te cubre cada 5 minutos.', 'info');
+  }
+
+  /**
+   * v0.23 — EMERGENCIA DEL GRITADOR: cada screamerCheckEvery s se mide la
+   * población zombi en un radio de screamerPopR px alrededor del jugador.
+   * Si hay MUCHA gente junta (≥ screamerPopNear) y aún quedan huecos de
+   * gritadores vivos, puede EMERGER uno fuera de tu vista — exactamente
+   * donde ya hay aglomeración. Así el gritador señala las zonas CALIENTES:
+   * asedios a la barricada, noches de respawn, matanzas que atrajeron a la
+   * media ciudad. RARO por diseño (tope screamerMax, probabilidad por
+   * chequeo). El azar usa Math.random: no consume el Rng del mundo.
+   */
+  _maybeSpawnScreamer() {
+    const Z = ZOMBIE_CFG;
+    const p = this.player;
+    let near = 0, screamers = 0;
+    for (const z of this.zombies) {
+      if (z.variant === 'screamer') screamers++;   // el tope es GLOBAL (vivos)
+      if (Math.hypot(z.x - p.x, z.y - p.y) < Z.screamerPopR) near++;
+    }
+    if (near < Z.screamerPopNear || screamers >= Z.screamerMax) return;
+    if (Math.random() > Z.screamerChance) return;
+    // nace FUERA de tu vista (mismo criterio que el respawn nocturno),
+    // dentro de la zona poblada, en suelo exterior libre
+    const spots = this.map.nightSpawnSpots(p, 1);
+    if (!spots.length) return;
+    this.zombies.push(new Zombie(spots[0].x, spots[0].y, this.rng, 'screamer'));
   }
 
   /** Pausa → guardar y volver al menú principal (v0.13; v0.22: a SU ranura). */
@@ -543,6 +583,10 @@ class Game {
           best = { kind: 'constr', obj: c, d, label: 'Dormir en la cama' };
         } else if (c.type === 'mesa') {
           best = { kind: 'constr', obj: c, d, label: 'Mesa de trabajo (recetas avanzadas)' };
+        } else if (needsRepair(c)) {
+          // v0.23: barricada/tabiños/valla/trampa dañadas → REPARAR con su
+          // coste real en el propio prompt (más dañada, más materiales)
+          best = { kind: 'repair', obj: c, d, label: 'Reparar ' + CON_NAMES[c.type] + ' (' + repairCostLabel(repairCost(c)) + ')' };
         }
       }
     }
@@ -609,6 +653,11 @@ class Game {
         }
         break;
       }
+      case 'repair': {
+        // v0.23: REPARAR la construcción dañada (gasta materiales según daño)
+        repairConstruction(this, target.obj);
+        break;
+      }
       case 'item': {
         const gi = target.obj;
         const fully = this.player.inventory.add(gi.item);
@@ -659,7 +708,8 @@ class Game {
     const i = this.zombies.indexOf(z);
     if (i >= 0) this.zombies.splice(i, 1);
     this.kills++;
-    // v0.14: el cadáver del bruto es más grande; el del corredor, menudo
+    // v0.14: el cadáver del bruto es más grande; el del corredor, menudo;
+    // v0.23: el gritador deja un cuerpo corriente (su valor estaba en la boca)
     const scale = z.variant === 'brute' ? 1.4 : z.variant === 'runner' ? 0.85 : 1;
     this.map.stampCorpse(z.x, z.y, z.face, scale);
     this.map.stampBlood(z.x, z.y, true);
@@ -677,11 +727,22 @@ class Game {
     this.hud.hide();
     this.map.stampCorpse(this.player.x, this.player.y, this.player.angle);
     this.map.stampBlood(this.player.x, this.player.y, true);
+    // v0.23: OBITUARIO — los récords acumulados (localStorage, independiente
+    // de las ranuras) se actualizan con esta partida: una vida más a la cuenta
+    const rec = updateRecords({
+      time: this.time, day: this.daynight.day, kills: this.kills,
+    });
     // v0.13: la muerte es DEFINITIVA — el guardado de ESTA ranura se borra
     // (v0.22: las otras dos partidas siguen donde las dejaste)
     const hadSave = hasSave(this.saveSlot);
     clearSave(this.saveSlot);
-    this.menus.showDeath(cause, { time: this.time, kills: this.kills, searched: this.searchedCount }, hadSave);
+    this.menus.showDeath(cause, {
+      time: this.time,
+      kills: this.kills,
+      searched: this.searchedCount,
+      day: this.daynight.day,
+      stats: this.stats,
+    }, hadSave, rec);
   }
 
   // ================== Update ==================
@@ -731,6 +792,13 @@ class Game {
     if (this.build) updateBuild(this);
     updateFire(this, dt);
     updateConstructions(this, dt);
+
+    // v0.23: chequeo periódico de población para la EMERGENCIA del GRITADOR
+    this._screamerCheckT += dt;
+    if (this._screamerCheckT >= ZOMBIE_CFG.screamerCheckEvery) {
+      this._screamerCheckT = 0;
+      this._maybeSpawnScreamer();
+    }
 
     this.player.update(dt, this);
     this.player.inventory.setCapacity(this.player.capacity());

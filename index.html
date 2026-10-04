@@ -137,7 +137,7 @@
 <div id="menu">
   <div class="menu-inner">
     <h1>ZONA<em>CERO</em></h1>
-    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.22</span></p>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.23</span></p>
     <div class="menu-controls">
       <div><kbd>W A S D</kbd><span>Moverse</span></div>
       <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
@@ -154,30 +154,40 @@
     </div>
 
     <!-- v0.22: TRES RANURAS de partida (nueva / continuar / eliminar con
-         confirmación) — sustituye al botón único CONTINUAR PARTIDA -->
+         confirmación) — sustituye al botón único CONTINUAR PARTIDA.
+         v0.23: línea de RÉCORDS acumulados bajo las ranuras -->
     <div id="slots-panel">
       <h2 class="slots-title">TUS PARTIDAS</h2>
       <div id="slots-list"></div>
       <p class="slots-hint">Tres ranuras independientes · la muerte borra SOLO la ranura con la que jugabas · autoguardado cada 5 min</p>
+      <p id="slots-records"></p>
     </div>
 
     <div class="menu-buttons">
       <button id="btn-encyc" class="btn-ency">ENCICLOPEDIA</button>
     </div>
-    <p class="menu-tip">Consejo: TRES PARTIDAS A LA VEZ — cada ranura es un mundo aparte (ENTER continúa la más reciente). Consulta la ENCICLOPEDIA del menú o de la pausa: mecánicas, combate, crafteos y objetos, con los datos reales del juego. LLEGÓ EL CRAFTEO — abre el inventario (TAB) y entra en la pestaña CRAFTEO: con retazos de tela y alcohol haces VENDAS; con botella, queroseno y tela, un CÓCTEL MOLOTOV; y junto a una MESA DE TRABAJO mejorarás el bate con clavos o forjarás una lanza. En CONSTRUCCIONES tienes barricadas para sellar puertas, tablones para tapiar ventanas, trampas de pinchos, cajas para guardar equipo y la CAMA: montada dentro de una casa, convierte tu hogar en REFUGIO y puedes DORMIR en ella para pasar la noche. En el rincón más lejano del mapa espera la BASE MILITAR — el sótano-arsenal guarda el mejor botín (subfusil Cuervo, equipo militar). El HOSPITAL SAN RAFAEL, de dos pisos y en pleno APAGÓN, guarda SUS EXCLUSIVOS — suero, adrenalina, antibióticos potentes y morfina. Cuando anochezca, hazte con una linterna y pilas (tecla L). La LLUVIA enmascara tu ruido y la NEBLINA reduce la visibilidad a la mitad, también la de ellos. Cuidado con los CORREDORES (esprintando les ganas) y los BRUTOS (masa oscura: la comisaría y la tienda guardan los suyos).</p>
+    <p class="menu-tip">Consejo: TRES PARTIDAS A LA VEZ — cada ranura es un mundo aparte (ENTER continúa la más reciente). Consulta la ENCICLOPEDIA del menú o de la pausa: mecánicas, combate, crafteos y objetos, con los datos reales del juego. LLEGÓ EL CRAFTEO — abre el inventario (TAB) y entra en la pestaña CRAFTEO: con retazos de tela y alcohol haces VENDAS; con botella, queroseno y tela, un CÓCTEL MOLOTOV; y junto a una MESA DE TRABAJO mejorarás el bate con clavos o forjarás una lanza. En CONSTRUCCIONES tienes barricadas para sellar puertas, tablones para tapiar ventanas, trampas de pinchos, cajas para guardar equipo y la CAMA: montada dentro de una casa, convierte tu hogar en REFUGIO y puedes DORMIR en ella para pasar la noche. Las barricadas dañadas se REPARAN con E (cuanto más rotas, más tablas y clavos piden). NUEVO: el FUEGO es una ALARMA — el cristal del molotov al estallar hace ruido y las LLAMAS SE VEN desde lejos: atraen a los zombis de varias manzanas. Y cuidado con el GRITADOR (pajizo, boca abierta): raro, solo aparece donde hay MUCHOS zombis juntos… y al verte CHILLA y convoca a toda la zona: mátalo durante el aviso. En el rincón más lejano del mapa espera la BASE MILITAR — el sótano-arsenal guarda el mejor botín (subfusil Cuervo, equipo militar). El HOSPITAL SAN RAFAEL, de dos pisos y en pleno APAGÓN, guarda SUS EXCLUSIVOS — suero, adrenalina, antibióticos potentes y morfina. Cuando anochezca, hazte con una linterna y pilas (tecla L). La LLUVIA enmascara tu ruido y la NEBLINA reduce la visibilidad a la mitad, también la de ellos. Cuidado con los CORREDORES (esprintando les ganas) y los BRUTOS (masa oscura: la comisaría y la tienda guardan los suyos).</p>
   </div>
 </div>
 
 <!-- ==================== MUERTE ==================== -->
+<!-- v0.23: OBITUARIO — además del tiempo y las bajas: días sobrevividos,
+     disparos, construcciones, odómetro y RÉCORDS acumulados (localStorage,
+     independientes de las ranuras). main.onDeath actualiza los récords. -->
 <div id="deathscreen" class="hidden">
   <div class="menu-inner">
     <h1 class="death-title">HAS MUERTO</h1>
     <p id="death-cause"></p>
     <div class="death-stats">
+      <div><span>DÍAS SOBREVIVIDOS</span><b id="ds-day">1</b></div>
       <div><span>SOBREVIVIDO</span><b id="ds-time">00:00</b></div>
       <div><span>ZOMBIS ELIMINADOS</span><b id="ds-kills">0</b></div>
-      <div><span>CONTENEDORES</span><b id="ds-search">0</b></div>
+      <div><span>DISPAROS</span><b id="ds-shots">0</b></div>
+      <div><span>CONSTRUCCIONES</span><b id="ds-built">0</b></div>
+      <div><span>DISTANCIA</span><b id="ds-dist">0 m</b></div>
     </div>
+    <p id="ds-records" class="ds-records"></p>
+    <p class="death-stats-sub">Contenedores registrados: <b id="ds-search">0</b></p>
     <p id="death-savegone" class="death-savegone hidden"></p>
     <button id="btn-retry">REINTENTAR</button>
     <p class="retry-hint">Reintenta en la MISMA ranura (su guardado ya se ha borrado); las otras partidas te esperan en el menú.</p>

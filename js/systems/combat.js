@@ -127,6 +127,8 @@ export function fireRanged(game) {
   if (w.magType) gun.mag.rounds--;
   else gun.tube--;
 
+  if (game.stats) game.stats.shots++;   // v0.23: obituario (por disparo, no por posta)
+
   p.cooldown = w.cd;
   p.recoil = Math.min(1, (p.recoil || 0) + (w.auto ? 0.28 : 0.55));
 

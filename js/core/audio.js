@@ -131,6 +131,56 @@ export class AudioFX {
     lfo.start(t); lfo.stop(t + dur + 0.1);
   }
 
+  /**
+   * v0.23 — EL CHILLIDO del gritador: shriek agudo ascendente con vibrato
+   * violento + una capa rasposa de aire. Inconfundible: no es un gemido,
+   * es una ALARMA. Se oye incluso con el gritador fuera de pantalla.
+   */
+  scream(pan = 0) {
+    if (!this._ok()) return;
+    const t = this.ctx.currentTime;
+    const dur = 1.0;
+    // capa 1: sierra que sube y se quiebra
+    const o = this.ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(520, t);
+    o.frequency.exponentialRampToValueAtTime(1480, t + 0.22);
+    o.frequency.setValueAtTime(1480, t + 0.22);
+    o.frequency.exponentialRampToValueAtTime(700, t + dur);
+    // vibrato frenético (el «trino» del chillido)
+    const lfo = this.ctx.createOscillator();
+    lfo.frequency.value = 26;
+    const lfoG = this.ctx.createGain();
+    lfoG.gain.value = 220;
+    lfo.connect(lfoG); lfoG.connect(o.frequency);
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 1500; f.Q.value = 1.2;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.6, t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    // capa 2: aire rasposo (el desgaire de la garganta)
+    const src = this.ctx.createBufferSource();
+    src.buffer = this._noiseBuf; src.loop = true;
+    const f2 = this.ctx.createBiquadFilter();
+    f2.type = 'bandpass'; f2.frequency.value = 2600; f2.Q.value = 4;
+    const g2 = this.ctx.createGain();
+    g2.gain.setValueAtTime(0.35, t);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.8);
+    const p = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    o.connect(f); f.connect(g);
+    src.connect(f2); f2.connect(g2);
+    if (p) {
+      p.pan.value = pan;
+      g.connect(p); g2.connect(p); p.connect(this.master);
+    } else {
+      g.connect(this.master); g2.connect(this.master);
+    }
+    o.start(t); o.stop(t + dur + 0.1);
+    lfo.start(t); lfo.stop(t + dur + 0.1);
+    src.start(t); src.stop(t + dur + 0.1);
+  }
+
   eat() {
     let d = 0;
     for (let i = 0; i < 3; i++) {
@@ -256,6 +306,18 @@ export class AudioFX {
     this._noise(0.3, 'lowpass', 300, 0.4);
     this._tone('sawtooth', 120, 40, 0.3, 0.25);
     setTimeout(() => this._noise(0.18, 'bandpass', 700, 0.18, 0, 0.7), 60);
+  }
+
+  /** v0.23: CRISTAL ROTO del molotov al estallar — estruendo breve y
+   *  brillante (varios fragmentos con cascadas rápidas de ruido agudo). */
+  glassBreak() {
+    this._noise(0.16, 'highpass', 2600, 0.4);
+    this._tone('square', 1900, 700, 0.1, 0.16);
+    let d = 30;
+    for (let i = 0; i < 4; i++) {
+      setTimeout(() => this._noise(0.07, 'bandpass', 2200 + Math.random() * 2600, 0.22, 0, 5), d);
+      d += 45;
+    }
   }
 
   /** Molotov al estallar: whoosh ígneo. */

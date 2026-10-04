@@ -53,6 +53,42 @@ export const SAVE_SLOTS = 3;            // v0.22: 3 partidas independientes
 const KEY = 'zonacero.save.v' + SAVE_VERSION;
 const slotKey = (slot) => KEY + '.s' + (slot || 1);
 
+// ================== v0.23: RÉCORDS ACUMULADOS ==================
+// Obituario persistente entre partidas (independiente de las ranuras):
+// cuántas partidas han acabado en muerte y los mejores registros.
+const RKEY = 'zonacero.records.v1';
+
+/** Los récords acumulados (0 partidas si nunca has muerto… aún). */
+export function getRecords() {
+  try {
+    const r = JSON.parse(localStorage.getItem(RKEY));
+    if (r && typeof r === 'object') {
+      return {
+        runs: r.runs | 0, bestTime: +r.bestTime || 0, bestDay: r.bestDay | 0,
+        bestKills: r.bestKills | 0, totalKills: r.totalKills | 0,
+      };
+    }
+  } catch (e) { /* sin localStorage */ }
+  return { runs: 0, bestTime: 0, bestDay: 0, bestKills: 0, totalKills: 0 };
+}
+
+/** Registra una partida TERMINADA (muerte) y devuelve los récords nuevos. */
+export function updateRecords(st) {
+  const r = getRecords();
+  r.runs++;
+  r.bestTime = Math.max(r.bestTime, Math.floor(st.time || 0));
+  r.bestDay = Math.max(r.bestDay, st.day | 0);
+  r.bestKills = Math.max(r.bestKills, st.kills | 0);
+  r.totalKills += st.kills | 0;
+  try { localStorage.setItem(RKEY, JSON.stringify(r)); } catch (e) { /* nada */ }
+  return r;
+}
+
+/** Limpia los récords (tests). */
+export function clearRecords() {
+  try { localStorage.removeItem(RKEY); } catch (e) { /* nada */ }
+}
+
 /**
  * v0.22: MIGRACIÓN — el guardado único de la v0.21 (clave sin sufijo) pasa
  * a la ranura 1 si esta está libre. Se ejecuta una sola vez (al importar el
@@ -186,6 +222,14 @@ export function buildSaveData(game) {
     return o;
   });
 
+  // v0.23: estadísticas del obituario (disparos, molotovs, crafteos,
+  // construcciones y odómetro)
+  const st = game.stats || {};
+  const stats = {
+    sh: st.shots | 0, mo: st.molotovs | 0, cr: st.crafted | 0,
+    bu: st.built | 0, di: Math.round(st.dist || 0),
+  };
+
   return {
     v: SAVE_VERSION,
     seed: game.seedUsed,
@@ -196,6 +240,7 @@ export function buildSaveData(game) {
     time: +game.time.toFixed(1),
     kills: game.kills,
     searched: game.searchedCount,
+    stats,
     dn: { t: +game.daynight.t.toFixed(2) },
     wx: game.weather ? game.weather.toData() : null,   // v0.15: clima
     player, surv,
@@ -403,6 +448,16 @@ export function restoreGame(game, data) {
     game.kills = data.kills || 0;
     game.searchedCount = data.searched || 0;
     game.deathCause = null;
+    // v0.23: odómetro y contadores del obituario (guardados v0.22 sin bloque
+    // → arrancan a cero, como toda estadística nueva)
+    const std = data.stats || {};
+    if (game.stats) {
+      game.stats.shots = std.sh | 0;
+      game.stats.molotovs = std.mo | 0;
+      game.stats.crafted = std.cr | 0;
+      game.stats.built = std.bu | 0;
+      game.stats.dist = std.di | 0;
+    }
 
     // v0.21: garantía del Subfusil Cuervo también al CARGAR — un mundo
     // guardado sin ninguno (mala suerte de las tablas en v0.20) recibe el

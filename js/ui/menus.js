@@ -14,7 +14,7 @@
  */
 
 import { fmtTime } from '../utils.js';
-import { listSlots, clearSave, SAVE_SLOTS } from '../systems/save.js';
+import { listSlots, clearSave, SAVE_SLOTS, getRecords } from '../systems/save.js';
 
 const DEATH_TEXT = {
   zombi: 'Los zombis te destrozaron en la calle.',
@@ -22,9 +22,18 @@ const DEATH_TEXT = {
   sed: 'La deshidratación cerró tus ojos para siempre.',
   infeccion: 'La infección completó su trabajo. Te has convertido en uno de ellos.',
   intoxicacion: 'Una comida podrida acabó con tu supervivencia.',
+  quemadura: 'Las llamas que encendiste te reclamaron. Moriste calcinado.',   // v0.23
 };
 
 const HINT_DEFAULT = 'Tres ranuras independientes · la muerte borra SOLO la ranura con la que jugabas · autoguardado cada 5 min';
+
+/** v0.23: metros recorridos (1 tile = 1 m) con formato español. */
+function fmtDist(px) {
+  const m = px / 32;
+  return m >= 1000
+    ? (m / 1000).toFixed(1).replace('.', ',') + ' km'
+    : Math.round(m) + ' m';
+}
 
 export class Menus {
   constructor(game) {
@@ -129,8 +138,21 @@ export class Menus {
 
   // ================== pantallas ==================
 
+  /** v0.23: línea de RÉCORDS acumulados bajo las ranuras del menú. */
+  renderRecords() {
+    const el = document.getElementById('slots-records');
+    if (!el) return;
+    const r = getRecords();
+    el.textContent = r.runs === 0
+      ? 'RÉCORDS — ninguna partida acabada todavía: tu primer obituario abrirá la cuenta'
+      : 'RÉCORDS — ' + r.runs + ' partida' + (r.runs === 1 ? '' : 's') + ' · mejor: día ' +
+          r.bestDay + ' · ' + r.bestKills + ' bajas · ' + fmtTime(r.bestTime) +
+          ' · ' + r.totalKills + ' bajas acumuladas';
+  }
+
   showMenu() {
     this.renderSlots();
+    this.renderRecords();
     this.menuEl.classList.remove('hidden');
     this.hideDeath();
     this.hidePause();
@@ -141,13 +163,31 @@ export class Menus {
   showPause() { this.pauseEl.classList.remove('hidden'); }
   hidePause() { this.pauseEl.classList.add('hidden'); }
 
-  showDeath(cause, stats, hadSave = false) {
+  showDeath(cause, stats, hadSave = false, records = null) {
     const el = this.deathEl;
     el.classList.remove('hidden');
     document.getElementById('death-cause').textContent = DEATH_TEXT[cause] || 'Nadie lo contará.';
-    document.getElementById('ds-time').textContent = fmtTime(stats.time);
-    document.getElementById('ds-kills').textContent = stats.kills;
-    document.getElementById('ds-search').textContent = stats.searched;
+    // v0.23: OBITUARIO completo — días, tiempo, bajas, disparos,
+    // construcciones y odómetro (antes: solo tiempo/bajas/registrados)
+    const st = stats.stats || {};
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set('ds-day', stats.day || 1);
+    set('ds-time', fmtTime(stats.time));
+    set('ds-kills', stats.kills);
+    set('ds-shots', st.shots | 0);
+    set('ds-built', st.built | 0);
+    set('ds-dist', fmtDist(st.dist || 0));
+    set('ds-search', stats.searched);
+    // récords acumulados (los acaba de actualizar main.onDeath)
+    const recEl = document.getElementById('ds-records');
+    if (recEl) {
+      const r = records || getRecords();
+      const isNew = (stats.day || 1) >= r.bestDay && stats.kills >= r.bestKills && r.runs > 1;
+      recEl.textContent = 'RÉCORDS — ' + r.runs + ' partida' + (r.runs === 1 ? '' : 's') +
+        ' · mejor: día ' + r.bestDay + ' · ' + r.bestKills + ' bajas · ' + fmtTime(r.bestTime) +
+        (r.totalKills ? ' · ' + r.totalKills + ' bajas acumuladas en total' : '') +
+        (isNew ? ' · ¡NUEVO RÉCORD!' : '');
+    }
     // v0.13/v0.22: aviso de guardado borrado (solo si esa ranura tenía uno)
     if (this.saveGoneEl) {
       this.saveGoneEl.classList.toggle('hidden', !hadSave);

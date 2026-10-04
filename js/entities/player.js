@@ -238,6 +238,8 @@ export class Player {
       const moved = Math.hypot(this.x - ox, this.y - oy);
       this.moving = moved > 0.05;
       this.running = running && this.moving;
+      // v0.23: odómetro para el obituario (px de mundo recorridos)
+      if (game.stats) game.stats.dist += moved;
 
       // pasos → ruido + sonido
       if (this.moving) {

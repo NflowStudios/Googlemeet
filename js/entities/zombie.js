@@ -14,10 +14,16 @@
  *             el mapa. Lento, muchísima vida, golpes demoledores y apenas
  *             retrocede al recibir impactos. Masa oscura y retumbo grave.
  *
+ * v0.23 — GRITADOR: 4ª variante RARA (no nace con la horda: main.js la hace
+ *  EMERGER donde hay mucha población zombi). Al verte se PARA, hincha el
+ *  pecho (screamWindup s de aviso — la ventana del jugador) y CHILLA:
+ *  un evento de ruido gigante (screamR px) que arrastra a todos los
+ *  zombis que lo oyen hacia su posición. Frágil: mátalo durante el aviso.
+ *
  * v0.15 — CLIMA: con NEBLINA el alcance al que ven/huelen al jugador se
  * contrae en la misma medida que la visión del jugador (hasta la mitad):
  * todos van a tientas. La lluvia no los ciega (solo enmascara el ruido,
- * cosa de noise.js).
+ * cosa de noise.js)… y también amortigua el CHILLIDO del gritador.
  */
 
 import { ZOMBIE_CFG as Z, TILE, T, SPECIALS, CRAFTEO } from '../config.js';
@@ -75,6 +81,8 @@ export class Zombie {
     this.kbx = 0; this.kby = 0;
     this.stuckT = 0;
     this.burn = 0;              // v0.20: segundos de QUemadura restantes (antorcha/molotov)
+    this.screamT = 0;           // v0.23: gritador — cuenta atrás del AVISO (windup)
+    this.screamCd = 0;          // v0.23: gritador — enfriamiento entre chillidos
     this.face = rng.range(0, Math.PI * 2);
     this.visibleNow = false;
   }
@@ -129,6 +137,14 @@ export class Zombie {
       }
     }
 
+    // ---- v0.23: GRITADOR — enfriamiento del chillido ----
+    if (this.screamCd > 0) this.screamCd = Math.max(0, this.screamCd - dt);
+    if (this.screamT > 0) {
+      // AVISO (windup): parado, hinchándose… al agotarse, CHILLA
+      this.screamT -= dt;
+      if (this.screamT <= 0) this._doScream(game);
+    }
+
     // ---- percepción: ruido ----
     if (this.state !== ST.CHASE) {
       for (const ev of game.noise.frame) {
@@ -155,7 +171,9 @@ export class Zombie {
           seen[this.variant] = true;
           game.toasts.push(this.variant === 'runner'
             ? '¡CORREDOR! Frágil y veloz — esprintando le ganas: gana distancia y contragolpea'
-            : '¡BRUTO! Lento pero brutal: mucha vida y golpes demoledores', 'warn');
+            : this.variant === 'screamer'
+              ? '¡GRITADOR! Va a CHILLAR — mátalo ya o convocará a toda la zona'
+              : '¡BRUTO! Lento pero brutal: mucha vida y golpes demoledores', 'warn');
           game.audio.groan(1, this._pan(game), this.groanPitch);
         }
       }
@@ -210,6 +228,11 @@ export class Zombie {
 
       case ST.CHASE: {
         speed = this.chaseSpeed * this.speedMul;
+        // v0.23: el GRITADOR prepara su chillido al verte (si no está en
+        // enfriamiento). El aviso lo arraiga en el sitio: su única debilidad.
+        if (this.variant === 'screamer' && sees && this.screamCd <= 0 && this.screamT <= 0) {
+          this.screamT = Z.variants.screamer.screamWindup;
+        }
         if (sees) {
           this.lastSeenX = p.x; this.lastSeenY = p.y;
           this.unseenT = 0;
@@ -252,6 +275,11 @@ export class Zombie {
         mvy += dy * inv * 0.5;
       }
     }
+
+    // ---- v0.23: GRITADOR preparando el chillido → ARRAIGADO en el sitio
+    // (el aviso es su debilidad: queda expuesto ~1 s). El knockback sigue
+    // funcionando: puedes empujarlo, pero no avanza por su propio pie.
+    if (this.screamT > 0) { speed = 0; mvx = 0; mvy = 0; }
 
     // ---- movimiento + knockback ----
     const ox = this.x, oy = this.y;
@@ -305,6 +333,28 @@ export class Zombie {
     }
   }
 
+  /**
+   * v0.23 — EL CHILLIDO del gritador. Estallido agudo + evento de ruido
+   * GIGANTE (screamR px, ajustado por el clima: la lluvia lo amortigua)
+   * que convoca a todos los zombis que lo oyen: los que no perseguían ya
+   * al jugador pasan a INVESTIGAR la posición del gritador… que va detrás
+   * del jugador. En la práctica: la horda del barrio entero converge.
+   * Se avisa UNA vez por partida de qué acaba de pasar.
+   */
+  _doScream(game) {
+    const v = Z.variants.screamer;
+    this.screamT = 0;
+    this.screamCd = v.screamCd;
+    game.audio.scream(this._pan(game));
+    game.cam.shake(2.5);
+    // anillos rojos: la onda del chillido es VISIBLE en el suelo
+    game.noise.emit(this.x, this.y, v.screamR, 'chillido', 'scream');
+    if (!game._screamedOnce) {
+      game._screamedOnce = true;
+      game.toasts.push('¡CHILLIDO! El gritador ha convocado a todos los zombis de la zona', 'bad');
+    }
+  }
+
   _pan(game) {
     const p = game.player;
     const a = Math.atan2(this.y - p.y, this.x - p.x);
@@ -318,6 +368,7 @@ export class Zombie {
 
     // ---- paleta según variante (v0.14) ----
     // normal: oliva clásico · corredor: carne fresca rosada · bruto: masa oscura
+    // v0.23 gritador: pajizo pálido con ojos blancos lechosos
     let body, head, arms, eye;
     if (this.variant === 'runner') {
       body = [168, 120, 108]; head = [186, 138, 124]; arms = [156, 108, 96];
@@ -325,9 +376,26 @@ export class Zombie {
     } else if (this.variant === 'brute') {
       body = [78, 92, 72]; head = [88, 102, 80]; arms = [64, 78, 60];
       eye = '#b01616';                        // ojos rojo sangre
+    } else if (this.variant === 'screamer') {
+      body = [156, 156, 96]; head = [172, 170, 108]; arms = [140, 142, 86];
+      eye = '#e8e4d0';                        // ojos blancos lechosos
     } else {
       body = [104, 116, 84]; head = [112, 126, 92]; arms = [96, 108, 80];
       eye = '#d83a2a';
+    }
+
+    // v0.23 — GRITADOR preparando el chillido: ondas de aviso pulsantes y
+    // cuerpo que SE HINCHA (la boca se abre de par en par). Lectura clara:
+    // «mátame AHORA o la zona entera viene aquí».
+    if (this.variant === 'screamer' && this.screamT > 0) {
+      const k = 1 - this.screamT / Z.variants.screamer.screamWindup;   // 0→1
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 45);
+      ctx.strokeStyle = `rgba(226, 88, 58, ${(0.25 + 0.45 * k) * pulse})`;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const rr = this.r + 6 + i * 9 + k * 10;
+        ctx.beginPath(); ctx.arc(s.x, s.y, rr, 0, Math.PI * 2); ctx.stroke();
+      }
     }
 
     // sombra (el bruto proyecta más masa)
@@ -402,6 +470,24 @@ export class Zombie {
     ctx.beginPath();
     ctx.arc(s.x + Math.cos(this.face) * headOff, s.y + Math.sin(this.face) * headOff, headR, 0, Math.PI * 2);
     ctx.fill();
+
+    // v0.23 — GRITADOR: la BOCA. Cerrada = un rictus; preparando el chillido
+    // = un pozo negro que se abre (y crece con el aviso). Su rasgo único.
+    if (this.variant === 'screamer') {
+      const k = this.screamT > 0 ? 1 - this.screamT / Z.variants.screamer.screamWindup : 0;
+      const mx = s.x + Math.cos(this.face) * (headOff + headR * 0.42);
+      const my = s.y + Math.sin(this.face) * (headOff + headR * 0.42);
+      ctx.fillStyle = '#1a0e0a';
+      ctx.beginPath();
+      ctx.arc(mx, my, 1.4 + k * 3.4, 0, Math.PI * 2); ctx.fill();
+      // mandíbula temblando durante el aviso
+      if (k > 0) {
+        ctx.strokeStyle = 'rgba(20,10,8,0.7)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(mx, my, 3 + k * 4.6, -0.5, 0.5); ctx.stroke();
+      }
+    }
 
     // ojos al perseguir (color según variente)
     if (chase) {
@@ -588,6 +674,9 @@ export function zombieFromData(d) {
   z.flash = 0; z.attackCd = 0;
   z.groanT = d.gr ?? 5;
   z.kbx = 0; z.kby = 0; z.stuckT = 0;
+  z.burn = 0;                  // v0.20: sin quemadura al restaurar
+  z.screamT = 0;               // v0.23: gritador — sin aviso/chillido en cola
+  z.screamCd = 0;
   z.face = d.fa || 0;
   z.visibleNow = false;
   return z;

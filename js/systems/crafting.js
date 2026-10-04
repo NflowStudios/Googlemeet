@@ -167,6 +167,7 @@ export function craftObject(game, recipe) {
   consumeMaterials(game, recipe);
   game.player.inventory.add(makeItem(recipe.out));
   game.audio.craft();
+  if (game.stats) game.stats.crafted++;   // v0.23: obituario
   game.toasts.push('Crafteado: ' + recipe.name, 'save');
   return true;
 }
@@ -300,6 +301,7 @@ export function placeBuild(game) {
   consumeMaterials(game, recipe);
   const c = addConstruction(game, recipe.id, b.tx, b.ty, b.rot);
   game.audio.hammer();
+  if (game.stats) game.stats.built++;   // v0.23: obituario
   // clavar tablas hace un ruido que la cuadra entera oye
   game.noise.emit(c.x, c.y, 140, 'construir');
   game.toasts.push('Construido: ' + recipe.name, 'save');
@@ -388,6 +390,78 @@ export function damageConstruction(game, c, dmg, byPlayer) {
   }
 }
 
+// ================== v0.23: REPARACIÓN ==================
+
+/** Construcciones con prompt de REPARAR cuando están dañadas. La caja y la
+ *  cama conservan su acción propia (abrir/dormir) pase lo que pase; las
+ *  demás no tienen interacción — la reparación ES su interacción cuando
+ *  están tocadas. La trampa al repararse además re-arma sus pinchos. */
+export const REPAIRABLE = ['barricada', 'tapiar', 'valla', 'trampa', 'mesa'];
+
+/** ¿Dañada y reparable? (E sobre ella ofrece REPARAR). */
+export function needsRepair(c) {
+  return REPAIRABLE.includes(c.type) && c.hp < c.maxHp - 0.5;
+}
+
+/**
+ * Coste de reparación — MÁS DAÑADA = MÁS MATERIALES: la parte proporcional
+ * de la vida que falta, redondeada hacia arriba POR MATERIAL, con mínimo 1.
+ * Un tablón a medias (50%) de la barricada (3 tablas + 4 clavos) pide
+ * 2 tablas + 2 clavos; al 90%, casi la receta entera (3 + 4).
+ * Devuelve [[idItem, n], …] o null si está intacta / no reparable.
+ */
+export function repairCost(c) {
+  if (!needsRepair(c)) return null;
+  const recipe = RECIPES_CON.find((r) => r.id === c.type);
+  if (!recipe) return null;
+  const missing = 1 - Math.max(0, c.hp) / c.maxHp;   // 0..1
+  return recipe.mats.map(([id, n]) => [id, Math.max(1, Math.ceil(n * missing))]);
+}
+
+/** Etiqueta compacta del coste para el prompt: «2 tablas + 2 clavos». */
+export function repairCostLabel(cost) {
+  return cost.map(([id, n]) => n + ' ' + (ITEMS[id]?.name || id).toLowerCase()).join(' + ');
+}
+
+/**
+ * REPARAR (E): valida materiales, los gasta y devuelve la construcción a la
+ * vida MÁXIMA. Golpear tablas hace el mismo ruido que construirlas (140 px)
+ * — reparar bajo asedio tiene su precio. true si la reparó.
+ */
+export function repairConstruction(game, c) {
+  const cost = repairCost(c);
+  if (!cost) return false;
+  const miss = [];
+  for (const [id, n] of cost) {
+    if (countItem(game.player.inventory, id) < n) miss.push([id, n]);
+  }
+  if (miss.length) {
+    game.toasts.push('Te faltan materiales: ' + miss.map(([id, n]) =>
+      n + ' ' + (ITEMS[id]?.name || id).toLowerCase()).join(' + '), 'warn');
+    return false;
+  }
+  const inv = game.player.inventory;
+  for (const [id, n] of cost) {
+    let need = n;
+    for (let i = 0; i < inv.slots.length && need > 0; i++) {
+      const s = inv.slots[i];
+      if (s && s.id === id && s.count > 0) {
+        const take = Math.min(need, s.count);
+        s.count -= take;
+        need -= take;
+        if (s.count <= 0) inv.slots[i] = null;
+      }
+    }
+  }
+  c.hp = c.maxHp;
+  if (c.type === 'trampa') c.uses = C.trapUses;   // afilar los pinchos los re-arma
+  game.audio.hammer();
+  game.noise.emit(c.x, c.y, 140, 'reparar');
+  game.cam.shake(1.5);
+  game.toasts.push(CON_NAMES[c.type] + ' reparada — vida al máximo', 'save');
+  return true;
+}
+
 /** ¿La cama está libre de compañía para dormir? */
 function areaSafeToSleep(game) {
   const p = game.player;
@@ -463,6 +537,7 @@ export function throwMolotov(game) {
   if (p.cooldown > 0) return false;
   p.cooldown = 0.55;
   game.audio.swing();
+  if (game.stats) game.stats.molotovs++;   // v0.23: obituario
   game.molotovs.push({
     x: p.x + Math.cos(p.angle) * (p.r + 6),
     y: p.y + Math.sin(p.angle) * (p.r + 6),
@@ -480,11 +555,21 @@ export function throwMolotov(game) {
   return true;
 }
 
-/** Estallido: zona de fuego + ignición directa de quien esté encima. */
+/** Estallido: zona de fuego + ignición directa de quien esté encima.
+ *  v0.23: LA ALARMA — el CRISTAL ROTO al estallar hace un ruido fuerte y
+ *  seco (fireBreakNoise px), y a partir de aquí el propio fuego pulsa
+ *  atracción cada fireAlarmEvery s mientras arda (ver updateFire). */
 function igniteFire(game, x, y, z) {
-  game.fires.push({ x, y, z: z || 0, r: C.fireR, t: C.fireDur });
+  game.fires.push({ x, y, z: z || 0, r: C.fireR, t: C.fireDur, alarmT: 0 });
   game.audio.ignite();
+  game.audio.glassBreak();
   game.cam.shake(5);
+  // el cristal estalla: ruido seco que ya atrae a los cercanos
+  game.noise.emit(x, y, C.fireBreakNoise, 'cristal', 'fire');
+  if (!game._fireAlertSeen) {
+    game._fireAlertSeen = true;
+    game.toasts.push('ALERTA: el CRISTAL ROTO hace ruido y las LLAMAS se ven de lejos — atraerán zombis', 'warn');
+  }
   // chorro inicial: prende a los que ya están encima
   for (const zb of game.zombies) {
     if ((zb.z || 0) !== (z || 0)) continue;
@@ -543,8 +628,16 @@ export function updateFire(game, dt) {
       game.survival.damage(C.fireDpsP * dt, 'quemadura', game, true);
       p.hurtFlash = Math.max(p.hurtFlash, 0.12);
     }
-    // el fuego asusta: ruido de crepitar que atrae un poco
-    if (Math.random() < dt * 0.5) game.noise.emit(f.x, f.y, 90, 'fuego');
+    // v0.23 — EL FUEGO ES UNA ALARMA: las llamas SE VEN desde lejos. Cada
+    // fireAlarmEvery s emiten un pulso de atracción de fireAlarmR px (anillo
+    // naranja en el suelo): todo zombi que no esté ya persiguiendo al
+    // jugador se acerca a mirar. Prender fuego despeja la zona… y luego la
+    // LLENA. La lluvia amortigua el ruido, pero el resplandor no cambia.
+    f.alarmT -= dt;
+    if (f.alarmT <= 0) {
+      f.alarmT = C.fireAlarmEvery;
+      game.noise.emit(f.x, f.y, C.fireAlarmR, 'fuego', 'fire');
+    }
   }
 }
 

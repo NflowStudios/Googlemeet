@@ -246,6 +246,16 @@ export const ZOMBIE_CFG = {
   nightRunnerChance: 0.25,   // de noche los corredores presionan más
   bruteSpecials: { police: 2, store: 1, military: 4, hospital: 2 },  // brutos de guarnición por estructura
   bruteRoamChance: 0.55,     // probabilidad de que el mapa tenga brutos errantes
+  // --- v0.23: GRITADOR — 4ª variante RARA, ligada a la presión local ---
+  // No forma parte de la horda inicial: EMERGE cuando el jugador está en
+  // una zona con mucha población zombi alrededor (aglomeraciones, asedios a
+  // la barricada, noches de respawn). Su chillido convoca a todo lo que lo
+  // oiga: mátalo durante el aviso (queda paralizado preparando el grito).
+  screamerPopNear: 16,       // zombis necesarios a la redonda para que EMERJA
+  screamerPopR: 640,         // radio de ese recuento (px, alrededor del jugador)
+  screamerMax: 2,            // gritadores vivos a la vez (raro, no plaga)
+  screamerCheckEvery: 8,     // segundos entre comprobaciones de población
+  screamerChance: 0.5,       // probabilidad por comprobación (con población alta)
   variants: {
     // CORREDOR: carne fresca. Mitad de vida y rápido. v0.15 lo bajó de 160 a
     // 148 px/s; v0.17 lo deja en 128 (techo 134.4): caminando te alcanza
@@ -284,6 +294,29 @@ export const ZOMBIE_CFG = {
       loseSightTime: 3.6,
       kbMult: 0.22,                // masa bruta: apenas retrocede
       groanPitch: 0.55,            // retumbar grave
+    },
+    // v0.23 — GRITADOR: alarma ambulante. Frágil y de ataque débil, pero al
+    // VERTE se para en seco, hincha el pecho (aviso de ~1,1 s: TU ventana
+    // para matarlo) y suelta un CHILLIDO que atrae a todos los zombis en
+    // screamR px hacia su posición. Repite cada screamCd s mientras te siga
+    // viendo. Raro: solo emerge donde hay mucha gente muerta junta.
+    screamer: {
+      hp: 80,
+      radius: 10,
+      wanderSpeed: 26,
+      investigateSpeed: 62,
+      chaseSpeed: 96,              // caminando le ganas; corriendo, de sobra
+      speedMulRange: [0.9, 1.1],
+      attackCd: 1.1,
+      attackRange: 26,
+      dmgMin: 6,
+      dmgMax: 10,
+      loseSightTime: 3.0,
+      kbMult: 1.1,
+      groanPitch: 1.9,             // casi un silbido agudo
+      screamR: 900,                // radio del chillido (px): varias manzanas
+      screamCd: 9,                 // segundos entre chillidos
+      screamWindup: 1.1,           // aviso parado antes de chillar (ventana)
     },
   },
 };
@@ -688,6 +721,14 @@ export const CRAFTEO = {
   conHp: {           // vida de cada construcción (a golpes de zombi/melee)
     barricada: 140, tapiar: 100, valla: 90, trampa: 40, caja: 60, cama: 80, mesa: 50,
   },
+  // --- v0.23: el FUEGO ES UNA ALARMA ---
+  // El estallido del molotov ROMPE CRISTAL (ruido fuerte y seco) y las
+  // llamas se ven desde lejos: mientras arde, cada 1,5 s emite un pulso de
+  // atracción de fireAlarmR px. Prender fuego = despejar una zona… y
+  // CONVERTIRTE en el centro de atención del barrio entero.
+  fireBreakNoise: 300,    // ruido del cristal roto al estallar (px de radio)
+  fireAlarmR: 420,        // radio del pulso «las llamas se ven de lejos»
+  fireAlarmEvery: 1.5,    // cadencia del pulso de alarma (s)
 };
 
 // ---------- Inventario ----------
