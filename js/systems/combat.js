@@ -144,6 +144,10 @@ export function fireRanged(game) {
   game.noise.emit(p.x, p.y, w.noise, 'disparo');
   game.cam.shake(w.shake);
 
+  // v0.24: POLICÍA — bono pasivo de daño, SOLO armas de fuego (el melee y
+  // los cócteles no se benefician). Se aplica a cada posta del disparo.
+  const dmgMul = p.profMul ? p.profMul('gunDmgMul') : 1;
+
   // postas: la escopeta dispara varias con abanico; el resto, una sola
   const pellets = w.pellets || 1;
   for (let i = 0; i < pellets; i++) {
@@ -155,7 +159,7 @@ export function fireRanged(game) {
     } else {
       a += (Math.random() - 0.5) * w.spread * (1 + (p.recoil || 0) * 1.2);
     }
-    hitscan(game, bx, by, a, w.range, w.dmg, w.kb);
+    hitscan(game, bx, by, a, w.range, w.dmg * dmgMul, w.kb);
   }
   return true;
 }

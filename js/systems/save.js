@@ -27,7 +27,7 @@
  * La muerte es DEFINITIVA: main.js borra EL GUARDADO DE ESA RANURA al morir.
  */
 
-import { ITEMS, BASE_SLOTS, DAYNIGHT, T } from '../config.js';
+import { ITEMS, BASE_SLOTS, DAYNIGHT, T, PROF_BY_ID } from '../config.js';
 import { Rng } from '../rng.js';
 import { GameMap } from '../world/map.js';
 import { DayNight } from '../world/daynight.js';
@@ -47,6 +47,9 @@ import { addConstruction } from './crafting.js';
 // v0.22: el FORMATO no cambia (mismos campos); solo pasa de una clave
 // única a una por ranura → SAVE_VERSION se mantiene en 4 y los guardados
 // v0.21 migran solos a la ranura 1 (ver migrateLegacySave).
+// v0.24: campo aditivo player.pf (profesión, v0.24). El FORMATO no cambia
+// y los guardados v0.23 sin pf cargan con profesión NULL (sin bonos, la
+// partida se creó antes de que existieran) → SIN bump de versión.
 export const SAVE_VERSION = 4;
 export const AUTOSAVE_SEC = 300;        // autoguardado cada 5 min DE PARTIDA
 export const SAVE_SLOTS = 3;            // v0.22: 3 partidas independientes
@@ -164,6 +167,7 @@ export function buildSaveData(game) {
     a: +p.angle.toFixed(3),
     sk: p.sneak ? 1 : 0,
     fl: p.flashOn ? 1 : 0,   // v0.17: linterna encendida
+    pf: p.prof || null,      // v0.24: profesión de la partida (id o null)
     z: p.z || 0,
     // si se guardó a mitad de escalera: se da por terminada la subida/bajada
     zc: p.climb ? p.climb.to : null,
@@ -289,7 +293,11 @@ export function hasSave(slot) { return loadSaveData(slot) !== null; }
 export function saveSummary(slot) {
   const d = loadSaveData(slot);
   if (!d) return null;
-  return { day: d.day, clock: d.clock, kills: d.kills, time: d.time, savedAt: d.savedAt || 0 };
+  return {
+    day: d.day, clock: d.clock, kills: d.kills, time: d.time,
+    savedAt: d.savedAt || 0,
+    prof: (d.player && d.player.pf && PROF_BY_ID[d.player.pf]) ? d.player.pf : null,   // v0.24
+  };
 }
 
 /** v0.22: resúmenes de TODAS las ranuras para el menú → [null|{...}] × 3. */
@@ -348,6 +356,9 @@ export function restoreGame(game, data) {
     const p = new Player(pd.x, pd.y);
     p.angle = pd.a || 0;
     p.sneak = !!pd.sk;
+    // v0.24: profesión — los guardados v0.23 (sin pf) cargan con NULL
+    // (sin bonos): la partida nació antes de que existieran las profesiones
+    p.prof = (pd.pf && PROF_BY_ID[pd.pf]) ? pd.pf : null;
     p.z = pd.z || 0;
     p.climb = null;               // la escalera se da por terminada
     if (pd.zc !== null && pd.zc !== undefined) p.z = pd.zc;

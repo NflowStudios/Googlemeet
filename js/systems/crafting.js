@@ -408,14 +408,18 @@ export function needsRepair(c) {
  * de la vida que falta, redondeada hacia arriba POR MATERIAL, con mínimo 1.
  * Un tablón a medias (50%) de la barricada (3 tablas + 4 clavos) pide
  * 2 tablas + 2 clavos; al 90%, casi la receta entera (3 + 4).
+ * v0.24: `player` opcional — si es CARPINTERO, su oficio abarata la
+ * reparación (la MITAD de materiales). Sin player (o sin profesión) se
+ * devuelve el coste base, byte a byte igual que en la v0.23.
  * Devuelve [[idItem, n], …] o null si está intacta / no reparable.
  */
-export function repairCost(c) {
+export function repairCost(c, player) {
   if (!needsRepair(c)) return null;
   const recipe = RECIPES_CON.find((r) => r.id === c.type);
   if (!recipe) return null;
   const missing = 1 - Math.max(0, c.hp) / c.maxHp;   // 0..1
-  return recipe.mats.map(([id, n]) => [id, Math.max(1, Math.ceil(n * missing))]);
+  const disc = player && player.profMul ? player.profMul('repairMul') : 1;
+  return recipe.mats.map(([id, n]) => [id, Math.max(1, Math.ceil(n * missing * disc))]);
 }
 
 /** Etiqueta compacta del coste para el prompt: «2 tablas + 2 clavos». */
@@ -429,7 +433,7 @@ export function repairCostLabel(cost) {
  * — reparar bajo asedio tiene su precio. true si la reparó.
  */
 export function repairConstruction(game, c) {
-  const cost = repairCost(c);
+  const cost = repairCost(c, game.player);   // v0.24: con el bono del CARPINTERO
   if (!cost) return false;
   const miss = [];
   for (const [id, n] of cost) {

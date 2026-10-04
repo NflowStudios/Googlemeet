@@ -1097,6 +1097,185 @@ kbd {
   color: #6d6f64;
 }
 
+/* ================= v0.24: selección de PROFESIÓN ================= */
+
+#profscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 45;   /* sobre menús y muerte (40), bajo la enciclopedia (60) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(8, 11, 8, 0.88) 0%, rgba(2, 4, 2, 0.97) 78%);
+  cursor: default;
+}
+
+.prof-panel {
+  width: min(1020px, 95vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: #0d100c;
+  border: 1px solid #3a3f35;
+  border-top: 3px solid #9a7ab8;
+  box-shadow: 0 22px 90px rgba(0, 0, 0, 0.8);
+  padding: 16px 18px 14px;
+}
+
+.prof-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #262b22;
+}
+.prof-head-txt h2 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  color: var(--text);
+}
+.prof-head-txt h2::first-letter { color: #b99ad6; }
+.prof-head-txt span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #6d6f64;
+}
+#btn-prof-back {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 8px 18px;
+  background: #1c211b;
+  color: #c9d6b8;
+  border: 1px solid #4a4f42;
+  border-bottom-width: 3px;
+  border-bottom-color: #8a2a22;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+#btn-prof-back:hover { background: #211615; color: #e8a09a; }
+
+#prof-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(188px, 1fr));
+  gap: 10px;
+  margin: 14px 0 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #33362c #0d100c;
+  padding: 2px;
+}
+#prof-list::-webkit-scrollbar { width: 10px; }
+#prof-list::-webkit-scrollbar-thumb { background: #262b22; border: 2px solid #0d100c; }
+
+.prof-card {
+  border: 1px solid #33362c;
+  border-left: 3px solid #8a8f7a;
+  background: #131611;
+  padding: 11px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s, transform 0.1s;
+}
+.prof-card:hover { border-color: #6a705a; background: #161a15; transform: translateY(-1px); }
+.prof-card.sel {
+  border-color: #9a7ab8;
+  box-shadow: 0 0 0 1px #9a7ab8, 0 0 22px rgba(154, 122, 184, 0.22);
+  background: #17131c;
+}
+
+.pc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pc-icon {
+  width: 16px;
+  height: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 -5px 0 rgba(0, 0, 0, 0.18);
+  flex: none;
+}
+.pc-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+.prof-card.sel .pc-name { color: #d6c2e8; }
+
+.pc-tag {
+  font-size: 10px;
+  font-style: italic;
+  letter-spacing: 0.8px;
+  color: #6d6f64;
+}
+.pc-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #8a8f7a;
+  flex: 1;
+}
+.pc-perks { display: flex; flex-wrap: wrap; gap: 5px; }
+
+#prof-hint {
+  font-size: 11.5px;
+  letter-spacing: 0.6px;
+  color: #9fc37a;
+  text-align: center;
+  min-height: 16px;
+  margin: 2px 0 10px;
+}
+
+.prof-actions { display: flex; justify-content: center; }
+#btn-prof-start {
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 5px;
+  padding: 13px 46px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-bottom: 5px solid #6d180c;
+  cursor: pointer;
+  transition: transform 0.1s, background 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+#btn-prof-start:hover:not(:disabled) {
+  background: #e0452f;
+  box-shadow: 0 0 34px rgba(200, 52, 31, 0.5);
+  transform: translateY(-2px);
+}
+#btn-prof-start:active:not(:disabled) { transform: translateY(1px); border-bottom-width: 2px; }
+#btn-prof-start:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  background: #3a3f35;
+  border-bottom-color: #262b22;
+  color: #9a9f8a;
+}
+
+/* v0.24: línea de profesión en el obituario y la pausa */
+.ds-prof {
+  margin: 2px 0 16px;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  color: #b99ad6;
+}
+.pause-prof {
+  margin: 2px 0 6px;
+  font-size: 12.5px;
+  letter-spacing: 1.5px;
+  color: #b99ad6;
+}
+
 /* ================= v0.22: Enciclopedia ================= */
 
 #encyclopedia {

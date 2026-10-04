@@ -5,7 +5,7 @@
  * Llamar openUI(contenedor|null).
  */
 
-import { EQUIP_SLOTS, EQUIP_LABELS, ITEMS } from '../config.js';
+import { EQUIP_SLOTS, EQUIP_LABELS, ITEMS, PROF_BY_ID } from '../config.js';
 import { itemLabel, countItem } from '../systems/inventory.js';
 import { hotbarAssign, hotbarClear, hotbarSlotFor } from '../systems/hotbar.js';
 import {
@@ -142,6 +142,13 @@ export class InventoryUI {
     document.getElementById('st-armor').textContent = Math.round(p.damageReduction() * 100) + '%';
     document.getElementById('st-infect').textContent = Math.round(p.infectProtection() * 100) + '%';
     document.getElementById('st-noise').textContent = Math.round(p.noiseMultiplier() * 100) + '%';
+    // v0.24: la profesión de la partida (con su bono como tooltip)
+    const profEl = document.getElementById('st-prof');
+    if (profEl) {
+      const d = p.prof && PROF_BY_ID[p.prof];
+      profEl.textContent = d ? d.name : '—';
+      profEl.title = d ? d.perks.join(' · ') : 'Sin profesión (partida clásica)';
+    }
 
     // mochila
     this.gridEl.innerHTML = '';

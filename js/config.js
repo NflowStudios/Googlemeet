@@ -194,6 +194,59 @@ export const FISTS = {
   cd: 0.45, noise: 90, kb: 14, color: '#c9a27a', desc: 'Tus propios puños. Mejor que nada… apenas.',
 };
 
+// ---------- Profesiones (v0.24) ----------
+// Se eligen al CREAR la partida (una sola vez, NO se pueden cambiar) y dan
+// una BONIFICACIÓN PASIVA permanente para toda esa partida. Los valores
+// viven aquí para que la enciclopedia y la pantalla de selección se generen
+// solas (igual que el resto de la guía). El desempleado es la partida
+// "pura": ningún bono, para quien quiera el reto sin ayudas.
+//  · policia:    gunDmgMul   → +5% de daño en TODAS las armas de fuego
+//  · medico:     healMul     → +5% de curación en objetos curativos
+//  · ladron:     stepNoiseMul→ pasos a la mitad de ruido (radios de paso)
+//  · carpintero: repairMul   → reparar construcciones cuesta la mitad
+//  · desempleado: sin efectos — la partida sin ayudas
+export const PROFESSIONS = [
+  {
+    id: 'policia', name: 'Policía', color: '#6a9ac8',
+    tagline: 'Orden hasta el final',
+    desc: 'Ex agente del orden público. La ciudad cayó, el cuerpo se disolvió, pero las horas del campo de tiro quedaron en las manos: cada disparo suyo pica un poco más. En un mundo donde las balas escasean y cada zombi que cae a plomo son menos que te rodean, ese margen extra decide quién entierra a quién.',
+    perks: ['+5% de daño con armas de fuego'],
+    fx: { gunDmgMul: 1.05 },
+  },
+  {
+    id: 'medico', name: 'Médico', color: '#d8d5cc',
+    tagline: 'Juró salvar vidas',
+    desc: 'Vendas, dosis y puntos de sutura: todo lo que cura, cura un poco mejor en sus manos. Lo que en otras manos es un botiquín de campaña, en las suyas rinde más — y con los exclusivos del hospital (suero, adrenalina, antibióticos potentes) el kit médico completo estira la vida un poco más lejos.',
+    perks: ['+5% de curación con objetos curativos'],
+    fx: { healMul: 1.05 },
+  },
+  {
+    id: 'ladron', name: 'Ladrón', color: '#9a7ab8',
+    tagline: 'Nadie lo oyó llegar',
+    desc: 'Vivía de lo ajeno y de no ser oído: pisadas de gato, peso repartido, suelo leído. Los muertos que cazan por el oído apenas notan su paso — camina donde otros despiertan a la manzana entera. Ideal para saquear de noche, atravesar barrios infestados y desaparecer antes de que alguien gire la cabeza.',
+    perks: ['Pasos un 50% más silenciosos'],
+    fx: { stepNoiseMul: 0.5 },
+  },
+  {
+    id: 'carpintero', name: 'Carpintero', color: '#a87848',
+    tagline: 'La madera obedece',
+    desc: 'Mano de obra, clavos y madera: levanta y REPARA. Su oficio abarata el mantenimiento del refugio — las barricadas destrozadas por un asedio se reponen con la mitad de tablas y clavos, y los refugios que se mantienen en pie son los que mantienen vivo a su dueño. Donde otros ven escombros, él ve material.',
+    perks: ['Reparar estructuras cuesta la mitad de materiales'],
+    fx: { repairMul: 0.5 },
+  },
+  {
+    id: 'desempleado', name: 'Desempleado', color: '#6d6f64',
+    tagline: 'Sin oficio ni ventaja',
+    desc: 'Sin título, sin oficio, sin ventajas: no prometía nada y ahí sigue. La supervivencia en su forma pura, para quien quiera contarse la historia sin ninguna ayuda — nadie le regaló nada el día que amaneció el mundo muerto, y eso también es un motivo de orgullo.',
+    perks: ['Ninguno — la partida pura, sin ayudas'],
+    fx: {},
+  },
+];
+
+/** Índice id → definición de profesión. */
+export const PROF_BY_ID = {};
+for (const p of PROFESSIONS) PROF_BY_ID[p.id] = p;
+
 // ---------- Supervivencia ----------
 export const SURV = {
   hungerRate: 0.16,        // por segundo

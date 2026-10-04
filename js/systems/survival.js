@@ -160,15 +160,22 @@ export class Survival {
     }
 
     if (def.cat === 'medico') {
+      // v0.24: MÉDICO — bono pasivo de curación sobre OBJETOS CURATIVOS
+      // (venda, botiquín…): la parte que cura rinde un 5% más en sus manos.
+      const hm = (game && game.player && game.player.profMul)
+        ? game.player.profMul('healMul') : 1;
+      const n1 = (x) => String(Math.round(x * 10) / 10).replace('.', ',');   // coma española
       if (def.heal) {
-        this.health = clamp(this.health + def.heal, 0, 100);
+        const h = def.heal * hm;
+        this.health = clamp(this.health + h, 0, 100);
         game.audio.heal();
-        msgs.push('+' + def.heal + ' vida');
+        msgs.push('+' + n1(h) + ' vida');
       }
       if (def.healOverTime) {
-        this.healEffects.push({ amount: def.healOverTime, dur: def.healDur, remaining: def.healDur });
+        const amt = def.healOverTime * hm;
+        this.healEffects.push({ amount: amt, dur: def.healDur, remaining: def.healDur });
         game.audio.heal();
-        msgs.push('+' + def.healOverTime + ' vida en ' + def.healDur + 's');
+        msgs.push('+' + n1(amt) + ' vida en ' + def.healDur + 's');
       }
       // v0.18 — SUERO MÉDICO: restaura TODA la sed
       if (def.thirstFull) {

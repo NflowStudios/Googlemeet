@@ -89,6 +89,7 @@
         <div class="eq-slot" data-eq="pantalones"><label>PANTALONES</label><div class="eq-item">— vacío —</div></div>
         <div class="eq-slot" data-eq="arma"><label>ARMA</label><div class="eq-item">— vacío —</div></div>
         <div id="inv-stats">
+          <div>Profesión: <b id="st-prof">—</b></div>
           <div>Reducción de daño: <b id="st-armor">0%</b></div>
           <div>Prot. infección: <b id="st-infect">0%</b></div>
           <div>Ruido de pasos: <b id="st-noise">100%</b></div>
@@ -137,7 +138,7 @@
 <div id="menu">
   <div class="menu-inner">
     <h1>ZONA<em>CERO</em></h1>
-    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.23</span></p>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.24</span></p>
     <div class="menu-controls">
       <div><kbd>W A S D</kbd><span>Moverse</span></div>
       <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
@@ -166,7 +167,29 @@
     <div class="menu-buttons">
       <button id="btn-encyc" class="btn-ency">ENCICLOPEDIA</button>
     </div>
-    <p class="menu-tip">Consejo: TRES PARTIDAS A LA VEZ — cada ranura es un mundo aparte (ENTER continúa la más reciente). Consulta la ENCICLOPEDIA del menú o de la pausa: mecánicas, combate, crafteos y objetos, con los datos reales del juego. LLEGÓ EL CRAFTEO — abre el inventario (TAB) y entra en la pestaña CRAFTEO: con retazos de tela y alcohol haces VENDAS; con botella, queroseno y tela, un CÓCTEL MOLOTOV; y junto a una MESA DE TRABAJO mejorarás el bate con clavos o forjarás una lanza. En CONSTRUCCIONES tienes barricadas para sellar puertas, tablones para tapiar ventanas, trampas de pinchos, cajas para guardar equipo y la CAMA: montada dentro de una casa, convierte tu hogar en REFUGIO y puedes DORMIR en ella para pasar la noche. Las barricadas dañadas se REPARAN con E (cuanto más rotas, más tablas y clavos piden). NUEVO: el FUEGO es una ALARMA — el cristal del molotov al estallar hace ruido y las LLAMAS SE VEN desde lejos: atraen a los zombis de varias manzanas. Y cuidado con el GRITADOR (pajizo, boca abierta): raro, solo aparece donde hay MUCHOS zombis juntos… y al verte CHILLA y convoca a toda la zona: mátalo durante el aviso. En el rincón más lejano del mapa espera la BASE MILITAR — el sótano-arsenal guarda el mejor botín (subfusil Cuervo, equipo militar). El HOSPITAL SAN RAFAEL, de dos pisos y en pleno APAGÓN, guarda SUS EXCLUSIVOS — suero, adrenalina, antibióticos potentes y morfina. Cuando anochezca, hazte con una linterna y pilas (tecla L). La LLUVIA enmascara tu ruido y la NEBLINA reduce la visibilidad a la mitad, también la de ellos. Cuidado con los CORREDORES (esprintando les ganas) y los BRUTOS (masa oscura: la comisaría y la tienda guardan los suyos).</p>
+    <p class="menu-tip">Consejo: TRES PARTIDAS A LA VEZ — cada ranura es un mundo aparte (ENTER continúa la más reciente). NUEVO: PROFESIONES — al crear una partida eliges QUIÉN ERAS (policía, médico, ladrón, carpintero o desempleado) y su bonificación pasiva te acompaña TODA la partida: el policía pega un 5% más con las armas de fuego, el médico cura un 5% más, el ladrón pisa a la mitad de ruido y el carpintero repara con la mitad de materiales… y el desempleado no te da nada: la partida pura. Consulta la ENCICLOPEDIA del menú o de la pausa: profesiones, mecánicas, combate, crafteos y objetos, con los datos reales del juego. LLEGÓ EL CRAFTEO — abre el inventario (TAB) y entra en la pestaña CRAFTEO: con retazos de tela y alcohol haces VENDAS; con botella, queroseno y tela, un CÓCTEL MOLOTOV; y junto a una MESA DE TRABAJO mejorarás el bate con clavos o forjarás una lanza. En CONSTRUCCIONES tienes barricadas para sellar puertas, tablones para tapiar ventanas, trampas de pinchos, cajas para guardar equipo y la CAMA: montada dentro de una casa, convierte tu hogar en REFUGIO y puedes DORMIR en ella para pasar la noche. Las barricadas dañadas se REPARAN con E (cuanto más rotas, más tablas y clavos piden). El FUEGO es una ALARMA — el cristal del molotov al estallar hace ruido y las LLAMAS SE VEN desde lejos: atraen a los zombis de varias manzanas. Y cuidado con el GRITADOR (pajizo, boca abierta): raro, solo aparece donde hay MUCHOS zombis juntos… y al verte CHILLA y convoca a toda la zona: mátalo durante el aviso. En el rincón más lejano del mapa espera la BASE MILITAR — el sótano-arsenal guarda el mejor botín (subfusil Cuervo, equipo militar). El HOSPITAL SAN RAFAEL, de dos pisos y en pleno APAGÓN, guarda SUS EXCLUSIVOS — suero, adrenalina, antibióticos potentes y morfina. Cuando anochezca, hazte con una linterna y pilas (tecla L). La LLUVIA enmascara tu ruido y la NEBLINA reduce la visibilidad a la mitad, también la de ellos. Cuidado con los CORREDORES (esprintando les ganas) y los BRUTOS (masa oscura: la comisaría y la tienda guardan los suyos).</p>
+  </div>
+</div>
+
+<!-- ==================== PROFESIONES (v0.24) ==================== -->
+<!-- Pantalla de selección al CREAR partida nueva (nueva ranura, reintento
+     tras la muerte, ENTER sin partidas): cinco profesiones con una
+     bonificación PASIVA permanente — se elige UNA vez y no se puede
+     cambiar. Las tarjetas las genera js/ui/menus.js desde config.js. -->
+<div id="profscreen" class="hidden">
+  <div class="prof-panel">
+    <header>
+      <div class="prof-head-txt">
+        <h2>¿QUIÉN ERAS?</h2>
+        <span id="prof-sub">RANURA 1 · quién eras antes del apocalipsis — se elige UNA vez y NO se puede cambiar</span>
+      </div>
+      <button id="btn-prof-back">VOLVER (ESC)</button>
+    </header>
+    <div id="prof-list"></div>
+    <p id="prof-hint">Elige quién eras para ver su bonificación — ENTER (o COMENZAR) arranca la partida.</p>
+    <div class="prof-actions">
+      <button id="btn-prof-start" disabled>COMENZAR LA PARTIDA</button>
+    </div>
   </div>
 </div>
 
@@ -178,6 +201,7 @@
   <div class="menu-inner">
     <h1 class="death-title">HAS MUERTO</h1>
     <p id="death-cause"></p>
+    <p id="ds-prof" class="ds-prof hidden"></p>
     <div class="death-stats">
       <div><span>DÍAS SOBREVIVIDOS</span><b id="ds-day">1</b></div>
       <div><span>SOBREVIVIDO</span><b id="ds-time">00:00</b></div>
@@ -199,6 +223,7 @@
   <div class="menu-inner">
     <h1 class="pause-title">PAUSA</h1>
     <p>El mundo espera… por ahora.</p>
+    <p id="pause-prof" class="pause-prof">PROFESIÓN: —</p>
     <div class="menu-buttons">
       <button id="btn-resume">CONTINUAR (P)</button>
       <button id="btn-encyc-pause" class="btn-ency">ENCICLOPEDIA</button>
@@ -224,6 +249,7 @@
     </header>
     <nav id="ency-tabs">
       <button data-etab="mec" class="on">MECÁNICAS PRINCIPALES</button>
+      <button data-etab="prof">PROFESIONES</button>
       <button data-etab="comb">COMBATE</button>
       <button data-etab="cra">CRAFTEOS</button>
       <button data-etab="obj">OBJETOS</button>

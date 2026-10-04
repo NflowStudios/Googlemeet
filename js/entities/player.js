@@ -5,7 +5,7 @@
  * efectos: reducción de daño, protección contra mordidas, ruido y espacio.
  */
 
-import { PLAYER_CFG, FISTS, ITEMS, EQUIP_SLOTS, BASE_SLOTS, FLOORS } from '../config.js';
+import { PLAYER_CFG, FISTS, ITEMS, EQUIP_SLOTS, BASE_SLOTS, FLOORS, PROF_BY_ID } from '../config.js';
 import { Inventory, makeItem } from '../systems/inventory.js';
 import { clamp, angDiff } from '../utils.js';
 
@@ -13,6 +13,7 @@ export class Player {
   constructor(x, y) {
     this.x = x; this.y = y;
     this.r = PLAYER_CFG.radius;
+    this.prof = null;            // v0.24: profesión elegida al crear la partida (id o null)
     this.vx = 0; this.vy = 0;
     this.angle = 0;              // apuntado del ratón
     this.sneak = false;
@@ -60,6 +61,18 @@ export class Player {
 
   // ---------- Derivados del equipo ----------
 
+  /**
+   * v0.24: multiplicador PASIVO de la PROFESIÓN para un campo de fx
+   * ('gunDmgMul', 'healMul', 'stepNoiseMul', 'repairMul'). Sin profesión
+   * (o profesión sin ese efecto, como el desempleado) → 1: la partida
+   * clásica, byte a byte igual que siempre.
+   */
+  profMul(field) {
+    const d = PROF_BY_ID[this.prof];
+    return d && d.fx && d.fx[field] !== undefined ? d.fx[field] : 1;
+  }
+
+
   weaponDef() {
     return this.equipment.arma ? this.equipment.arma.def : FISTS;
   }
@@ -84,9 +97,9 @@ export class Player {
     return Math.min(0.85, p);
   }
 
-  /** Multiplicador de ruido de pasos. */
+  /** Multiplicador de ruido de pasos (equipo + profesión del LADRÓN). */
   noiseMultiplier() {
-    let m = 1;
+    let m = this.profMul('stepNoiseMul');   // v0.24: el ladrón pisa a la mitad
     for (const s of EQUIP_SLOTS) {
       const it = this.equipment[s];
       if (it && it.def.noiseMod) m *= it.def.noiseMod;

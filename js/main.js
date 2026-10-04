@@ -181,8 +181,12 @@ class Game {
    * un guardado se limpia: una partida nueva SIEMPRE parte de cero (el
    * menú solo ofrece «nueva» en ranuras vacías; esto protege llamadas
    * directas como el REINTENTAR tras la muerte, que ya borró la suya).
+   * v0.24: `prof` (opcional) es el id de la PROFESIÓN elegida en la
+   * pantalla de selección — se fija UNA vez al crear la partida y ya no
+   * se puede cambiar. Sin prof (llamadas directas, guardados viejos)
+   * la partida va SIN bonos, como toda la historia del juego.
    */
-  startRun(slot) {
+  startRun(slot, prof) {
     if (slot >= 1 && slot <= 3) {
       this.saveSlot = slot;
       clearSave(slot);   // punto de partida limpio (reemplaza al guardado)
@@ -193,6 +197,7 @@ class Game {
     this.rng = new Rng(seed);
     this.map = new GameMap(this.rng);
     this.player = new Player(this.map.spawn.x, this.map.spawn.y);
+    this.player.prof = prof || null;    // v0.24: la profesión viaja con el jugador
     this.survival = new Survival();
     this.noise = new NoiseSystem();
     this.vision = new Vision();
@@ -253,6 +258,9 @@ class Game {
     this.toasts.clear();
     this.state = STATE.PLAYING;
     this.toasts.push('Sobrevive. Hazte con un arma y busca suministros.', 'info');
+    // v0.24: aviso de la profesión elegida (su bono pasivo, para que el
+    // jugador sepa qué le acompaña desde el minuto uno)
+    if (this.player.prof) this.menus.toastProfession(this.player.prof);
   }
 
   // ================== Continuar partida guardada (v0.13) ==================
@@ -260,20 +268,22 @@ class Game {
   /**
    * v0.22: carga la RANURA indicada (1-3). Si no hay guardado (o está roto),
    * arranca partida nueva EN ESA MISMA RANURA para no dejar al jugador
-   * colgado en el menú.
+   * colgado en el menú. v0.24: al ser partida NUEVA, pasa por la selección
+   * de PROFESIÓN (quien era antes de que el mundo cayera).
    */
   continueRun(slot) {
     if (slot >= 1 && slot <= 3) this.saveSlot = slot;
     const data = loadSaveData(this.saveSlot);
     if (!data) {
-      this.startRun(this.saveSlot);
+      this.menus.showProfSelect(this.saveSlot);
       return;
     }
     this.audio.init();
     const info = restoreGame(this, data);
     if (!info) {
       // guardado corrupto: fuera del estado a medias → partida nueva
-      this.startRun(this.saveSlot);
+      // (v0.24: con elección de profesión, como toda partida nueva)
+      this.menus.showProfSelect(this.saveSlot);
       return;
     }
 
@@ -434,16 +444,26 @@ class Game {
       if (name === 'escape' || name === 'pause' || name === 'inventory') this.ency.close();
       return;
     }
+    // v0.24: SELECCIÓN DE PROFESIÓN abierta (nueva partida a la espera) —
+    // ESC/VOLVER cancelan y devuelven al menú; ENTER confirma la elección.
+    // Igual que la enciclopedia: se maneja ANTES para que P/ESC no
+    // despauseen o reintenten por debajo.
+    if (this.menus && this.menus.profOpen) {
+      if (name === 'escape' || name === 'pause') this.menus.hideProfSelect();
+      else if (name === 'enter') this.menus.confirmProf();
+      return;
+    }
     if (this.state === STATE.MENU || this.state === STATE.DEAD) {
       // v0.22: Enter — en el menú continúa la partida MÁS RECIENTE (o arranca
       // en la ranura 1 si no hay ninguna); en la pantalla de muerte reintenta
       // en la MISMA ranura (su guardado ya se borró al morir)
+      // v0.24: ambos arranques de partida NUEVA pasan por la PROFESIÓN
       if (name === 'enter') {
-        if (this.state === STATE.DEAD) this.startRun(this.saveSlot);
+        if (this.state === STATE.DEAD) this.menus.showProfSelect(this.saveSlot);
         else {
           const s = latestSlot();
           if (s) this.continueRun(s);
-          else this.startRun(1);
+          else this.menus.showProfSelect(1);
         }
       }
       return;
@@ -586,7 +606,8 @@ class Game {
         } else if (needsRepair(c)) {
           // v0.23: barricada/tabiños/valla/trampa dañadas → REPARAR con su
           // coste real en el propio prompt (más dañada, más materiales)
-          best = { kind: 'repair', obj: c, d, label: 'Reparar ' + CON_NAMES[c.type] + ' (' + repairCostLabel(repairCost(c)) + ')' };
+          // v0.24: el prompt refleja el coste YA descontado del CARPINTERO
+          best = { kind: 'repair', obj: c, d, label: 'Reparar ' + CON_NAMES[c.type] + ' (' + repairCostLabel(repairCost(c, this.player)) + ')' };
         }
       }
     }
@@ -742,6 +763,7 @@ class Game {
       searched: this.searchedCount,
       day: this.daynight.day,
       stats: this.stats,
+      prof: this.player.prof || null,   // v0.24: quién eras en esta partida
     }, hadSave, rec);
   }
 

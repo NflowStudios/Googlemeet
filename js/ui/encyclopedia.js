@@ -23,6 +23,7 @@
 import {
   ITEMS, RANGED, ZOMBIE_CFG, SURV, PLAYER_CFG, FISTS, WEATHER, FLOORS,
   CRAFTEO, CONTAINER_DEFS, LOOT, ROTTEN_CHANCE, DAYNIGHT, FLASH,
+  PROFESSIONS, PROF_BY_ID,
 } from '../config.js';
 import { RECIPES_OBJ, RECIPES_CON } from '../systems/crafting.js';
 
@@ -232,7 +233,41 @@ export class Encyclopedia {
       'La pestaña CRAFTEO del inventario (TAB) es tu taller: de los materiales de arranque ya sales con vendas o una barricada. Y cuando el mapa se te quede pequeño, recuerda que la base militar está en el extremo opuesto a tu aparición: el viaje de ida es la mitad del reto.');
   }
 
-  // ================== 2 · COMBATE ==================
+  // ================== 2 · PROFESIONES (v0.24) ==================
+
+  _tab_prof() {
+    const P = PROFESSIONS;
+
+    // ficha de cada profesión: chips del bono + "se elige al crear" + desc
+    const cards = P.map((pr) => {
+      const chips = pr.perks.map((p) => chip(p, pr.id === 'desempleado' ? '' : 'ok')).join('') +
+        chip('pasiva · TODA la partida') +
+        (pr.id === 'desempleado' ? chip('el reto puro') : '');
+      return rawCard(pr.name, pr.color, chips,
+        pr.desc + ' Se elige al CREAR la partida y NO se puede cambiar.', null, null);
+    }).join('');
+
+    // qué toca exactamente cada bono, con los números reales del juego
+    const ladronSneak = Math.round(PLAYER_CFG.noiseSneak * P[2].fx.stepNoiseMul);
+    const ladronWalk = Math.round(PLAYER_CFG.noiseWalk * P[2].fx.stepNoiseMul);
+    const ladronRun = Math.round(PLAYER_CFG.noiseRun * P[2].fx.stepNoiseMul);
+    const pistola = RANGED.pistola.dmg;
+    const pistolaPoli = Math.round(pistola * P[0].fx.gunDmgMul * 10) / 10;
+
+    return '' +
+      guide('Quién eras antes del apocalipsis',
+        'Al ' + b('CREAR una partida') + ' (ranura vacía, reintento tras la muerte o ENTER sin partidas) el juego te pregunta ' + b('QUIÉN ERAS') + ': una de las cinco profesiones. La elección se hace ' + b('UNA sola vez y NO se puede cambiar') + ' — es tu pasado, y te acompaña como una ' + b('bonificación PASIVA') + ' durante TODA la partida: no hay que activar nada, siempre está funcionando. La profesión viaja en el guardado (cada ranura recuerda la suya: se ve en el resumen del menú, en la pausa y en el obituario), y las partidas creadas antes de la v0.24 siguen SIN profesión: sin bonos, la partida clásica.',
+        'Ninguna profesión gana la partida por ti: son ' + b('matices de estilo a largo plazo') + '. El policía mata un poco mejor, el médico estira un poco más el botiquín, el ladrón atraviesa barrios sin despertarlos, el carpintero mantiene el refugio a mitad de precio… y el desempleado presume de no necesitar nada de eso. Elige la que mejor encaje con ' + b('cómo quieres jugar ESA partida') + ': agresivo, médico de campaña, fantasma silencioso o ingeniero de refugios.') +
+        guideCards('Las cinco profesiones', null, cards) +
+      guide('Qué toca exactamente cada bono',
+        b('POLICÍA — +5% de daño con armas de fuego') + ': TODAS las armas de fuego (pistola, revólver, escopetas por cada posta, rifles, subfusil), siempre y en cada disparo. La Víbora VP-9 pasa de ' + pistola + ' a ' + n(pistolaPoli) + ' de daño por bala; en un rifle automático o una ráfaga de Cuervo, el 5% se nota en cada zombi que ya no llega a ti. El melee y los cócteles NO se benefician: el bono es de plomo.',
+        b('MÉDICO — +5% de curación con objetos curativos') + ': todo lo que cura vida. El botiquín pasa de +50 a ' + n(52.5) + ' y la venda de +25 en 5 s a ' + n(26.3) + ' — y lo mismo sobre los exclusivos del hospital. No afecta a comida, bebida ni al sueño de la cama: solo a la MEDICINA.',
+        b('LADRÓN — pasos un 50% más silenciosos') + ': el radio de ruido de TUS pasos se parte en dos — agachado ' + ladronSneak + ' px, caminando ' + ladronWalk + ' px, corriendo ' + ladronRun + ' px. Se apila con la ropa silenciosa y con la lluvia (que enmascara el ruido de todos). Los zombis que cazan por el oído te oyen desde la mitad de distancia: el sigilo del ladrón es caminar como si lloviera siempre. Solo los PASOS: disparos, puertas y martillazos siguen oyéndose enteros.',
+        b('CARPINTERO — reparar cuesta la mitad de materiales') + ': el coste de REPARAR cualquier construcción dañada (barricada, tablones, valla, trampa, mesa) se divide entre dos, con mínimo de 1 por material. Una barricada al 50% que a cualquiera le cuesta 2 tablas + 2 clavos, al carpintero le cuesta ' + b('1 y 1') + '; aguantar asedios sale a mitad de precio. Las CONSTRUCCIONES nuevas se pagan enteras: el bono es de mantener, no de montar.',
+        b('DESEMPLEADO — nada') + ': sin bonos, sin ventajas, sin arrepentimiento. La partida pura, exactamente como se jugó toda la historia del juego. Para quien quiera contarse la historia sin ayudas — o comparar cuánto le dan las demás profesiones.');
+  }
+
+  // ================== 3 · COMBATE ==================
 
   _tab_comb() {
     const Z = ZOMBIE_CFG;
@@ -305,19 +340,19 @@ export class Encyclopedia {
         'Silencioso, barato y honesto: cada arma melee tiene daño, alcance, coste de energía, cadencia y EMPUJE (retroceso del zombi al golpearlo). El ritmo ganador es ' + b('golpe → retrocede → golpe') + ': dejas que el zombi entre en tu alcance, pegas y el empuje lo saca antes de que su cooldown de ' + n(Z.attackCd) + ' s le deje responder. Vigila la ENERGÍA: sin aliento no hay swings, y un cansado ante un corredor es comida. El ruido del melee (' + ITEMS.tubo.noise + '–' + ITEMS.hacha.noise + ' px) es casi susurro junto al de un disparo.') +
         guideCards('Armas cuerpo a cuerpo', null, melee) +
       guide('Armas de fuego',
-        'Siete armas, siete caracteres — y un precio común: el ' + b('RUIDO') + '. Un disparo se oye a 620–900 px: medio mapa acude. La recarga es un momento vulnerable (la pistola con funda táctica la acelera hasta la mitad), las automáticas mantienen el gatillo, y las escopetas pegan por postas (' + RANGED.escopeta.pellets + ' proyectiles por cartucho: a bocajarro, guillotina; a distancia, ruido). Un arma hallada ' + b('siempre trae algo dentro') + ': 50% llena, 50% a medias.') +
+        'Siete armas, siete caracteres — y un precio común: el ' + b('RUIDO') + '. Un disparo se oye a 620–900 px: medio mapa acude. La recarga es un momento vulnerable (la pistola con funda táctica la acelera hasta la mitad), las automáticas mantienen el gatillo, y las escopetas pegan por postas (' + RANGED.escopeta.pellets + ' proyectiles por cartucho: a bocajarro, guillotina; a distancia, ruido). Un arma hallada ' + b('siempre trae algo dentro') + ': 50% llena, 50% a medias. Y si tu profesión es POLICÍA, cada bala pega un 5% más (pestaña PROFESIONES).') +
         guideCards('Las siete armas', null, guns) +
       guide('Munición y cargadores',
         'La munición es apilable y se recolecta por lotes. Al recoger balas del calibre de un cargador que lleves, ' + b('pasan solas al cargador') + ' — el sobrante queda en la mochila. Las escopetas, el revólver y el cerrojo no usan cargadores: cargan su tubo/tambor bala a bala (recarga lenta: piénsalo antes del último cartucho).', ammo + mags) +
       guide('El fuego: molotov y antorcha (y su ALARMA)',
         'El ' + b('cóctel molotov') + ' se LANZA equipándolo y atacando: estalla a los 360 px dejando una zona de fuego de ' + CRAFTEO.fireR + ' px durante ' + CRAFTEO.fireDur + ' s que hace ' + CRAFTEO.fireDpsZ + ' de daño por segundo a los zombis dentro… y ' + CRAFTEO.fireDpsP + '/s a ti si te quedas dentro. La ' + b('antorcha') + ' es su prima pobre: golpe débil, pero PRENDE a los zombis (' + CRAFTEO.burnDur + ' s ardiendo a ' + CRAFTEO.burnDps + ' dps). El fuego no cruza plantas: un molotov estallando en la baja no te quema en el sótano. ' + b('PERO (v0.23) el fuego es una ALARMA') + ': al estallar, el CRISTAL ROTO hace un ruido de ' + CRAFTEO.fireBreakNoise + ' px, y mientras arde las LLAMAS SE VEN desde lejos — cada ' + n(CRAFTEO.fireAlarmEvery) + ' s atraen a los zombis en ' + CRAFTEO.fireAlarmR + ' px a la redonda (verás el anillo naranja). Incendiar una zona la despeja… y luego la LLENA: úsalo lejos de tu refugio o cuando ya te hayas ido.') +
       guide('Curarse en plena batalla',
-        'La ' + b('venda') + ' (+25 en 5 s) es el curita de cabecera; el ' + b('botiquín') + ' (+50 al instante) es el as bajo la barricada. Los dos exclusivos tácticos del hospital cambian peleas imposibles: la ' + b('adrenalina') + ' da energía infinita 25 s (corre sin agotarte, atraviesa la horda) y la ' + b('morfina') + ' reduce a la mitad todo el daño recibido durante 45 s. Lleva siempre una vía de escape curada: la barra rápida (ranuras 4-5) existe para eso.') +
+        'La ' + b('venda') + ' (+25 en 5 s) es el curita de cabecera; el ' + b('botiquín') + ' (+50 al instante) es el as bajo la barricada. Los dos exclusivos tácticos del hospital cambian peleas imposibles: la ' + b('adrenalina') + ' da energía infinita 25 s (corre sin agotarte, atraviesa la horda) y la ' + b('morfina') + ' reduce a la mitad todo el daño recibido durante 45 s. Lleva siempre una vía de escape curada: la barra rápida (ranuras 4-5) existe para eso. La profesión MÉDICO cura un 5% más con todos ellos.') +
       guide('Protección: armadura y máscaras',
         'La ropa no es cosmética: cada pieza resta daño (cabeza hasta ' + pct(ITEMS.casco_combate.armor) + ', torso hasta ' + pct(ITEMS.chaleco_balistico.armor) + ') y los accesorios de cara reducen la probabilidad de infección por mordida (la CM-4 militar llega al ' + pct(ITEMS.mascara_cm4.infectProt) + '). Los chalecos y pantalones de campaña además AMPLÍAN tu mochila (+2 a +5 espacios). Catálogo completo en la pestaña OBJETOS.');
   }
 
-  // ================== 3 · CRAFTEOS ==================
+  // ================== 4 · CRAFTEOS ==================
 
   _tab_cra() {
     const C = CRAFTEO;
@@ -355,12 +390,12 @@ export class Encyclopedia {
         'Al pulsar CONSTRUIR, un ' + b('fantasma transparente') + ' sigue al ratón: ' + b('verde') + ' = sitio válido, ' + b('rojo') + ' = colisión, demasiado lejos (' + C.range + ' px) o terreno inadecuado. ' + b('R') + ' rota la pieza (vallas y trampas), el ' + b('CLIC DERECHO la coloca') + ' gastando ahí los materiales, y el ' + b('CLIC IZQUIERDO o ESC cancela') + ' sin gastar nada. Las barricadas se imantan a puertas y los tablones a ventanas (' + C.snapR + ' px de imán). Todo se construye ' + b('solo en planta baja') + ', y las piezas aguantan daño de zombi antes de ceder — el fuego también las respeta.') +
       guideCards('Construcciones', null, conRecipes) +
       guide('Reparar lo dañado (v0.23)',
-        'Barricadas, tablones, vallas, trampas y mesas se estropean a golpes de zombi (y a los tuyos). Acércate a una pieza dañada y ' + b('E') + ' ofrece REPARARLA con su coste REAL en el propio prompt: ' + b('cuanto más dañada, más materiales') + ' — la parte proporcional de lo que falta, redondeada hacia arriba y con mínimo de 1 por material. Una barricada al 50% pide ' + b('2 tablas + 2 clavos') + ' (de sus 3+4); al 90%, casi la receta entera. La reparación devuelve la pieza a su vida MÁXIMA (la trampa además re-arma sus 10 pisadas)… pero martillar hace el mismo ruido que construir (' + 140 + ' px): piénsalo con la horda llamando a la puerta. La caja y la cama no se reparan con E: su función (abrir/dormir) manda.') +
+        'Barricadas, tablones, vallas, trampas y mesas se estropean a golpes de zombi (y a los tuyos). Acércate a una pieza dañada y ' + b('E') + ' ofrece REPARARLA con su coste REAL en el propio prompt: ' + b('cuanto más dañada, más materiales') + ' — la parte proporcional de lo que falta, redondeada hacia arriba y con mínimo de 1 por material. Una barricada al 50% pide ' + b('2 tablas + 2 clavos') + ' (de sus 3+4); al 90%, casi la receta entera. La reparación devuelve la pieza a su vida MÁXIMA (la trampa además re-arma sus 10 pisadas)… pero martillar hace el mismo ruido que construir (' + 140 + ' px): piénsalo con la horda llamando a la puerta. La caja y la cama no se reparan con E: su función (abrir/dormir) manda. Y si tu profesión es CARPINTERO, todo coste se parte en dos (la barricada al 50% te sale a 1 tabla + 1 clavo).') +
       guide('Materiales: la ferretería del apocalipsis',
         'Los materiales (cat MATERIAL) no tienen uso directo: son los ladrillos de todas las recetas. Salen de casilleros, estanterías de tienda y base, armarios y botiquines de pared — cada ficha dice dónde. Regla de oro del herrero urbano: ' + b('saquea la TIENDA') + ' (estanterías: clavos, tablas, tela, queroseno, cinta…) antes de comprometerte con la base militar; y recuerda que el punto de partida ya esparce tela, alcohol, tablas, clavos y chatarra para tus primeras vendas o barricada.', mats);
   }
 
-  // ================== 4 · OBJETOS ==================
+  // ================== 5 · OBJETOS ==================
 
   _tab_obj() {
     const byCat = (cat) => Object.keys(ITEMS).filter((id) => ITEMS[id].cat === cat);
