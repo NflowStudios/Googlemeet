@@ -10,6 +10,9 @@ export class Input {
     this.mouse = { x: 0, y: 0, down: false };
     this.onAction = null; // callback(name) despachado desde keydown
     this.enabled = true;  // false cuando hay UI abierta (inventario, menús)
+    // v0.27: en MULTIJUGADOR, TAB (mantenido) muestra la lista de la sala
+    // en lugar de abrir el inventario (que sigue en I)
+    this.tabHold = false;
   }
 
   /**
@@ -29,7 +32,7 @@ export class Input {
       const code = e.code || (e.key && e.key.length === 1 ? 'Key' + e.key.toUpperCase() : e.key);
       this.keys.add(code);
       const map = {
-        'KeyE': 'interact', 'Tab': 'inventory', 'KeyI': 'inventory',
+        'KeyE': 'interact', 'Tab': this.tabHold ? 'tablist' : 'inventory', 'KeyI': 'inventory',
         'KeyC': 'sneak', 'KeyP': 'pause', 'KeyM': 'mute',
         'KeyF': 'attack', 'KeyR': 'reload', 'Escape': 'escape', 'Enter': 'enter',
         'KeyL': 'flash',   // v0.17: encender / apagar la linterna (faros en el coche)
@@ -44,6 +47,10 @@ export class Input {
     window.addEventListener('keyup', (e) => {
       const code = e.code || (e.key && e.key.length === 1 ? 'Key' + e.key.toUpperCase() : e.key);
       this.keys.delete(code);
+      // v0.27: soltar TAB cierra la lista de la sala
+      if (this.tabHold && (e.code === 'Tab' || e.key === 'Tab')) {
+        if (this.onAction) this.onAction('tablistUp');
+      }
     });
     window.addEventListener('blur', () => this.keys.clear());
 

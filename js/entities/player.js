@@ -15,6 +15,13 @@ export class Player {
     this.r = PLAYER_CFG.radius;
     this.prof = null;            // v0.24: profesión elegida al crear la partida (id o null)
     this.inCar = null;           // v0.26: coche que estás CONDUCIENDO (objeto de map.cars)
+    // v0.27: MULTIJUGADOR — identidad del jugador en la sala (propio o
+    // marioneta): color de camiseta asignado por el anfitrión, nombre
+    // sobre la cabeza y bandera de caído (espectador)
+    this.mpColor = null;
+    this.mpName = null;
+    this.mpId = null;
+    this.mpDead = false;
     this.vx = 0; this.vy = 0;
     this.angle = 0;              // apuntado del ratón
     this.sneak = false;
@@ -304,7 +311,7 @@ export class Player {
       ctx.beginPath(); ctx.arc(s.x, s.y, R + 4, 0, Math.PI * 2); ctx.fill();
     }
 
-    const torso = this.equipment.torso ? this.equipment.torso.def.color : '#3d5a73';
+    const torso = this.mpColor || (this.equipment.torso ? this.equipment.torso.def.color : '#3d5a73');
     const pants = this.equipment.pantalones ? this.equipment.pantalones.def.color : '#3a4a6a';
     const headGear = this.equipment.cabeza ? this.equipment.cabeza.def.color : null;
     const acc1 = this.equipment.accesorios;

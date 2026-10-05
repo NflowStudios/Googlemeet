@@ -66,7 +66,44 @@ export function renderGame(ctx, game) {
 
   // jugador (v0.26: DENTRO del coche no se dibuja — va dentro de la
   // carrocería que pinta drawVehicles con el conductor asomando)
-  if (game.player && !game.player.inCar) game.player.draw(ctx, cam);
+  // v0.27: caído en multijugador tampoco (su cadáver ya está en el suelo)
+  if (game.player && !game.player.inCar && !game.player.mpDead) game.player.draw(ctx, cam);
+
+  // v0.27: COMPAÑEROS de sala — se dibujan como el jugador (marionetas
+  // interpoladas) con su camiseta de color, nombre y barra de vida
+  if (game.net) {
+    for (const r of game.net.remotes.values()) {
+      const p = r.p;
+      if (!p || p.mpDead) continue;   // su cadáver lo estampa el evento 'pdead'
+      if (!p.inCar) p.draw(ctx, cam);
+      const s = cam.worldToScreen(p.x, p.y);
+      if (s.x < -60 || s.y < -60 || s.x > cam.w + 60 || s.y > cam.h + 60) continue;
+      // nombre y vida sobre la cabeza
+      ctx.font = 'bold 11px Rajdhani, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      const nw = Math.max(46, ctx.measureText(r.name).width + 10);
+      ctx.fillRect(s.x - nw / 2, s.y - 30, nw, 13);
+      ctx.fillStyle = r.color;
+      ctx.fillText(r.name, s.x, s.y - 23.5);
+      // barra de vida (roja al hundirse)
+      const hp = Math.max(0, Math.min(100, r.hp));
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(s.x - 16, s.y - 17, 32, 4);
+      ctx.fillStyle = hp > 50 ? '#5fae5f' : hp > 25 ? '#d0a03a' : '#c94a3a';
+      ctx.fillRect(s.x - 16, s.y - 17, 32 * (hp / 100), 4);
+    }
+    // banner de ESPECTADOR mientras sigues a un compañero
+    if (game.player.mpDead) {
+      ctx.font = 'bold 16px Rajdhani, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(cam.w / 2 - 130, 10, 260, 26);
+      ctx.fillStyle = '#e8c35a';
+      ctx.fillText('HAS CAÍDO · ESPECTANDO — [E] cambiar', cam.w / 2, 23);
+    }
+  }
 
   // copas de árboles por encima
   game.map.drawOverhead(ctx, cam);

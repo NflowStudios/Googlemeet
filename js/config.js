@@ -367,6 +367,46 @@ export const VEHICULOS = {
   carCount: 34,        // coches abandonados por el mapa (v0.26: 20 → 34, mapa al triple)
 };
 
+// ---------- MULTIJUGADOR (v0.27) ----------
+// Co-op P2P de 2 a 4 SOBREVIVIENTES sobre PeerJS (señalización por el
+// servidor público de PeerJS; el juego viaja DIRECTO entre navegadores
+// por WebRTC — sin servidor de juego).
+//
+// ARQUITECTURA «ANFITRIÓN AUTORITATIVO + PREDICCIÓN LOCAL»:
+//  · El ANFITRIÓN (quien crea la sala) simula el mundo: IA de zombis,
+//    respawn nocturno, gritadores, clima, hora, ruido y resolución de
+//    botín de contenedores. Los demás reciben su palabra como ley.
+//  · Cada cliente mueve a SU superviviente EN LOCAL (colisiones con el
+//    mapa incluidas: el mundo es determinista por semilla y todos tienen
+//    la misma ciudad) → CERO RETARDO en tu propio movimiento y disparos.
+//    La posición viaja al anfitrión, que la re-transmite al resto.
+//  · Los demás jugadores y los zombis se ven INTERPOLADOS suavemente
+//    hacia la última instantánea (retardo visual ~100 ms, invisible
+//    contra muertos vivos que caminan).
+//  · El mundo se reconstruye SOLO con la SEMILLA (map.js no usa
+//    Math.random): el paquete de inicio solo lleva semilla, reloj, clima,
+//    horda inicial y jugadores — kilobytes, no megas.
+//
+// CANALES: cada pareja anfitrión↔cliente abre DOS conexiones: `ctl`
+// (FIABLE — eventos que no pueden perderse: arranque de partida, botín,
+// muertes, construcciones, coches) y `snap` (NO fiable, sin orden —
+// instantáneas de posición: si se pierde una, la siguiente manda; así no
+// se acumula retardo por reenvíos).
+export const NET = {
+  maxPlayers: 4,          // anfitrión + 3 invitados
+  codeLen: 5,             // caracteres del código de sala
+  codeChars: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789',   // sin I/L/O/0/1 (confusos)
+  peerPrefix: 'zc27-',    // id de PeerJS: «zc27-CODIGO» (versionado)
+  snapHz: 15,             // instantáneas por segundo (anfitrión → clientes)
+  stateHz: 15,            // estado del propio jugador (cliente → anfitrión)
+  lerpK: 14,              // suavidad de interpolación (1-e^(-k·dt))
+  zombieSyncR: 1300,      // solo se sincronizan zombis a este radio de CUALQUIER jugador
+  joinTimeout: 12,        // s para encontrar la sala antes de rendirse
+  pingEvery: 2,           // s entre medidas de latencia (ping/pong por ctl)
+  colors: ['#e5484d', '#e0b34d', '#4db8e0', '#b48ce0'],   // camiseta por jugador
+  mpSaveNote: 'El multijugador no se guarda: la sala vive mientras el ANFITRIÓN siga conectado.',
+};
+
 // ---------- Supervivencia ----------
 export const SURV = {
   hungerRate: 0.16,        // por segundo

@@ -264,6 +264,9 @@ export function buildSaveData(game) {
 
 /** Guarda en localStorage (ranura 1-3; por defecto, la 1). true si todo fue bien. */
 export function saveGame(game, slot) {
+  // v0.27: el MULTIJUGADOR no se guarda — la sala vive mientras el anfitrión
+  // siga conectado; al salir se disuelve. Protege también el autoguardado.
+  if (game && game.net) return false;
   const data = buildSaveData(game);
   if (!data) return false;
   try {
@@ -273,6 +276,27 @@ export function saveGame(game, slot) {
     console.warn('saveGame:', e && e.name);
     return false;
   }
+}
+
+// ================== v0.27: serialización de objetos para la RED ==================
+
+/** Un objeto (o null) → datos planos autocontenidos (con su cargador
+ *  anidado si lo lleva). Para mensajes de red: botín de contenedores,
+ *  objetos sueltos, equipar en cajas… Reutiliza el registro de save.js
+ *  para no duplicar la lógica de identidad de referencias. */
+export function itemToData(it) {
+  if (!it) return null;
+  const { items, reg } = makeRegistry();
+  const root = reg(it);
+  return { items, root };
+}
+
+/** Reconstruye la instancia (y su cargador anidado) a partir de los datos
+ *  de itemToData. Devuelve null si algo no cuadra. */
+export function itemFromData(d) {
+  if (!d || !Array.isArray(d.items)) return null;
+  const byId = buildItems(d);
+  return byId.get(d.root) || null;
 }
 
 // ================== Cargar ==================

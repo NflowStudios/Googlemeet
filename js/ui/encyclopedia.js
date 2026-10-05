@@ -23,7 +23,7 @@
 import {
   ITEMS, RANGED, ZOMBIE_CFG, SURV, PLAYER_CFG, FISTS, WEATHER, FLOORS,
   CRAFTEO, CONTAINER_DEFS, LOOT, ROTTEN_CHANCE, DAYNIGHT, FLASH,
-  PROFESSIONS, PROF_BY_ID, CROPS, AGRICULTURA, SPECIALS, VEHICULOS, MAP_W, MAP_H,
+  PROFESSIONS, PROF_BY_ID, CROPS, AGRICULTURA, SPECIALS, VEHICULOS, MAP_W, MAP_H, NET,
 } from '../config.js';
 import { RECIPES_OBJ, RECIPES_CON } from '../systems/crafting.js';
 
@@ -190,6 +190,10 @@ export class Encyclopedia {
     guide('Tus partidas: tres ranuras',
       'El menú principal guarda ' + b('tres partidas independientes') + ' (ranuras 1 a 3): cada una es un mundo con su propio mapa, progreso y muerte. Una ranura vacía ofrece ' + b('NUEVA PARTIDA') + '; una ocupada muestra su resumen (día, hora, bajas, tiempo sobrevivido) con ' + b('CONTINUAR') + ' y ' + b('ELIMINAR') + '. El borrado pide confirmación en dos pasos: el botón se arma en rojo («¿SEGURO?») durante 4 segundos y solo la segunda pulsación elimina la partida, para que un clic despistado no borre horas de supervivencia.',
       'El ' + b('autoguardado') + ' actúa cada 5 minutos de partida y siempre escribe en la ranura con la que estás jugando; también puedes guardar a mano desde la pausa con GUARDAR Y SALIR AL MENÚ. La ' + b('muerte es definitiva') + ' dentro de su ranura: al morir, ese guardado se borra y REINTENTAR arranca una partida nueva en la misma ranura — tus otras dos partidas quedan intactas. La tecla ' + b('ENTER') + ' del menú continúa directamente la partida más reciente.') +
+
+    guide('Multijugador: salas con código (v0.27)',
+      'Desde el menú principal, ' + b('MULTIJUGADOR') + ' abre las salas co-op: el anfitrión pulsa ' + b('CREAR SALA') + ' y comparte su ' + b('CÓDIGO de ' + NET.codeLen + ' caracteres') + ' (sin letras confusas: no existen O ni I); los demás lo teclean en ' + b('UNIRSE CON CÓDIGO') + '. Caben ' + b('hasta ' + NET.maxPlayers + ' sobrevivientes') + ' en la misma ciudad. La conexión es ' + b('DIRECTA entre navegadores (P2P)') + ' — el servidor público de PeerJS solo presenta a los jugadores y luego se aparta: nadie más ve la partida. Antes de arrancar, cada uno ' + b('elige su PROFESIÓN') + ' (la misma pantalla de ¿QUIÉN ERAS?) y el anfitrión dispara EMPEZAR.',
+      b('TU PERSONAJE RESPONDE EN LOCAL') + ': cada máquina mueve a su propio superviviente contra el mismo mapa (reconstruido con la semilla del anfitrión), así que correr, golpear y disparar tienen ' + b('cero retardo') + '. El ' + b('ANFITRIÓN simula el mundo') + ' — IA de zombis, clima, hora, gritadores y el BOTÍN de los contenedores (se pide al abrir: nada de duplicar entre jugadores) — y lo difunde en instantáneas a ' + NET.snapHz + ' Hz por un canal sin reenvíos (si se pierde un paquete, manda el siguiente: el retardo nunca se acumula). Las ' + b('puertas, el botín ya sacado, las construcciones y los COCHES se comparten') + ', y quien conduce manda sobre su coche. Mantén ' + b('TAB') + ' para ver la sala (vida y latencia de cada uno). ' + b('EL RUIDO DE UNO ATRAE PARA TODOS') + ': los zombis oyen a toda la sala — la pistola de tu amigo puede traer la horda a TI. Si caes, ' + b('espectas') + ' a los compañeros ([E] cambia) y la partida sigue. La sala vive mientras el anfitrión siga conectado — si él se va, la partida termina — y ' + b('el multijugador NO SE GUARDA') + ': es una historia de una sentada.') +
 
     guide('Supervivencia: hambre, sed y energía',
       'El ' + b('hambre') + ' baja a ' + n(S.hungerRate) + ' por segundo (de 100 a 0 en unos ' + min(S.hungerRate) + ' de partida) y la ' + b('sed') + ' a ' + n(S.thirstRate) + '/s (' + min(S.thirstRate) + '): bebe antes que comes, la sed apura más. Por debajo de ' + S.critLevel + ' puntos entramos en nivel crítico: el hambre drena ' + n(S.hungerHpDrain) + ' de vida por segundo y la sed ' + n(S.thirstHpDrain) + '/s, y además la sed crítica reduce a la mitad la recuperación de energía.',

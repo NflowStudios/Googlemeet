@@ -145,8 +145,8 @@ function stampCar(map, car) {
 // ================== Entrar / salir ==================
 
 /** Entra al coche y arranca (si puede). true si ok. */
-export function enterCar(game, car, silent = false) {
-  const p = game.player;
+export function enterCar(game, car, silent = false, who = null) {
+  const p = who || game.player;   // v0.27: `who` permite entrar a un JUGADOR REMOTO (multijugador)
   if (!p || p.inCar || (p.z || 0) !== 0 || p.climb) return false;
   unstampCar(game.map, car);
   car.driven = true;
@@ -173,8 +173,8 @@ export function enterCar(game, car, silent = false) {
 }
 
 /** Se baja del coche (lo aparca donde esté y suena la puerta). */
-export function exitCar(game, silent = false) {
-  const p = game.player;
+export function exitCar(game, silent = false, who = null) {
+  const p = who || game.player;   // v0.27: `who` permite bajarse un JUGADOR REMOTO (multijugador)
   const car = p && p.inCar;
   if (!car) return false;
   car.speed = 0;
@@ -228,6 +228,12 @@ export function installPart(game, car, id) {
   game.audio.hammer();
   game.noise.emit(car.x, car.y, 120, 'herramienta');
   game.toasts.push('Instalado: ' + (id === 'bateria_coche' ? 'batería' : id === 'bujias' ? 'juego de bujías' : id === 'neumatico' ? 'neumático' : 'radiador'), 'save');
+  // v0.27: las piezas montadas viajan a la sala
+  if (game.net) {
+    const i = game.map.cars.indexOf(car);
+    if (game.net.isHost) game.net._broadcast({ t: 'ev', k: 'carMod', i, p: car.parts });
+    else game.net._sendHost({ t: 'act', op: 'carMod', i, p: car.parts });
+  }
   return true;
 }
 
@@ -252,6 +258,12 @@ export function refuelCar(game, car) {
   if (added > 0) {
     game.audio.fuelSlosh();
     game.toasts.push('Repostado: +' + Math.round(added) + ' L (' + Math.round(car.fuel) + '/' + md.fuelCap + ')', 'save');
+    // v0.27: el combustible del coche compartido viaja
+    if (game.net) {
+      const i = game.map.cars.indexOf(car);
+      if (game.net.isHost) game.net._broadcast({ t: 'ev', k: 'carMod', i, f: +car.fuel.toFixed(1) });
+      else game.net._sendHost({ t: 'act', op: 'carMod', i, f: +car.fuel.toFixed(1) });
+    }
   } else {
     game.toasts.push(countItem(inv, 'bidon_gasolina') > 0 ? 'El depósito ya está lleno' : 'No llevas bidones de gasolina', 'warn');
   }
@@ -289,6 +301,12 @@ export function repairEngine(game, car) {
   game.noise.emit(car.x, car.y, 130, 'herramienta');
   game.toasts.push('Motor remendado: ' + Math.round(car.engineHp) + '/100' +
     (carSmoking(car) ? ' (todavía echa humo)' : ''), 'save');
+  // v0.27: el motor remendado viaja a la sala
+  if (game.net) {
+    const i = game.map.cars.indexOf(car);
+    if (game.net.isHost) game.net._broadcast({ t: 'ev', k: 'carMod', i, e: Math.round(car.engineHp) });
+    else game.net._sendHost({ t: 'act', op: 'carMod', i, e: Math.round(car.engineHp) });
+  }
   return true;
 }
 
@@ -730,6 +748,11 @@ function renderInspect(game, car) {
   box.querySelector('#btn-car-drive').addEventListener('click', () => {
     closeInspect(game);
     enterCar(game, car);
+    // v0.27: entrar al coche desde la ficha también se difunde
+    if (game.net) {
+      const i = game.map.cars.indexOf(car);
+      game.net.sendEv('carIn', { i, r: car.running ? 1 : 0, who: game.net.myId });
+    }
   });
   for (const b of box.querySelectorAll('button[data-act]')) {
     b.addEventListener('click', () => {
@@ -740,7 +763,16 @@ function renderInspect(game, car) {
       else if (act === 'trunk') {
         closeInspect(game);
         car.trunk.x = car.x; car.trunk.y = car.y;
+        // v0.27: en el cliente, la cajuela pasa por el botín del anfitrión
+        if (game.net && !game.net.isHost) {
+          if (!game.net.requestLoot(car.trunk)) {
+            if (!car.trunk.searched) { car.trunk.searched = true; game.searchedCount++; }
+            game.invUI.openUI(car.trunk);
+          }
+          return;
+        }
         if (!car.trunk.searched) { car.trunk.searched = true; game.searchedCount++; }
+        if (game.net) game.net.sendEv('searched', { key: game.net.lootKeyOf(car.trunk) });
         game.invUI.openUI(car.trunk);
         return;
       }

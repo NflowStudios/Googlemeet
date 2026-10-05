@@ -51,10 +51,43 @@ export class HUD {
     // v0.26: CUADRO DE MANDO del coche (visible solo al volante)
     this.dashEl = document.getElementById('car-dash');
     this._dashSig = '';
+    // v0.27: MULTIJUGADOR — chip de sala (código + latencia) y lista TAB
+    this.mpChip = document.getElementById('mp-chip');
+    this.mpList = document.getElementById('mp-list');
+    this._mpSig = '';
+    this._mpListOn = false;
   }
 
   show() { this.el.classList.remove('hidden'); }
   hide() { this.el.classList.add('hidden'); }
+
+  /** v0.27: muestra/oculta la lista de jugadores de la sala (TAB mantenido). */
+  showMpList(on) {
+    this._mpListOn = !!on;
+    if (this.mpList) this.mpList.classList.toggle('hidden', !on);
+    if (on) this._renderMpList(this.game, true);
+  }
+
+  /** v0.27: pinta la lista de jugadores (nombre, color, vida, ping). */
+  _renderMpList(g, force) {
+    if (!this.mpList || !g || !g.net) return;
+    const rows = g.net.hudRows();
+    const sig = rows.map((r) => r.name + r.hp + (r.dead ? 1 : 0) + (r.rtt || 0)).join('|');
+    if (!force && sig === this._mpSig) return;
+    this._mpSig = sig;
+    let html = '<h3>SALA ' + g.net.code + ' · ' + rows.length + '/' + 4 + '</h3>';
+    for (const r of rows) {
+      html += '<div class="mp-row' + (r.dead ? ' dead' : '') + (r.me ? ' me' : '') + '">' +
+        '<span class="mp-dot" style="background:' + r.color + '"></span>' +
+        '<span class="mp-name">' + r.name + (r.host ? ' <i>(anfitrión)</i>' : '') +
+          (r.me ? ' <i>(tú)</i>' : '') + '</span>' +
+        '<span class="mp-hp">' + (r.dead ? 'CAÍDO' : r.hp + '%') + '</span>' +
+        '<span class="mp-rtt">' + (r.rtt ? r.rtt + ' ms' : '—') + '</span>' +
+        '</div>';
+    }
+    html += '<p class="mp-note">TAB mantenido · la sala vive mientras el anfitrión siga conectado</p>';
+    this.mpList.innerHTML = html;
+  }
 
   flashDamage(d) { this.dmgFlash = Math.max(this.dmgFlash, d); }
 
@@ -167,7 +200,16 @@ export class HUD {
       if (car.lights) chips += '<span class="chip flash">FAROS</span>';
       if (carSmoking(car)) chips += '<span class="chip bad">MOTOR HUMEANDO</span>';
     }
+    // v0.27: chip de SALA — código + latencia + compañeros vivos
+    if (g.net) {
+      const alive = (g.player.mpDead ? 0 : 1) + [...g.net.remotes.values()].filter((r) => r.alive).length;
+      const rtt = g.net.rtt;
+      chips += '<span class="chip mp">SALA ' + g.net.code + ' · ' + alive + ' VIVO' + (alive === 1 ? '' : 'S') +
+        (rtt ? ' · ' + rtt + ' ms' : '') + ' · TAB</span>';
+    }
     this.chips.innerHTML = chips;
+    // y la lista abierta se refresca sola
+    if (this._mpListOn) this._renderMpList(g);
 
     // equipo rápido
     const p = g.player;

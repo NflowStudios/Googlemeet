@@ -6,7 +6,7 @@
  * contenedores) y cableado de todos los sistemas modulares.
  */
 
-import { TILE, T, ZOMBIE_CFG, FLOORS, DAYNIGHT, VEHICULOS } from './config.js';
+import { TILE, T, ZOMBIE_CFG, FLOORS, DAYNIGHT, VEHICULOS, NET } from './config.js';
 import { Rng } from './rng.js';
 import { Input } from './core/input.js';
 import { Camera } from './core/camera.js';
@@ -27,11 +27,13 @@ import {
   needsRepair, repairCost, repairCostLabel, repairConstruction,
   cropPromptLabel, harvestCrop, barrilPromptLabel, barrilUse,
 } from './systems/crafting.js';
+import { addConstruction, removeConstruction } from './systems/crafting.js';
 import {
   enterCar, exitCar, updateVehicle, updateVehicleFX, drawVehicles,
   openInspect, closeInspect, forceExit, carLabel,
 } from './systems/vehicles.js';
-import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, latestSlot, updateRecords, AUTOSAVE_SEC } from './systems/save.js';
+import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, latestSlot, updateRecords, AUTOSAVE_SEC, itemToData, itemFromData } from './systems/save.js';
+import { NetSession, wrapNoiseForNet, isAuthority } from './systems/net.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
 import { HUD } from './ui/hud.js';
@@ -43,7 +45,7 @@ import { renderGame } from './render.js';
 
 const STATE = { MENU: 'menu', PLAYING: 'playing', PAUSED: 'paused', DEAD: 'dead' };
 
-class Game {
+export class Game {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -62,6 +64,11 @@ class Game {
     this.vision = new Vision();
     this.daynight = new DayNight();   // ciclo día/noche (solo avanza jugando)
     this.weather = new Weather();     // v0.15: lluvia y neblina (idem: solo jugando)
+    // v0.27: MULTIJUGADOR — sesión activa (null = partida clásica en local)
+    this.net = null;
+    this._spectate = null;       // jugador seguido tras caer (espectador)
+    this._mpPaused = false;      // pausa co-op: overlay SIN congelar el mundo
+    this._mpConsT = 0;           // sincronización periódica de construcciones
 
     this.state = STATE.MENU;
     this.uiOpen = false;
@@ -306,6 +313,386 @@ class Game {
     if (this.player.prof) this.menus.toastProfession(this.player.prof);
   }
 
+  // ================== v0.27: MULTIJUGADOR ==================
+
+  /**
+   * Puntos de nacimiento de la partida co-op: offsets FIJOS alrededor del
+   * spawn del mapa (misma calle abierta) con espiral DETERMINISTA si el
+   * punto cae en sólido — todas las máquinas calculan lo mismo sin hablar.
+   */
+  _mpSpawnPoints(n) {
+    const out = [];
+    const base = this.map.spawn;
+    const offs = [[0, 0], [72, 0], [0, 72], [-72, 0]];
+    for (let i = 0; i < n; i++) {
+      const [ox, oy] = offs[i % 4];
+      let x = base.x + ox + (i >= 4 ? 72 : 0), y = base.y + oy;
+      if (this.map.circleHitsSolid(x, y, 10)) {
+        // espiral determinista (pasos fijos, sin azar)
+        let found = false;
+        for (let r = 24; r <= 220 && !found; r += 24) {
+          for (let a = 0; a < 12 && !found; a++) {
+            const th = (a / 12) * Math.PI * 2 + r * 0.05;
+            const cx = base.x + Math.cos(th) * r, cy = base.y + Math.sin(th) * r;
+            if (!this.map.circleHitsSolid(cx, cy, 10)) { x = cx; y = cy; found = true; }
+          }
+        }
+      }
+      out.push({ x, y });
+    }
+    return out;
+  }
+
+  /**
+   * ANFITRIÓN: arranca la partida co-op. Construye el mundo local (como
+   * startRun, SIN ranura de guardado — el MP no se guarda) y luego envía
+   * el paquete de inicio a los clientes, que lo reconstruyen con la misma
+   * semilla. La sala debe estar ya en el lobby con profesión elegida.
+   */
+  mpHostRun() {
+    const prof = this.net.roster.find((r) => r.id === 'H');
+    this.audio.init();
+    const seed = (Math.random() * 2147483647) | 0;
+    this.seedUsed = seed;
+    this.rng = new Rng(seed);
+    this.map = new GameMap(this.rng);
+    const spawns = this._mpSpawnPoints(this.net.roster.length);
+    this.player = new Player(spawns[0].x, spawns[0].y);
+    this.player.prof = prof ? prof.prof : null;
+    this.player.mpColor = NET.colors[0];
+    this.survival = new Survival();
+    this.noise = new NoiseSystem();
+    this.vision = new Vision();
+    this.daynight.reset();
+    this._hourMark = Math.floor(this.daynight.hour);
+    this.weather.reset();
+    this._weatherMark = this.weather.type;
+    this._resize();
+    for (const c of this.map.containers) fillContainer(c, this.rng);
+    this.zombies = spawnZombies(this.map, this.rng, ZOMBIE_CFG.count, this.map.spawn);
+    this.groundItems = [];
+    this._placeStartingLoot();
+    // botín de arranque extra alrededor de los OTROS jugadores
+    for (let i = 1; i < spawns.length; i++) {
+      const mats = ['agua', 'lata_frijoles', 'tubo', 'venda'];
+      for (const id of mats) {
+        const pos = this.map.randomOutdoor(spawns[i], 140);
+        if (pos) this.groundItems.push({ x: pos.x, y: pos.y, item: makeItem(id), visibleNow: true });
+      }
+    }
+    this.constructions = [];
+    this.build = null;
+    this.fires = [];
+    this.molotovs = [];
+    this.sleepT = 0;
+    this._sleepTarget = null;
+    this.smokes = [];
+    this.carsUI = null;
+    this._guaranteeCuervo();
+    this._guaranteeMazo();
+    this.tracers.length = 0;
+    this.flashes.length = 0;
+    this.impacts.length = 0;
+    this._dryToastT = 0;
+    this.time = 0;
+    this.kills = 0;
+    this.killsBy = null;
+    this.searchedCount = 0;
+    this.deathCause = null;
+    this.stats = { shots: 0, molotovs: 0, crafted: 0, built: 0, dist: 0 };
+    this._autosaveT = 0;
+    this._seenVariants = {};
+    this._militarySeen = false;
+    this._hospitalSeen = false;
+    this._screamerCheckT = 0;
+    this._screamedOnce = false;
+    this._fireAlertSeen = false;
+    this.cam.y = this.player.y - this.cam.h / 2;
+    // marionetas de los demás + callbacks de la sesión
+    this.net.buildPuppets();
+    let i = 1;
+    for (const r of this.net.remotes.values()) {
+      const s = spawns[i++] || this.map.spawn;
+      r.p.x = s.x; r.p.y = s.y; r.p._tx = s.x; r.p._ty = s.y;
+    }
+    this._wireNet();
+    // ¡todos a la calle!
+    this.net.hostStart();
+    this.menus.hideAll();
+    this.hud.show();
+    this.hud._hintTimer = 0;
+    document.getElementById('controls-hint').classList.remove('fade');
+    this.invUI.closeUI();
+    this.input.enabled = true;
+    this.input.tabHold = true;   // TAB = lista de jugadores (I = inventario)
+    this.toasts.clear();
+    this.state = STATE.PLAYING;
+    this.toasts.push('SALA ' + this.net.code + ' — cooperad: el ruido de uno atrae para todos', 'info');
+    if (this.player.prof) this.menus.toastProfession(this.player.prof);
+  }
+
+  /**
+   * CLIENTE: reconstruye el mundo del anfitrión con el paquete de inicio
+   * (semilla + reloj + clima + horda + objetos). El mapa y su botín salen
+   * DETERMINISTAS de la semilla; los contenedores se abren pidiendo al
+   * anfitrión (botín autoritativo, sin duplicar entre jugadores).
+   */
+  mpStartClient(init) {
+    this.audio.init();
+    this.seedUsed = init.seed;
+    this.rng = new Rng(init.seed);
+    this.map = new GameMap(this.rng);
+    for (const c of this.map.containers) fillContainer(c, this.rng);
+    const spawns = this._mpSpawnPoints(init.roster.length);
+    const myIdx = Math.max(0, init.roster.findIndex((r) => r.id === this.net.myId));
+    const mine = init.roster[myIdx];
+    const sp = spawns[myIdx] || this.map.spawn;
+    this.player = new Player(sp.x, sp.y);
+    this.player.prof = mine ? mine.prof : null;
+    this.player.mpColor = mine ? mine.color : null;
+    this.survival = new Survival();
+    this.noise = new NoiseSystem();
+    this.vision = new Vision();
+    this.daynight = new DayNight();
+    this.daynight.t = init.dn || 0;
+    this._hourMark = Math.floor(this.daynight.hour);
+    this.weather = new Weather();
+    if (init.wx) this.weather.load(init.wx);
+    this._weatherMark = this.weather.type;
+    this._resize();
+    this.zombies = (init.zombies || []).map((a) => this.net.zombieFromNet(a));
+    for (const z of this.zombies) this.net._zByNid.set(z.nid, z);
+    this.groundItems = [];
+    for (const g of init.ground || []) {
+      const it = itemFromData(g[4]);
+      if (!it) continue;
+      const gi = { x: g[1], y: g[2], z: g[3] || 0, item: it, nid: g[0], visibleNow: false };
+      this.groundItems.push(gi);
+      this.net._giByNid.set(g[0], gi);
+    }
+    this.constructions = [];
+    this.build = null;
+    this.fires = [];
+    this.molotovs = [];
+    this.sleepT = 0;
+    this._sleepTarget = null;
+    this.smokes = [];
+    this.carsUI = null;
+    this._guaranteeCuervo();
+    this._guaranteeMazo();
+    this.tracers.length = 0;
+    this.flashes.length = 0;
+    this.impacts.length = 0;
+    this._dryToastT = 0;
+    this.time = 0;
+    this.kills = 0;
+    this.killsBy = null;
+    this.searchedCount = 0;
+    this.deathCause = null;
+    this.stats = { shots: 0, molotovs: 0, crafted: 0, built: 0, dist: 0 };
+    this._autosaveT = 0;
+    this._seenVariants = {};
+    this._militarySeen = false;
+    this._hospitalSeen = false;
+    this._screamerCheckT = 0;
+    this._screamedOnce = false;
+    this._fireAlertSeen = false;
+    this.cam.x = this.player.x - this.cam.w / 2;
+    this.cam.y = this.player.y - this.cam.h / 2;
+    this.net.buildPuppets();
+    let i = 0;
+    for (const r of this.net.remotes.values()) {
+      const s = spawns[i++] || this.map.spawn;
+      r.p.x = s.x; r.p.y = s.y; r.p._tx = s.x; r.p._ty = s.y;
+    }
+    this._wireNet();
+    wrapNoiseForNet(this);   // el ruido local también suena para el anfitrión
+    this.menus.hideAll();
+    this.hud.show();
+    this.hud._hintTimer = 0;
+    document.getElementById('controls-hint').classList.remove('fade');
+    this.invUI.closeUI();
+    this.input.enabled = true;
+    this.input.tabHold = true;
+    this.toasts.clear();
+    this.state = STATE.PLAYING;
+    this.toasts.push('Conectado a la sala ' + this.net.code + ' — tu personaje responde EN LOCAL: cero retardo', 'info');
+    if (this.player.prof) this.menus.toastProfession(this.player.prof);
+  }
+
+  /** Callbacks de la sesión → efectos sobre ESTA máquina. */
+  _wireNet() {
+    const n = this.net;
+    n.onLocalStart = (init) => { if (!n.isHost) this.mpStartClient(init); };
+    n.onPeerJoin = (name) => { if (!n.inGame) this.toasts.push(name + ' se une a la sala', 'info'); };
+    n.onPeerLeave = (name) => { this.toasts.push(name + ' se ha ido de la sala', 'warn'); };
+    n.onSessionEnd = (reason) => this._mpSessionEnd(reason);
+    n.onLootOpen = (c) => { this.invUI.openUI(c); };
+    n.onRemoteDead = (name) => { this.cam.shake(3); };
+    // construcción remota (misma función para anfitrión y cliente)
+    n.onRemoteCons = (data) => this._applyRemoteCons(data);
+    n.onRemoteConsHp = (nid, hp) => {
+      const c = this.constructions.find((x) => x.nid === nid);
+      if (c) c.hp = hp;
+    };
+    n.onRemoteConsWt = (nid, wt) => {
+      const c = this.constructions.find((x) => x.nid === nid);
+      if (c && c.type === 'barril') c.water = wt;
+    };
+    n.onRemoteConsDel = (nid) => {
+      const c = this.constructions.find((x) => x.nid === nid);
+      if (c) removeConstruction(this, c);
+    };
+    n.onRemoteMolotov = (m) => {
+      this.molotovs.push({ x: m.x, y: m.y, vx: m.vx, vy: m.vy, t: 0, z: m.z || 0 });
+    };
+    n.onFull = () => {};
+
+    // ---- hooks de los sistemas (definidos aquí: ni crafting ni combat
+    // necesitan importar la red — cero dependencias circulares) ----
+    // objeto soltado al suelo → se difunde con su nid
+    this.mpDrop = (x, y, z, item) => {
+      const gi = { x, y, z: z || 0, item, visibleNow: false };
+      if (this.net) {
+        gi.nid = this.net.nextGiNid();
+        this.net._giByNid.set(gi.nid, gi);
+        if (this.net.isHost) {
+          this.net._broadcast({ t: 'ev', k: 'giAdd', n: gi.nid, x: Math.round(x), y: Math.round(y), z: z || 0, it: itemToData(item) });
+        } else {
+          this.net._sendHost({ t: 'act', op: 'giAdd', n: gi.nid, x: Math.round(x), y: Math.round(y), z: z || 0, it: itemToData(item) });
+        }
+      }
+      this.groundItems.push(gi);
+      return gi;
+    };
+    // construcción colocada → nid + difusión completa
+    this.mpConsPlaced = (c) => {
+      if (!this.net) return;
+      c.nid = this.net.nextCoNid();
+      const data = this._consToNet(c);
+      if (this.net.isHost) this.net._broadcast({ t: 'ev', k: 'cons', data });
+      else this.net._sendHost({ t: 'act', op: 'cons', data });
+    };
+    // construcción dañada/reparada → vida
+    this.mpConsMutated = (c) => {
+      if (!this.net || c.nid === undefined) return;
+      if (this.net.isHost) this.net._broadcast({ t: 'ev', k: 'consHp', n: c.nid, hp: Math.round(c.hp) });
+      else this.net._sendHost({ t: 'act', op: 'consHp', n: c.nid, hp: Math.round(c.hp) });
+    };
+    // construcción destruida/cosechada → baja
+    this.mpConsRemoved = (c) => {
+      if (!this.net || c.nid === undefined) return;
+      if (this.net.isHost) this.net._broadcast({ t: 'ev', k: 'consDel', n: c.nid });
+      else this.net._sendHost({ t: 'act', op: 'consDel', n: c.nid });
+    };
+    // molotov en vuelo → difusión visual
+    this.mpMolotov = (m) => {
+      if (!this.net) return;
+      const p = { x: Math.round(m.x), y: Math.round(m.y), vx: Math.round(m.vx), vy: Math.round(m.vy), z: m.z || 0 };
+      if (this.net.isHost) this.net._broadcast({ t: 'ev', k: 'molotov', ...p });
+      else this.net._sendHost({ t: 'act', op: 'molotov', ...p });
+    };
+    // barril de lluvia → nivel de agua
+    this.mpBarril = (c) => {
+      if (!this.net || c.nid === undefined) return;
+      const wt = Math.round(c.water || 0);
+      if (this.net.isHost) this.net._broadcast({ t: 'ev', k: 'consWt', n: c.nid, wt });
+      else this.net._sendHost({ t: 'act', op: 'consWt', n: c.nid, wt });
+    };
+  }
+
+  /** Aplica una construcción difundida por la red (formato save.js). */
+  _applyRemoteCons(d) {
+    if (!d || !d.t) return;
+    // ¿ya está? (reenvío doble imposible por ctl fiable, pero por si acaso)
+    if (d.n && this.constructions.some((c) => c.nid === d.n)) return;
+    const c = addConstruction(this, d.t, d.tx, d.ty, d.rt || 0, d.cp || null,
+      d.pd !== undefined ? d.pd : null);
+    if (d.hp !== undefined) c.hp = d.hp;
+    if (d.us !== undefined && c.uses !== undefined) c.uses = d.us;
+    if (d.n) c.nid = d.n;
+    if (d.t === 'barril' && d.wt !== undefined) c.water = d.wt;
+    if (d.t === 'caja' && Array.isArray(d.it)) {
+      c.items = d.it.map(itemFromData).filter(Boolean);
+      if (d.s) c.searched = true;
+    }
+    return c;
+  }
+
+  /** Serializa una construcción local para difundirla. */
+  _consToNet(c) {
+    const d = {
+      t: c.type, tx: c.tx, ty: c.ty, rt: c.rot || 0,
+      hp: Math.round(c.hp), n: c.nid,
+      us: c.uses !== undefined ? c.uses : undefined,
+      cp: c.crop || undefined,
+      pd: c.plantedDay !== undefined ? c.plantedDay : undefined,
+      wt: c.type === 'barril' ? Math.round(c.water || 0) : undefined,
+    };
+    if (c.type === 'caja') {
+      d.it = (c.items || []).map(itemToData);
+      d.s = c.searched ? 1 : 0;
+    }
+    return d;
+  }
+
+  /** Muerte EN MULTIJUGADOR: se espectea — la partida sigue para los demás. */
+  mpDeath(cause) {
+    const p = this.player;
+    if (p.mpDead) return;
+    p.mpDead = true;
+    this.deathCause = cause;
+    this.build = null;
+    this.sleepT = 0;
+    forceExit(this);
+    if (this.carsUI) closeInspect(this);
+    this.audio.setEngine(null);
+    this.map.stampCorpse(p.x, p.y, p.angle);
+    this.map.stampBlood(p.x, p.y, true);
+    this.net.sendEv('pdead', { id: this.net.myId });
+    this.toasts.push('HAS CAÍDO — espectando: [E] cambia de compañero', 'bad');
+    this._spectate = this._pickSpectate();
+    if (this.net.isHost) this.net._checkAllDead();
+  }
+
+  /** Siguiente compañero vivo al que especting (o null: quedarse donde caíste). */
+  _pickSpectate() {
+    const alive = [...this.net.remotes.values()].filter((r) => r.alive);
+    if (!alive.length) return null;
+    const cur = this._spectate;
+    if (cur) {
+      const i = alive.findIndex((r) => r === cur);
+      return alive[(i + 1) % alive.length];
+    }
+    return alive[0];
+  }
+
+  /** Fin de sesión (host cerró / todos cayeron / salida propia). */
+  _mpSessionEnd(reason) {
+    const wasPlaying = this.state === STATE.PLAYING;
+    this.net = null;
+    this.input.tabHold = false;
+    this.hud.showMpList(false);
+    if (!wasPlaying) { this.toMenu(); return; }
+    if (reason === 'all') {
+      // todos han caído: obituario de la partida co-op
+      this.state = STATE.DEAD;
+      this.input.enabled = false;
+      this.hud.hide();
+      this.menus.showDeath(this.deathCause || 'zombi', {
+        time: this.time, kills: this.kills, searched: this.searchedCount,
+        day: this.daynight.day, stats: this.stats, prof: this.player.prof || null,
+      }, false, null);
+      const note = document.getElementById('ds-savegone');
+      if (note) { note.classList.remove('hidden'); note.textContent = NET.mpSaveNote; }
+      return;
+    }
+    this.toMenu();
+    this.menus.showMpNotice(
+      reason === 'host' ? 'El ANFITRIÓN cerró la sala — la partida co-op termina aquí.'
+        : 'Has salido de la sala.');
+  }
+
   // ================== Continuar partida guardada (v0.13) ==================
 
   /**
@@ -398,6 +785,11 @@ class Game {
 
   /** Pausa → guardar y volver al menú principal (v0.13; v0.22: a SU ranura). */
   saveAndQuit() {
+    // v0.27: el multijugador NO se guarda — se sale de la sala sin más
+    if (this.net) {
+      this.toasts.push(NET.mpSaveNote, 'warn');
+      return;
+    }
     if (this.state !== STATE.PAUSED && this.state !== STATE.PLAYING) return;
     const ok = saveGame(this, this.saveSlot);
     if (!ok) {
@@ -411,7 +803,10 @@ class Game {
 
   /** Vuelve al menú principal (tras guardar). */
   toMenu() {
+    // v0.27: salir al menú en plena sesión = abandonar la sala
+    if (this.net) { this.net.leave(false); this.net = null; this.input.tabHold = false; }
     this.state = STATE.MENU;
+    this._mpPaused = false;
     this.input.enabled = false;
     this.uiOpen = false;
     this.build = null;            // v0.20: sin fantasma en el menú
@@ -487,6 +882,15 @@ class Game {
   // ================== Entrada ==================
 
   onAction(name) {
+    // v0.27: lista de jugadores de la sala (TAB mantenido en multijugador)
+    if (name === 'tablist') { this.hud.showMpList(true); return; }
+    if (name === 'tablistUp') { this.hud.showMpList(false); return; }
+    // v0.27: caído en multijugador — E cambia de compañero, resto apagado
+    if (this.net && this.player && this.player.mpDead) {
+      if (name === 'interact') { this._spectate = this._pickSpectate(); }
+      else if (name === 'pause') { this.togglePause(); }
+      return;
+    }
     // v0.26: FICHA DE INSPECCIÓN de coche abierta — ESC/VOLVER cierra y
     // devuelve al juego (antes de nada, para que P no despausee debajo)
     if (this.carsUI) {
@@ -510,6 +914,19 @@ class Game {
       return;
     }
     if (this.state === STATE.MENU || this.state === STATE.DEAD) {
+      // v0.27: paneles de MULTIJUGADOR abiertos sobre el menú — ESC vuelve
+      if (name === 'escape') {
+        const mpEl = document.getElementById('mpscreen');
+        const lobEl = document.getElementById('mp-lobby');
+        const noteEl = document.getElementById('mp-notice');
+        if (noteEl && !noteEl.classList.contains('hidden')) {
+          noteEl.classList.add('hidden');
+          this.menus.showMenu();
+          return;
+        }
+        if (lobEl && !lobEl.classList.contains('hidden')) { this.menus._mpLeave(); return; }
+        if (mpEl && !mpEl.classList.contains('hidden')) { this.menus.showMenu(); return; }
+      }
       // v0.22: Enter — en el menú continúa la partida MÁS RECIENTE (o arranca
       // en la ranura 1 si no hay ninguna); en la pantalla de muerte reintenta
       // en la MISMA ranura (su guardado ya se borró al morir)
@@ -538,7 +955,16 @@ class Game {
     // ---- v0.26: AL VOLANTE — solo E (bajar), L (faros) y P/M funcionan ----
     if (this.player.inCar) {
       switch (name) {
-        case 'interact': exitCar(this); break;
+        case 'interact': {
+          const car = this.player.inCar;
+          exitCar(this);
+          // v0.27: bajarse del coche se difunde a la sala
+          if (this.net && car) {
+            const i = this.map.cars.indexOf(car);
+            this.net.sendEv('carOut', { i, x: Math.round(this.player.x), y: Math.round(this.player.y), who: this.net.myId });
+          }
+          break;
+        }
         case 'flash': {
           const car = this.player.inCar;
           car.lights = !car.lights;
@@ -583,6 +1009,21 @@ class Game {
   }
 
   togglePause() {
+    // v0.27: en MULTIJUGADOR la ciudad no se congela para los demás — la
+    // pausa es un overlay local (el mundo y los zombis SIGUEN corriendo)
+    if (this.net) {
+      if (this.state !== STATE.PLAYING) return;
+      if (this._mpPaused) {
+        this._mpPaused = false;
+        this.menus.hidePause();
+        this.input.enabled = !this.invUI.isOpen;
+      } else {
+        this._mpPaused = true;
+        this.menus.showPause();
+        this.input.enabled = false;
+      }
+      return;
+    }
     if (this.state === STATE.PLAYING) {
       this.state = STATE.PAUSED;
       this.menus.showPause();
@@ -767,7 +1208,15 @@ class Game {
       }
       case 'container': {
         const c = target.obj;
+        // v0.27: en el CLIENTE el botín lo resuelve el ANFITRIÓN: se pide
+        // por el canal fiable y el paquete abre el inventario al volver
+        if (this.net && !this.net.isHost) {
+          if (!this.net.requestLoot(c)) this.invUI.openUI(c);
+          this.audio.container();
+          break;
+        }
         if (!c.searched) { c.searched = true; this.searchedCount++; }
+        if (this.net) this.net.sendEv('searched', { key: this.net.lootKeyOf(c) });
         this.noise.emit(this.player.x, this.player.y, 70, 'registro');
         this.audio.container();
         this.invUI.openUI(c);
@@ -777,7 +1226,14 @@ class Game {
         // v0.20: caja de almacenamiento (abre como contenedor) o cama (dormir)
         const c = target.obj;
         if (c.type === 'caja') {
+          // v0.27: la caja también pasa por el anfitrión en el cliente
+          if (this.net && !this.net.isHost) {
+            if (!this.net.requestLoot(c)) this.invUI.openUI(c);
+            this.audio.container();
+            break;
+          }
           if (!c.searched) { c.searched = true; this.searchedCount++; }
+          if (this.net) this.net.sendEv('searched', { key: this.net.lootKeyOf(c) });
           this.audio.container();
           this.invUI.openUI(c);
         } else if (c.type === 'cama') {
@@ -809,16 +1265,29 @@ class Game {
       }
       case 'car': {
         // v0.26: ENTRAR al coche (y arrancar si puede)
+        // v0.27: el que entra manda sobre el coche — se avisa a la sala
         enterCar(this, target.obj);
+        if (this.net) {
+          const i = this.map.cars.indexOf(target.obj);
+          this.net.sendEv('carIn', { i, r: target.obj.running ? 1 : 0, who: this.net.myId });
+        }
         break;
       }
       case 'exitcar': {
         // v0.26: BAJARSE del coche (queda aparcado donde esté)
+        const car = this.player.inCar;
         exitCar(this);
+        if (this.net && car) {
+          const i = this.map.cars.indexOf(car);
+          this.net.sendEv('carOut', { i, x: Math.round(this.player.x), y: Math.round(this.player.y), who: this.net.myId });
+        }
         break;
       }
       case 'item': {
         const gi = target.obj;
+        // v0.27: en multijugador el objeto se ANOTA (nid) y se reclama al
+        // anfitrión: si otro lo cogió antes, el anfitrión te lo devuelve
+        if (this.net) gi.item.mpPick = gi.nid;
         const fully = this.player.inventory.add(gi.item);
         if (fully) {
           const i = this.groundItems.indexOf(gi);
@@ -826,6 +1295,11 @@ class Game {
           this.audio.pickup();
           this.toasts.push('Recogido: ' + itemLabel(gi.item));
           this.noise.emit(this.player.x, this.player.y, 30, 'recoger');
+          if (this.net) {
+            if (this.net.isHost) this.net._broadcast({ t: 'ev', k: 'giDel', n: gi.nid });
+            else this.net._sendHost({ t: 'act', op: 'pick', n: gi.nid });
+            this.net._giByNid.delete(gi.nid);
+          }
           // la munición recogida rellena sola los cargadores compatibles
           if (gi.item.def.cat === 'municion') this.refillMags();
         } else if (gi.item.count <= 0) {
@@ -847,7 +1321,12 @@ class Game {
       // no cerrar si hay alguien en el umbral
       const rx = tx * TILE, ry = ty * TILE;
       const blocked = (e) => e.x > rx && e.x < rx + TILE && e.y > ry && e.y < ry + TILE;
-      if (blocked(this.player) || this.zombies.some(blocked)) {
+      // v0.27: en co-op también bloquean los COMPAÑEROS y sus zombis
+      const blockers = [this.player, ...this.zombies];
+      if (this.net) {
+        for (const r of this.net.remotes.values()) blockers.push(r.p);
+      }
+      if (blockers.some(blocked)) {
         this.toasts.push('Algo bloquea la puerta', 'warn');
         return;
       }
@@ -857,16 +1336,42 @@ class Game {
     }
     this.audio.door();
     this.noise.emit(tx * TILE + TILE / 2, ty * TILE + TILE / 2, 85, 'puerta');
+    // v0.27: la puerta se comparte — se difunde a la sala
+    if (this.net) {
+      if (this.net.isHost) this.net._broadcast({ t: 'ev', k: 'door', tx, ty, open: !isOpen });
+      else this.net._sendHost({ t: 'act', op: 'door', tx, ty, open: !isOpen });
+    }
   }
 
   // ================== Eventos de combate / muerte ==================
 
-  combatZombieHit(z) { zombieHit(this, z); }
+  combatZombieHit(z, target) {
+    // v0.27: en co-op, la mordida sobre un REMOTO la sufre su dueño
+    // (con SU equipo: reducción de daño e infección son locales)
+    if (target && target !== this.player) {
+      if (target.mpDead) return;
+      if (this.net && this.net.isHost) { this.net.routeBite(z, target); return; }
+    }
+    zombieHit(this, z);
+  }
 
   killZombie(z) {
+    // v0.27: la muerte de un zombi la dicta SOLO la autoridad (anfitrión);
+    // los clientes aplican el cadáver al llegar el evento fiable 'zkill'
+    if (this.net && !this.net.isHost) return;
     const i = this.zombies.indexOf(z);
     if (i >= 0) this.zombies.splice(i, 1);
-    this.kills++;
+    const byMe = !this.net || !this.killsBy || this.killsBy === 'H';
+    if (byMe) this.kills++;
+    if (this.net) {
+      if (!z.nid) z.nid = ++this.net._zNid;
+      const va = { normal: 'n', runner: 'r', brute: 'b', screamer: 's' }[z.variant] || 'n';
+      this.net._broadcast({
+        t: 'ev', k: 'zkill', n: z.nid,
+        x: Math.round(z.x), y: Math.round(z.y), va, fa: +z.face.toFixed(2),
+        by: this.killsBy || 'H',
+      });
+    }
     // v0.14: el cadáver del bruto es más grande; el del corredor, menudo;
     // v0.23: el gritador deja un cuerpo corriente (su valor estaba en la boca)
     const scale = z.variant === 'brute' ? 1.4 : z.variant === 'runner' ? 0.85 : 1;
@@ -878,6 +1383,8 @@ class Game {
 
   onDeath(cause) {
     if (this.state !== STATE.PLAYING) return;
+    // v0.27: en multijugador la muerte es ESPECTAR: la partida sigue
+    if (this.net) { this.mpDeath(cause); return; }
     this.state = STATE.DEAD;
     this.input.enabled = false;
     this.deathCause = cause;
@@ -908,10 +1415,42 @@ class Game {
     }, hadSave, rec);
   }
 
+  // ================== v0.27: sincronía de construcciones ==================
+
+  /** Anfitrión: difunde cada 1 s la vida baja y el agua de los barriles
+   *  (daño de zombis, reparaciones y lluvia acumulada). */
+  _mpConsSync(dt) {
+    this._mpConsT += dt;
+    if (this._mpConsT < 1) return;
+    this._mpConsT = 0;
+    for (const c of this.constructions) {
+      if (!c._netHp) c._netHp = Math.round(c.hp);
+      if (!c._netWt && c.type === 'barril') c._netWt = Math.round(c.water || 0);
+      const hp = Math.round(c.hp), wt = Math.round(c.water || 0);
+      if (hp < c._netHp - 0.5 || hp > c._netHp + 0.5) {
+        c._netHp = hp;
+        this.net._broadcast({ t: 'ev', k: 'consHp', n: c.nid, hp });
+      }
+      if (c.type === 'barril' && (wt < c._netWt - 0.5 || wt > c._netWt + 0.5)) {
+        c._netWt = wt;
+        this.net._broadcast({ t: 'ev', k: 'consWt', n: c.nid, wt });
+      }
+    }
+  }
+
   // ================== Update ==================
 
   update(dt) {
-    if (this.state !== STATE.PLAYING || this.uiOpen) return;
+    if (this.state !== STATE.PLAYING) return;
+
+    // v0.27: MULTIJUGADOR — el tick de red siempre corre (interpolación,
+    // instantáneas, reloj) y el mundo SIGUE con la UI abierta o la pausa:
+    // no se congela una ciudad compartida. En solitario, todo como siempre.
+    const mp = !!this.net;
+    const world = !mp || this.net.isHost;   // ¿esta máquina simula el mundo?
+    const alive = !this.player.mpDead;
+    if (mp) this.net.tick(dt);
+    if (this.uiOpen && !mp) return;
 
     // v0.20: DORMIR — fundido a negro: el mundo espera al despertar
     if (this.sleepT > 0) {
@@ -923,11 +1462,15 @@ class Game {
     this.time += dt;
 
     // ciclo día/noche (12 min = 24 h de juego) + eventos al cambiar de hora
-    this.daynight.update(dt);
-    const dnH = Math.floor(this.daynight.hour);
-    if (dnH !== this._hourMark) {
-      this._hourMark = dnH;
-      this._onHourChange(dnH);
+    // v0.27: en el cliente la hora la marca el ANFITRIÓN (viene en cada
+    // instantánea) — aquí no se avanza
+    if (world) {
+      this.daynight.update(dt);
+      const dnH = Math.floor(this.daynight.hour);
+      if (dnH !== this._hourMark) {
+        this._hourMark = dnH;
+        this._onHourChange(dnH);
+      }
     }
 
     // v0.15: clima (lluvia/neblina) — avanza con el mundo, avisa de
@@ -935,15 +1478,19 @@ class Game {
     //  · noise.mul → la lluvia enmascara TODOS los ruidos de este frame
     //    (pasos, disparos, puertas…): lo leen los zombis al escuchar.
     //  · audio.setRain → ambiente de lluvia con su intensidad (y truenos).
-    this.weather.update(dt);
-    const wt = this.weather.type;
-    if (wt !== this._weatherMark) {
-      const prev = this._weatherMark;
-      this._weatherMark = wt;
-      this._onWeatherChange(prev, wt);
+    // v0.27: el clima lo dicta el anfitrión (viaja en la instantánea);
+    // el cliente solo actualiza el AMBIENTE local con lo recibido
+    if (world) {
+      this.weather.update(dt);
+      const wt = this.weather.type;
+      if (wt !== this._weatherMark) {
+        const prev = this._weatherMark;
+        this._weatherMark = wt;
+        this._onWeatherChange(prev, wt);
+      }
     }
     this.noise.mul = this.weather.noiseMul();
-    this.audio.setRain(wt === 'rain' ? this.weather.intensity : 0, dt);
+    this.audio.setRain(this.weather.type === 'rain' ? this.weather.intensity : 0, dt);
 
     // v0.17: linterna — descarga de pilas + cambio automático (solo jugando,
     // igual que el día/noche y el clima; los multiplicadores de visión los
@@ -958,35 +1505,58 @@ class Game {
 
     // v0.26: EL COCHE EN MARCHA — física de conducción, combustible,
     // choques, atropellos y ruido de motor (el jugador va dentro)
-    if (this.player.inCar) updateVehicle(this, dt);
+    // v0.27: cada piloto conduce EN LOCAL (autoridad del conductor)
+    if (alive && this.player.inCar) updateVehicle(this, dt);
     updateVehicleFX(this, dt);
 
     // v0.23: chequeo periódico de población para la EMERGENCIA del GRITADOR
-    this._screamerCheckT += dt;
-    if (this._screamerCheckT >= ZOMBIE_CFG.screamerCheckEvery) {
-      this._screamerCheckT = 0;
-      this._maybeSpawnScreamer();
+    // v0.27: solo la autoridad vigila la población (los gritadores nacen
+    // en el anfitrión y se difunden como altas de zombi)
+    if (world) {
+      this._screamerCheckT += dt;
+      if (this._screamerCheckT >= ZOMBIE_CFG.screamerCheckEvery) {
+        this._screamerCheckT = 0;
+        this._maybeSpawnScreamer();
+      }
     }
 
-    this.player.update(dt, this);
+    // v0.27: sincronización periódica de construcciones (anfitrión):
+    // vida de barricadas golpeadas y agua de los barriles con la lluvia
+    if (mp && this.net.isHost) this._mpConsSync(dt);
+
+    if (alive) this.player.update(dt, this);
     this.player.inventory.setCapacity(this.player.capacity());
 
     // zombis (hacia atrás: pueden morir durante el frame)
-    for (let i = this.zombies.length - 1; i >= 0; i--) {
-      this.zombies[i].update(dt, this);
-      if (this.state !== STATE.PLAYING) return;
+    // v0.27: los clientes NO corren la IA — son marionetas interpoladas
+    // por net.tick() a partir de las instantáneas del anfitrión
+    if (world) {
+      for (let i = this.zombies.length - 1; i >= 0; i--) {
+        this.zombies[i].update(dt, this);
+        if (this.state !== STATE.PLAYING) return;
+      }
     }
 
-    this.survival.update(dt, this, this.player.moving, this.player.running);
-    if (this.state !== STATE.PLAYING) return;
+    if (alive) {
+      this.survival.update(dt, this, this.player.moving, this.player.running);
+      if (this.state !== STATE.PLAYING) return;
+    } else if (mp && this._spectate) {
+      // espectador: la cámara/vision siguen al compañero elegido
+      this.player.x = this._spectate.p.x;
+      this.player.y = this._spectate.p.y;
+      this.player.z = this._spectate.p.z || 0;
+    }
 
     // v0.13: autoguardado cada 5 minutos DE PARTIDA (solo avanza jugando:
     // el menú, la pausa y el inventario abierto no consumen el cronómetro)
-    this._autosaveT += dt;
-    if (this._autosaveT >= AUTOSAVE_SEC) {
-      this._autosaveT = 0;
-      if (saveGame(this, this.saveSlot)) this.toasts.push('Partida guardada (ranura ' + this.saveSlot + ')', 'save');
-      else this.toasts.push('Autoguardado fallido: revisa el almacenamiento', 'bad');
+    // v0.27: sin autoguardado en multijugador (la sala no se guarda)
+    if (!mp) {
+      this._autosaveT += dt;
+      if (this._autosaveT >= AUTOSAVE_SEC) {
+        this._autosaveT = 0;
+        if (saveGame(this, this.saveSlot)) this.toasts.push('Partida guardada (ranura ' + this.saveSlot + ')', 'save');
+        else this.toasts.push('Autoguardado fallido: revisa el almacenamiento', 'bad');
+      }
     }
 
     this.noise.update(dt);
@@ -1000,7 +1570,7 @@ class Game {
     // fuego automático: mantener pulsado el botón con un rifle automático
     // (v0.20: nunca en modo construcción — el clic izquierdo CANCELA)
     const eqGun = this.player.equipment.arma;
-    if (this.input.mouse.down && eqGun && eqGun.def.auto && !this.build) playerAttack(this);
+    if (alive && this.input.mouse.down && eqGun && eqGun.def.auto && !this.build) playerAttack(this);
 
     // Visión puramente en tiempo real: se recalcula cada frame, sin memoria
     this.vision.compute(this);

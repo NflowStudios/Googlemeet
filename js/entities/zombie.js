@@ -99,10 +99,12 @@ export class Zombie {
     this.state = ST.CHASE;
     this.lastSeenX = game.player.x; this.lastSeenY = game.player.y;
     this.unseenT = 0;
+    // v0.27: en el CLIENTE el golpe además SE REPORTA al anfitrión (la
+    // muerte y el empuje definitivos los dicta quien simula el mundo)
+    if (game.net && !game.net.isHost) game.net.reportHit(this, dmg, ang, kb);
   }
 
-  _seePlayer(game) {
-    const p = game.player;
+  _seePlayer(game, p = game.player) {
     // otro plano (2º piso / sótano): ni te ve ni te huele
     if ((p.z || 0) !== this.z || p.climb) return false;
     const d = dist(this.x, this.y, p.x, p.y);
@@ -118,8 +120,18 @@ export class Zombie {
     return game.map.lineClearZ(this.x, this.y, p.x, p.y, this.z);
   }
 
-  update(dt, game) {
-    const p = game.player;
+  update(dt, game, target) {
+    // v0.27: en co-op el zombi persigue al jugador MÁS CERCANO (vivos:
+    // el local + las marionetas de la red). En solitario, target no llega.
+    let p = target || game.player;
+    if (!target && game.net && game.net.isHost && game.net.remotes.size) {
+      const tgts = game.net.playerTargets();
+      let bd = Infinity;
+      for (const t of tgts) {
+        const dd = dist(this.x, this.y, t.x, t.y);
+        if (dd < bd) { bd = dd; p = t; }
+      }
+    }
     const map = game.map;
     const d = dist(this.x, this.y, p.x, p.y);
 
@@ -158,7 +170,7 @@ export class Zombie {
     }
 
     // ---- percepción: jugador ----
-    const sees = this._seePlayer(game);
+    const sees = this._seePlayer(game, p);
     if (sees) {
       if (this.state !== ST.CHASE && Math.random() < 0.4) {
         game.audio.groan(0.5, this._pan(game), this.groanPitch);
@@ -259,7 +271,7 @@ export class Zombie {
         if (d < atkR && this.attackCd <= 0 && (p.z || 0) === this.z &&
             !p.climb && map.lineClearZ(this.x, this.y, p.x, p.y, this.z)) {
           this.attackCd = this.attackCdBase;
-          game.combatZombieHit(this);
+          game.combatZombieHit(this, p);
         }
         break;
       }
@@ -353,6 +365,10 @@ export class Zombie {
     game.cam.shake(2.5);
     // anillos rojos: la onda del chillido es VISIBLE en el suelo
     game.noise.emit(this.x, this.y, v.screamR, 'chillido', 'scream');
+    // v0.27: en co-op el chillido se difunde (audio + aviso en los clientes)
+    if (game.net && game.net.isHost) {
+      game.net._broadcast({ t: 'ev', k: 'scream', x: Math.round(this.x), y: Math.round(this.y) });
+    }
     if (!game._screamedOnce) {
       game._screamedOnce = true;
       game.toasts.push('¡CHILLIDO! El gritador ha convocado a todos los zombis de la zona', 'bad');

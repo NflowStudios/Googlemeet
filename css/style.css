@@ -1687,3 +1687,200 @@ kbd {
 }
 .car-actions button:hover:not(:disabled) { background: #31402a; }
 .car-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ==================== v0.27: MULTIJUGADOR ==================== */
+/* Paneles de sala (crear / unirse / lobby / aviso) + lista TAB + chip de
+   sala. Misma alma visual que las pantallas de profesión y enciclopedia. */
+
+#mpscreen, #mp-lobby, #mp-notice {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 4, 0.82);
+}
+.mp-panel {
+  width: min(680px, 94vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: #0d100c;
+  border: 1px solid #3a3f35;
+  border-top: 3px solid #6aa8d8;
+  box-shadow: 0 22px 90px rgba(0, 0, 0, 0.8);
+  padding: 16px 18px 14px;
+}
+.mp-panel.small { width: min(460px, 94vw); border-top-color: #d8a04a; }
+.mp-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #262b22;
+}
+.mp-head-txt h2 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  color: var(--text);
+}
+#mplobby-code { color: #6aa8d8; letter-spacing: 10px; }
+.mp-head-txt span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  letter-spacing: 1.5px;
+  color: #8a8d80;
+}
+.mp-panel > header > button {
+  background: #1d2318;
+  border: 1px solid #3a4430;
+  color: #b8bbab;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 9px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mp-panel > header > button:hover { background: #263020; color: #e6e8dc; }
+
+/* formulario de entrada */
+.mp-form { padding: 18px 6px 6px; }
+.mp-field span {
+  display: block;
+  font-size: 11.5px;
+  letter-spacing: 3px;
+  color: #8a8d80;
+  margin-bottom: 6px;
+}
+.mp-field input, .mp-join input {
+  width: 100%;
+  background: #10140e;
+  border: 1px solid #3a4430;
+  color: #e6e8dc;
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  padding: 10px 14px;
+  outline: none;
+}
+.mp-join input { letter-spacing: 8px; text-align: center; width: 170px; }
+.mp-field input:focus, .mp-join input:focus { border-color: #6aa8d8; }
+.mp-actions-row {
+  display: flex;
+  gap: 14px;
+  align-items: stretch;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.mp-actions-row button, .mp-lobby-actions button, .mp-panel.small > button {
+  background: #26301f;
+  border: 1px solid #456a2a;
+  color: #c9e0b0;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  padding: 12px 20px;
+  cursor: pointer;
+}
+.mp-actions-row button:hover:not(:disabled),
+.mp-lobby-actions button:hover:not(:disabled) { background: #31402a; }
+.mp-actions-row button:disabled, .mp-lobby-actions button:disabled {
+  opacity: 0.45; cursor: not-allowed;
+}
+button.mp-big {
+  background: #2c3a4a !important;
+  border-color: #4a6a8a !important;
+  color: #c5d8e8 !important;
+  flex: 1;
+  min-width: 200px;
+}
+button.mp-big:hover:not(:disabled) { background: #36485c !important; }
+.mp-join { display: flex; gap: 10px; flex: 1; min-width: 280px; }
+.mp-join button { flex: 1; }
+#mp-hint { padding: 14px 6px 4px; font-size: 14px; line-height: 1.5; color: #a8aba0; }
+.mp-note {
+  padding: 10px 6px 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #6d6f64;
+  border-top: 1px dashed #262b22;
+  margin-top: 10px;
+}
+
+/* lobby: plantel */
+#mplobby-list { padding: 14px 4px; display: flex; flex-direction: column; gap: 8px; }
+.mpl-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #10140e;
+  border: 1px solid #262b22;
+  padding: 10px 14px;
+}
+.mpl-row.me { border-color: #4a6a8a; }
+.mpl-dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 8px rgba(0,0,0,0.6); flex: none; }
+.mpl-name { font-weight: 700; letter-spacing: 2px; font-size: 16px; color: #e6e8dc; }
+.mpl-name i, .mp-list i { font-style: normal; font-size: 11px; color: #8a8d80; }
+.mpl-prof { margin-left: auto; font-size: 13px; letter-spacing: 1.5px; color: #9fc37a; }
+.mp-lobby-actions { display: flex; gap: 14px; padding: 8px 4px 4px; flex-wrap: wrap; }
+
+/* aviso de sala cerrada */
+.mp-panel.small p { padding: 14px 4px; color: #a8aba0; font-size: 14.5px; line-height: 1.5; }
+.mp-panel.small > button { width: 100%; }
+
+/* botón del menú principal */
+.btn-mp {
+  background: #2c3a4a !important;
+  border: 1px solid #4a6a8a !important;
+  color: #c5d8e8 !important;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  padding: 14px 30px;
+  cursor: pointer;
+}
+.btn-mp:hover { background: #36485c !important; color: #fff !important; }
+
+/* chip de sala (status-chips) */
+.chip.mp { color: #8ac0e8; border-color: #3a6a8a; }
+
+/* lista de jugadores (TAB mantenido) */
+#mp-list {
+  position: fixed;
+  top: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  min-width: 340px;
+  background: rgba(10, 13, 9, 0.92);
+  border: 1px solid #3a4430;
+  border-top: 2px solid #6aa8d8;
+  box-shadow: 0 14px 50px rgba(0, 0, 0, 0.7);
+  padding: 10px 14px 8px;
+}
+#mp-list h3 {
+  font-size: 15px;
+  letter-spacing: 4px;
+  color: #8ac0e8;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #262b22;
+  margin-bottom: 8px;
+}
+.mp-row { display: flex; align-items: center; gap: 10px; padding: 5px 2px; }
+.mp-row .mp-dot { width: 11px; height: 11px; border-radius: 50%; }
+.mp-row .mp-name { font-size: 14px; font-weight: 700; letter-spacing: 1.5px; color: #d8dbd0; }
+.mp-row.me .mp-name { color: #8ac0e8; }
+.mp-row .mp-hp { margin-left: auto; font-size: 12.5px; color: #9fc37a; }
+.mp-row.dead .mp-hp { color: #e05a4f; }
+.mp-row .mp-rtt { font-size: 11.5px; color: #6d6f64; min-width: 52px; text-align: right; }
+#mp-list .mp-note { border: none; margin: 0; padding: 8px 0 2px; }

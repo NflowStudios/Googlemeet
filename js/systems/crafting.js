@@ -358,6 +358,7 @@ export function barrilUse(game, c) {
       return false;
     }
     c.water = Math.max(0, c.water - 15);
+    if (game.mpBarril) game.mpBarril(c);   // v0.27: el nivel del barril viaja
     game.audio.drink();
     game.toasts.push('Botella LLENA del barril (agua −15%)', 'save');
     return true;
@@ -365,6 +366,7 @@ export function barrilUse(game, c) {
   // a pelo del barril
   c.water = Math.max(0, c.water - 20);
   game.survival.thirst = Math.min(100, game.survival.thirst + 35);
+  if (game.mpBarril) game.mpBarril(c);       // v0.27: idem
   game.audio.drink();
   game.noise.emit(c.x, c.y, 30, 'beber');
   game.toasts.push('Un trago del barril: +35 de sed (agua −20%)', 'info');
@@ -389,6 +391,7 @@ export function harvestCrop(game, c) {
       game.groundItems.push({ x: c.x, y: c.y, z: 0, item: seed, visibleNow: true });
     }
     game.toasts.push(d.name + ' marchita — recuperas 1 semilla', 'warn');
+    if (game.mpConsRemoved) game.mpConsRemoved(c);   // v0.27: la sala ve el huerto
     removeConstruction(game, c);
     return true;
   }
@@ -406,12 +409,14 @@ export function harvestCrop(game, c) {
   it.count = n;
   if (!p.inventory.add(it)) {
     game.toasts.push('Mochila llena — la cosecha cae al suelo', 'warn');
-    game.groundItems.push({ x: c.x + (Math.random() - 0.5) * 12, y: c.y + (Math.random() - 0.5) * 12, z: 0, item: it, visibleNow: true });
+    if (game.mpDrop) game.mpDrop(c.x + (Math.random() - 0.5) * 12, c.y + (Math.random() - 0.5) * 12, 0, it);
+    else game.groundItems.push({ x: c.x + (Math.random() - 0.5) * 12, y: c.y + (Math.random() - 0.5) * 12, z: 0, item: it, visibleNow: true });
   }
   game.audio.harvest();
   game.noise.emit(c.x, c.y, 35, 'cosecha');
   game.toasts.push('Cosechado: ' + d.name + ' ×' + n +
     (mul > 1 ? ' (GRANJERO ×' + mul + ')' : ''), 'save');
+  if (game.mpConsRemoved) game.mpConsRemoved(c);   // v0.27: idem cosecha
   removeConstruction(game, c);
   return true;
 }
@@ -557,6 +562,8 @@ export function placeBuild(game) {
   // de siembra (la planta crecerá sola con los días del reloj de juego)
   const c = addConstruction(game, recipe.id, b.tx, b.ty, b.rot,
     recipe.plant ? recipe.crop : null, recipe.plant ? game.daynight.day : null);
+  // v0.27: en multijugador la construcción se difunde a toda la sala
+  if (game.mpConsPlaced) game.mpConsPlaced(c);
   if (recipe.plant) game.audio.plant();
   else game.audio.hammer();
   if (game.stats) game.stats.built++;   // v0.23: obituario
@@ -654,19 +661,29 @@ export function damageConstruction(game, c, dmg, byPlayer) {
     const drops = [...(CON_DEFS[c.type].drop || [])];
     if (c.type === 'caja' && c.items) {
       for (const it of c.items) {
-        game.groundItems.push({ x: c.x + (Math.random() - 0.5) * 14, y: c.y + (Math.random() - 0.5) * 14, z: 0, item: it, visibleNow: true });
+        game.mpDrop
+          ? game.mpDrop(c.x + (Math.random() - 0.5) * 14, c.y + (Math.random() - 0.5) * 14, 0, it)
+          : game.groundItems.push({ x: c.x + (Math.random() - 0.5) * 14, y: c.y + (Math.random() - 0.5) * 14, z: 0, item: it, visibleNow: true });
       }
     }
     for (const [id, n] of drops) {
       const it = makeItem(id);
       it.count = n;
-      game.groundItems.push({ x: c.x + (Math.random() - 0.5) * 14, y: c.y + (Math.random() - 0.5) * 14, z: 0, item: it, visibleNow: true });
+      game.mpDrop
+        ? game.mpDrop(c.x + (Math.random() - 0.5) * 14, c.y + (Math.random() - 0.5) * 14, 0, it)
+        : game.groundItems.push({ x: c.x + (Math.random() - 0.5) * 14, y: c.y + (Math.random() - 0.5) * 14, z: 0, item: it, visibleNow: true });
     }
     game.audio.crash();
     game.noise.emit(c.x, c.y, 160, 'destrozo');
     if (byPlayer) game.toasts.push('Has destrozado: ' + CON_NAMES[c.type]);
+    // v0.27: la baja se difunde (la sala ve desaparecer la barricada)
+    if (game.mpConsRemoved) game.mpConsRemoved(c);
     removeConstruction(game, c);
+    return;
   }
+  // v0.27: daño parcial → sincronía (el anfitrión difunde cada 1 s;
+  // el cliente avisa de sus propios leñazos)
+  if (byPlayer && game.mpConsMutated) game.mpConsMutated(c);
 }
 
 // ================== v0.23: REPARACIÓN ==================
@@ -738,6 +755,8 @@ export function repairConstruction(game, c) {
   }
   c.hp = c.maxHp;
   if (c.type === 'trampa') c.uses = C.trapUses;   // afilar los pinchos los re-arma
+  // v0.27: la reparación viaja a la sala (hp al máximo)
+  if (game.mpConsMutated) game.mpConsMutated(c);
   game.audio.hammer();
   game.noise.emit(c.x, c.y, 140, 'reparar');
   game.cam.shake(1.5);
@@ -764,6 +783,12 @@ function areaSafeToSleep(game) {
 export function sleepInBed(game) {
   const p = game.player;
   if (p.climb) return;
+  // v0.27: en multijugador no se duerme — saltar horas rompería el reloj
+  // compartido y dejaría a los compañeros esperando tu despertar
+  if (game.net) {
+    game.toasts.push('Dormir no está disponible en multijugador — la ciudad no espera', 'warn');
+    return;
+  }
   if (!areaSafeToSleep(game)) {
     game.toasts.push('Hay zombis DEMASIADO cerca para dormir', 'warn');
     game.audio.groan(0.6, 0, 0.8);
@@ -828,6 +853,9 @@ export function throwMolotov(game) {
     vy: Math.sin(p.angle) * C.throwSpd,
     t: 0, z: p.z || 0,
   });
+  // v0.27: el vuelo del cóctel se difunde — cada máquina lo ve estallar
+  // (el daño a zombis lo resuelve quien simula el mundo)
+  if (game.mpMolotov) game.mpMolotov(game.molotovs[game.molotovs.length - 1]);
   // consumir unidad (la pila viaja entera en la mano)
   it.count--;
   game.toasts.push('¡Molotov lanzado!', 'info');
@@ -944,12 +972,15 @@ export function updateConstructions(game, dt) {
   }
 
   // ---- trampas de pinchos ----
+  // v0.27: el daño de las trampas lo aplica SOLO la autoridad (anfitrión):
+  // los clientes ven las trampas y reciben las bajas por 'zkill'
   for (let i = game.constructions.length - 1; i >= 0; i--) {
     const c = game.constructions[i];
     if (c.type !== 'trampa') continue;
     c.tick -= dt;
     if (c.tick > 0) continue;
     c.tick = C.trapEvery;
+    if (game.net && !game.net.isHost) continue;
     for (const zb of game.zombies) {
       if ((zb.z || 0) !== 0) continue;
       if (Math.abs(zb.x - c.x) < 17 && Math.abs(zb.y - c.y) < 17) {
@@ -961,6 +992,7 @@ export function updateConstructions(game, dt) {
         if (zb.hp <= 0) game.killZombie(zb);
         if (c.uses <= 0) {
           game.toasts.push('Una trampa de pinchos quedó inservible', 'warn');
+          if (game.mpConsRemoved) game.mpConsRemoved(c);
           removeConstruction(game, c);
           break;
         }

@@ -397,12 +397,18 @@ export class InventoryUI {
     const it = inv.removeAt(i);
     if (!it) return;
     const a = g.player.angle;
-    g.groundItems.push({
-      x: g.player.x + Math.cos(a) * 26,
-      y: g.player.y + Math.sin(a) * 26,
-      z: g.player.z || 0,          // v0.19: la planta donde se suelta
-      item: it, visibleNow: true,
-    });
+    const dx = g.player.x + Math.cos(a) * 26;
+    const dy = g.player.y + Math.sin(a) * 26;
+    // v0.27: en multijugador lo soltado se difunde (con su nid)
+    if (g.mpDrop) {
+      g.mpDrop(dx, dy, g.player.z || 0, it);
+    } else {
+      g.groundItems.push({
+        x: dx, y: dy,
+        z: g.player.z || 0,          // v0.19: la planta donde se suelta
+        item: it, visibleNow: true,
+      });
+    }
     g.noise.emit(g.player.x, g.player.y, 30, 'soltar');
     g.audio.drop();
     this.selected = -1;
@@ -416,6 +422,8 @@ export class InventoryUI {
     const fully = g.player.inventory.add(it);
     if (fully) {
       c.items.splice(ci, 1);
+      // v0.27: el botín retirado se retira en TODAS las máquinas
+      if (g.net) g.net.syncTake(c, ci);
       g.audio.pickup();
       g.toasts.push('Tomado: ' + itemLabel(it));
       // la munición tomada rellena sola los cargadores compatibles
@@ -443,6 +451,8 @@ export class InventoryUI {
       return;
     }
     c.items.push(it);
+    // v0.27: lo guardado aparece en TODAS las máquinas
+    if (g.net) g.net.syncPut(c, it);
     g.audio.drop();
     g.toasts.push('Guardado');
     this.selected = -1;

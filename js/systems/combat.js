@@ -146,6 +146,20 @@ export function fireRanged(game) {
   game.noise.emit(p.x, p.y, w.noise, 'disparo');
   game.cam.shake(w.shake);
 
+  // v0.27: en multijugador el disparo SE DIFUNDE — los demás ven la
+  // trazadora y oyen el tiro a distancia; el anfitrión además recibe el
+  // RUIDO para sus zombis (en el cliente ya va encolado en el estado)
+  if (game.net) {
+    const range = w.range || 900;
+    const ex = bx + Math.cos(p.angle) * range;
+    const ey = by + Math.sin(p.angle) * range;
+    game.net.sendEv('shot', {
+      x: Math.round(bx), y: Math.round(by),
+      x2: Math.round(ex), y2: Math.round(ey),
+      a: +p.angle.toFixed(2), big: (w.pellets || 1) > 1, r: w.noise,
+    });
+  }
+
   // v0.24: POLICÍA — bono pasivo de daño, SOLO armas de fuego (el melee y
   // los cócteles no se benefician). Se aplica a cada posta del disparo.
   const dmgMul = p.profMul ? p.profMul('gunDmgMul') : 1;
