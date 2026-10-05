@@ -565,6 +565,10 @@ export class GameMap {
     const pool = shuffle(allBlocks.filter((b) => !isCenter(b) && b !== militaryBlock && b !== hospitalBlock), rng);
     const policeBlock = pool.find((b) => bigEnough(b, SPECIALS.police.w, SPECIALS.police.h)) || null;
     const storeBlock = pool.find((b) => b !== policeBlock && bigEnough(b, SPECIALS.store.w, SPECIALS.store.h)) || null;
+    // v0.25: HOME & TOOLS — otra manzana grande para la ferretería (nunca
+    // la misma que comisaría o tienda: cada estructura única en su bloque)
+    const toolsBlock = pool.find((b) => b !== policeBlock && b !== storeBlock &&
+      bigEnough(b, SPECIALS.tools.w, SPECIALS.tools.h)) || null;
 
     // --- Edificios por manzana ---
     for (const [bx0, bx1] of X_BLOCKS) {
@@ -577,9 +581,11 @@ export class GameMap {
         const isStore = storeBlock && storeBlock.bx0 === bx0 && storeBlock.by0 === by0;
         const isMilitary = militaryBlock && militaryBlock.bx0 === bx0 && militaryBlock.by0 === by0;
         const isHospital = hospitalBlock && hospitalBlock.bx0 === bx0 && hospitalBlock.by0 === by0;
-        if (isPolice || isStore || isMilitary || isHospital) {
+        const isTools = toolsBlock && toolsBlock.bx0 === bx0 && toolsBlock.by0 === by0;   // v0.25
+        if (isPolice || isStore || isMilitary || isHospital || isTools) {
           const sp = isPolice ? SPECIALS.police : isStore ? SPECIALS.store
-            : isMilitary ? SPECIALS.military : SPECIALS.hospital;
+            : isMilitary ? SPECIALS.military : isHospital ? SPECIALS.hospital
+            : SPECIALS.tools;
           const w = Math.min(sp.w, bw - 2), h = Math.min(sp.h, bh - 2);
           const x0 = bx0 + 1 + rng.int(0, Math.max(0, bw - 2 - w));
           const y0 = by0 + 1 + rng.int(0, Math.max(0, bh - 2 - h));
@@ -587,7 +593,8 @@ export class GameMap {
           if (isPolice) this._placePoliceStation(x0, y0, x0 + w - 1, y0 + h - 1);
           else if (isStore) this._placeStore(x0, y0, x0 + w - 1, y0 + h - 1);
           else if (isMilitary) this._placeMilitaryBase(x0, y0, x0 + w - 1, y0 + h - 1);
-          else this._placeHospital(x0, y0, x0 + w - 1, y0 + h - 1);
+          else if (isHospital) this._placeHospital(x0, y0, x0 + w - 1, y0 + h - 1);
+          else this._placeHomeTools(x0, y0, x0 + w - 1, y0 + h - 1);
           continue;
         }
 
@@ -1039,6 +1046,74 @@ export class GameMap {
       kind: 'store',
       upper: null, basement: null, stairs: null,
       roof: this._buildStoreRoofCanvas(x0, y0, x1, y1),
+      roofW: w * TILE, roofH: h * TILE,
+    });
+  }
+
+  /**
+   * HOME & TOOLS (estructura única, v0.25). La FERRETERÍA tipo gran
+   * almacén: escaparate sur con ventanas cada 2 tiles, doble puerta, y un
+   * solo piso de nave comercial. Al fondo (norte) el RINCÓN DE JARDINERÍA
+   * (expositores J con las semillas a porrillo) y delante PASILLOS de
+   * ESTANTERÍAS DE FERRETERÍA (H) repletas de materiales de construcción —
+   * más abundantes que en ningún otro sitio — y del MAZO PESADO, que vive
+   * en exclusiva aquí. Tejado plano de grava con FRANJAS NARANJAS de
+   * marquesina y un gran rótulo con MARTILLO Y LLAVE CRUZADOS: la Casa del
+   * Herrero del apocalipsis. Peligro: el mismo que la tienda (ver
+   * zombie.js: 3 dentro — 1 de ellos bruto de guarnición — + 2 alrededor).
+   */
+  _placeHomeTools(x0, y0, x1, y1) {
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+
+    // perímetro + interior
+    for (let x = x0; x <= x1; x++) { this.setTile(x, y0, T.WALL); this.setTile(x, y1, T.WALL); }
+    for (let y = y0; y <= y1; y++) { this.setTile(x0, y, T.WALL); this.setTile(x1, y, T.WALL); }
+    for (let y = y0 + 1; y < y1; y++)
+      for (let x = x0 + 1; x < x1; x++) this.setTile(x, y, T.FLOOR);
+
+    // escaparate sur (cada 2) + ventanas laterales más espaciadas (cada 3)
+    for (let x = x0 + 2; x <= x1 - 2; x += 2) this.setTile(x, y1, T.WINDOW);
+    for (let y = y0 + 2; y <= y1 - 2; y += 3) {
+      this.setTile(x0, y, T.WINDOW);
+      this.setTile(x1, y, T.WINDOW);
+    }
+
+    // doble puerta centrada en el escaparate sur
+    const dx = x0 + Math.floor(w / 2) - 1;
+    for (const d of [dx, dx + 1]) {
+      this.setTile(d, y1, T.DOOR_CLOSED);
+      this.doors.push({ tx: d, ty: y1 });
+    }
+
+    // ---- RINCÓN DE JARDINERÍA: expositores J contra la pared del fondo
+    // (norte) — las SEMILLAS más baratas del apocalipsis. Un par de
+    // estanterías de ferretería flanquean la zona en las esquinas. ----
+    this._addContainer('expositor_jardin', x0 + 2, y0 + 1, 0);
+    this._addContainer('expositor_jardin', x0 + 5, y0 + 1, 0);
+    this._addContainer('expositor_jardin', x0 + 8, y0 + 1, 0);
+    this._addContainer('estanteria_ferreteria', x1 - 2, y0 + 1, 0);
+
+    // ---- PASILLOS DE FERRETERÍA: 2 filas de estanterías H con hueco de
+    // paso cada 3 tiles (como los de la tienda, pero con MATERIALES a
+    // porrillo y el MAZO en exclusiva). ----
+    for (const ry of [y0 + 4, y0 + 7]) {
+      if (ry >= y1 - 1) continue;
+      for (let x = x0 + 2, k = 0; x <= x1 - 2; x++, k++) {
+        if (k % 3 === 2) continue;                 // hueco para cruzar el pasillo
+        this._addContainer('estanteria_ferreteria', x, ry, 0);
+      }
+    }
+
+    // caja de herramientas suelta junto a la entrada (registro improvisado)
+    this._addContainer('casillero', x1 - 2, y1 - 2, 0);
+
+    this.buildings.push({
+      x0, y0, x1, y1,
+      cx: (x0 + x1) / 2 * TILE + TILE / 2,
+      cy: (y0 + y1) / 2 * TILE + TILE / 2,
+      kind: 'tools',
+      upper: null, basement: null, stairs: null,
+      roof: this._buildHomeToolsRoofCanvas(x0, y0, x1, y1),
       roofW: w * TILE, roofH: h * TILE,
     });
   }
@@ -2152,6 +2227,113 @@ export class GameMap {
     return rc;
   }
 
+  /**
+   * Tejado de HOME & TOOLS (v0.25): nave de grava con REMATE PERIMETRAL,
+   * MARQUESINA de franjas NARANJA/BLANCO en el frente sur (el naranja
+   * comercial del gran almacén de bricolaje), un RÓTULO CENTRAL con
+   * MARTILLO Y LLAVE CRUZADOS en cuadro naranja, lucernarios y
+   * extractores — inconfundible desde el aire.
+   */
+  _buildHomeToolsRoofCanvas(x0, y0, x1, y1) {
+    const w = (x1 - x0 + 1) * TILE, h = (y1 - y0 + 1) * TILE;
+    const rc = document.createElement('canvas');
+    rc.width = w; rc.height = h;
+    const c = rc.getContext('2d');
+
+    // base: grava bituminosa
+    c.fillStyle = '#3a3a40';
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = 'rgba(255,255,255,0.04)';
+    for (let i = 0; i < w * h / 2200; i++) {
+      c.fillRect((i * 127) % w, (i * 89) % h, 2, 2);
+    }
+    // parches de humedad
+    c.fillStyle = 'rgba(0,0,0,0.18)';
+    c.fillRect(w * 0.12, h * 0.3, w * 0.16, h * 0.1);
+    c.fillRect(w * 0.6, h * 0.55, w * 0.2, h * 0.12);
+
+    // remate perimetral
+    c.fillStyle = '#4a4a52';
+    c.fillRect(0, 0, w, 4); c.fillRect(0, h - 4, w, 4);
+    c.fillRect(0, 0, 4, h); c.fillRect(w - 4, 0, 4, h);
+
+    // marquesina: franjas verticales NARANJA/blanco en el frente (sur)
+    const bandH = Math.min(40, Math.floor(h * 0.16));
+    for (let x = 0; x < w; x += 20) {
+      c.fillStyle = '#c8742a';
+      c.fillRect(x, h - bandH, 10, bandH);
+      c.fillStyle = '#d8d0c0';
+      c.fillRect(x + 10, h - bandH, 10, bandH);
+    }
+    c.fillStyle = 'rgba(0,0,0,0.3)';
+    c.fillRect(0, h - bandH - 3, w, 3);   // sombra del canalón
+
+    // rótulo central: cuadro naranja con MARTILLO y LLAVE cruzados
+    const px = w / 2, py = h / 2 - bandH / 2;
+    const R = Math.min(w, h) * 0.2;
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.fillRect(px - R + 4, py - R + 4, R * 2, R * 2);
+    c.fillStyle = '#c8742a';
+    c.fillRect(px - R, py - R, R * 2, R * 2);
+    c.strokeStyle = 'rgba(0,0,0,0.4)';
+    c.lineWidth = 2;
+    c.strokeRect(px - R, py - R, R * 2, R * 2);
+    // martillo (diagonal) y llave (contradiagonal) cruzados en blanco
+    c.strokeStyle = '#e8e2d4';
+    c.lineCap = 'round';
+    // mango del martillo
+    c.lineWidth = R * 0.14;
+    c.beginPath();
+    c.moveTo(px - R * 0.55, py + R * 0.55); c.lineTo(px + R * 0.28, py - R * 0.28); c.stroke();
+    // cabeza del martillo
+    c.lineWidth = R * 0.3;
+    c.beginPath();
+    c.moveTo(px + R * 0.12, py - R * 0.55); c.lineTo(px + R * 0.48, py - R * 0.19); c.stroke();
+    // mango de la llave
+    c.lineWidth = R * 0.14;
+    c.beginPath();
+    c.moveTo(px + R * 0.55, py + R * 0.55); c.lineTo(px - R * 0.28, py - R * 0.28); c.stroke();
+    // cabeza de la llave (anillo + dientes)
+    c.lineWidth = R * 0.22;
+    c.beginPath();
+    c.arc(px - R * 0.5, py - R * 0.5, R * 0.26, 0, Math.PI * 2); c.stroke();
+    c.lineWidth = R * 0.12;
+    c.beginPath(); c.moveTo(px - R * 0.68, py - R * 0.32); c.lineTo(px - R * 0.5, py - R * 0.14); c.stroke();
+    c.beginPath(); c.moveTo(px - R * 0.32, py - R * 0.68); c.lineTo(px - R * 0.14, py - R * 0.5); c.stroke();
+
+    // fila de lucernarios (3 cristales con marco y reflejo)
+    const skyY = h * 0.16, skyW = w * 0.16, skyH = h * 0.2;
+    for (let i = 0; i < 3; i++) {
+      const sxx = w * 0.1 + i * (skyW + w * 0.05);
+      c.fillStyle = '#2b2f36';
+      c.fillRect(sxx - 3, skyY - 3, skyW + 6, skyH + 6);
+      c.fillStyle = '#5d6d72';
+      c.fillRect(sxx, skyY, skyW, skyH);
+      c.fillStyle = 'rgba(160,190,200,0.30)';
+      c.fillRect(sxx + 3, skyY + 3, skyW * 0.35, skyH * 0.3);
+      c.fillStyle = 'rgba(0,0,0,0.25)';
+      c.fillRect(sxx, skyY + skyH * 0.55, skyW, 2);
+    }
+
+    // extractores (2 cilindros bajos)
+    for (const [ex, ey] of [[w * 0.84, h * 0.74], [w * 0.26, h * 0.84]]) {
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      c.beginPath(); c.arc(ex + 3, ey + 3, 11, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#5a5a64';
+      c.beginPath(); c.arc(ex, ey, 11, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#44444e';
+      c.beginPath(); c.arc(ex, ey, 7, 0, Math.PI * 2); c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.12)';
+      c.beginPath(); c.arc(ex - 3, ey - 3, 4, 0, Math.PI * 2); c.fill();
+    }
+
+    // contorno
+    c.strokeStyle = 'rgba(8,10,8,0.85)';
+    c.lineWidth = 2;
+    c.strokeRect(1, 1, w - 2, h - 2);
+    return rc;
+  }
+
   _addContainer(type, tx, ty, z = 0) {
     const defs = {
       nevera: { name: 'Nevera', color: '#aeb6ba', letter: 'N' },
@@ -2169,6 +2351,9 @@ export class GameMap {
       // v0.18: hospital
       armario_medico: { name: 'Armario de medicina', color: '#3a7a6a', letter: 'F' },
       carrito_curas: { name: 'Carrito de curas', color: '#5a8a9a', letter: 'T' },
+      // v0.25: Home & Tools (ferretería)
+      estanteria_ferreteria: { name: 'Estantería de ferretería', color: '#c8742a', letter: 'H' },
+      expositor_jardin: { name: 'Expositor de jardinería', color: '#6a9a4a', letter: 'J' },
     };
     const d = defs[type];
     const c = {

@@ -1437,6 +1437,7 @@ kbd {
 .ec-tag.mil { color: #9fc37a; border-color: #55703c; }
 .ec-tag.hos { color: #7ac8d9; border-color: #2a5a6a; }
 .ec-tag.sto { color: #d9a520; border-color: #8a6a14; }
+.ec-tag.fer { color: #e8934a; border-color: #8a5218; }   /* v0.25: SOLO HOME & TOOLS */
 
 .ec-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .ec-chip {

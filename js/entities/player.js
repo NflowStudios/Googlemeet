@@ -66,10 +66,12 @@ export class Player {
    * ('gunDmgMul', 'healMul', 'stepNoiseMul', 'repairMul'). Sin profesión
    * (o profesión sin ese efecto, como el desempleado) → 1: la partida
    * clásica, byte a byte igual que siempre.
+   * v0.25: `def` permite otro neutro — growFast del GRANJERO es ADITIVO
+   * (días que se restan), así que su neutro es 0, no 1.
    */
-  profMul(field) {
+  profMul(field, def = 1) {
     const d = PROF_BY_ID[this.prof];
-    return d && d.fx && d.fx[field] !== undefined ? d.fx[field] : 1;
+    return d && d.fx && d.fx[field] !== undefined ? d.fx[field] : def;
   }
 
 

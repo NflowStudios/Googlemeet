@@ -21,10 +21,10 @@ export function makeItem(id, rotten = false) {
   return { uid: uidCounter++, id, def, count: 1, rotten };
 }
 
-/** ¿Es apilable? (comida/bebida/medico/munición/pilas/materiales sí; armas,
- *  ropa y cargadores no) */
+/** ¿Es apilable? (comida/bebida/medico/munición/pilas/materiales/semillas
+ *  sí; armas, ropa y cargadores no) */
 function stackable(item) {
-  return ['comida', 'bebida', 'medico', 'municion', 'bateria', 'material'].includes(item.def.cat);
+  return ['comida', 'bebida', 'medico', 'municion', 'bateria', 'material', 'semilla'].includes(item.def.cat);
 }
 
 /** Cantidad de balas dentro de un arma (cargador insertado o tubo). */
@@ -57,8 +57,9 @@ function _fillMag(mag, rng) {
  */
 export function setupLootItem(item, rng) {
   const def = item.def;
-  if (def.cat === 'municion' || def.cat === 'bateria' || def.cat === 'material') {
-    // pila de munición, pilas o MATERIAL DE CRAFTEO con cantidad variable
+  if (def.cat === 'municion' || def.cat === 'bateria' || def.cat === 'material' ||
+      def.cat === 'semilla') {
+    // pila de munición, pilas, MATERIAL DE CRAFTEO o SEMILLAS con cantidad variable
     item.count = rng.int(def.lootMin || 5, def.lootMax || 15);
   } else if (def.cat === 'cargador') {
     _fillMag(item, rng);
@@ -82,7 +83,9 @@ export function fillContainer(container, rng) {
   const table = LOOT[container.type] || [];
   // v0.16: contenedores militares de la base (mismo rango que la armería)
   // v0.18: contenedores del hospital (armarios de medicina generosos)
-  const counts = { nevera: [2, 4], alacena: [2, 3], armario: [1, 3], casillero: [2, 4], botiquin_pared: [1, 2], armeria: [2, 4], estanteria: [2, 3], taquilla_mil: [2, 4], caja_municion: [2, 4], armeria_mil: [2, 4], estanteria_mil: [2, 3], armario_medico: [2, 4], carrito_curas: [2, 3] };
+  // v0.25: estanterías de FERRETERÍA generosas (materiales a porrillo) y
+  // expositores de jardinería (las semillas del huerto)
+  const counts = { nevera: [2, 4], alacena: [2, 3], armario: [1, 3], casillero: [2, 4], botiquin_pared: [1, 2], armeria: [2, 4], estanteria: [2, 3], taquilla_mil: [2, 4], caja_municion: [2, 4], armeria_mil: [2, 4], estanteria_mil: [2, 3], armario_medico: [2, 4], carrito_curas: [2, 3], estanteria_ferreteria: [2, 4], expositor_jardin: [2, 3] };
   const [lo, hi] = counts[container.type] || [1, 2];
   const n = rng.int(lo, hi);
   const totalW = table.reduce((s, e) => s + e[1], 0);
@@ -98,9 +101,9 @@ export function fillContainer(container, rng) {
     const isFood = def.cat === 'comida' || def.cat === 'bebida';
     const item = makeItem(picked, isFood && rng.chance(rottenP));
     setupLootItem(item, rng);
-    // doble apilado solo para consumibles (la munición, las pilas y los
-    // materiales ya traen su cantidad)
-    if (stackable(item) && item.def.cat !== 'municion' && item.def.cat !== 'bateria' && item.def.cat !== 'material' && rng.chance(0.25)) item.count = 2;
+    // doble apilado solo para consumibles (la munición, las pilas, los
+    // materiales y las semillas ya traen su cantidad)
+    if (stackable(item) && item.def.cat !== 'municion' && item.def.cat !== 'bateria' && item.def.cat !== 'material' && item.def.cat !== 'semilla' && rng.chance(0.25)) item.count = 2;
     container.items.push(item);
   }
 }

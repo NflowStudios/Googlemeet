@@ -21,7 +21,7 @@
  * ANTORCHA clava a los zombis.
  */
 
-import { TILE, T, ITEMS, CRAFTEO as C } from '../config.js';
+import { TILE, T, ITEMS, CRAFTEO as C, CROPS, AGRICULTURA as AG } from '../config.js';
 import { makeItem, countItem, itemLabel } from './inventory.js';
 
 // ================== RECETAS ==================
@@ -60,6 +60,30 @@ export const RECIPES_OBJ = [
     id: 'lanza_chatarra', out: 'lanza_chatarra', name: 'Lanza de chatarra', icon: '#7a8a92', wb: true,
     mats: [['tubo', 1], ['chatarra', 3], ['cinta_adhesiva', 2]],
     desc: 'Tubo con punta afilada: daño 26 pero alcance 66 — pincha ANTES de que te alcancen.',
+  },
+  // ---- v0.25: LA COCINA DE LA FOGATA (recetas `fire`: exigen una fogata
+  // a ≤ AGRICULTURA.cookRange px, como las `wb` exigen la mesa de trabajo).
+  // Cada verdura cruda del huerto se asa ×1: el fuego CASI DUPLICA su
+  // alimento — la razón de ser del huerto. ----
+  {
+    id: 'tomate_asado', out: 'tomate_asado', name: 'Tomate asado', icon: '#b0402a', fire: true,
+    mats: [['tomate', 1]],
+    desc: 'Tomate del huerto pasado por la fogata: +12 → +20 de hambre (y +4 de sed).',
+  },
+  {
+    id: 'zanahoria_asada', out: 'zanahoria_asada', name: 'Zanahoria asada', icon: '#b86a1a', fire: true,
+    mats: [['zanahoria', 1]],
+    desc: 'Zanahoria al rescoldo: +16 → +26 de hambre. Casi el doble que cruda.',
+  },
+  {
+    id: 'calabaza_asada', out: 'calabaza_asada', name: 'Calabaza asada', icon: '#b8861a', fire: true,
+    mats: [['calabaza', 1]],
+    desc: 'Calabaza asada en la fogata: +22 → +36 de hambre. Comida seria de temporada.',
+  },
+  {
+    id: 'maiz_asado', out: 'maiz_asado', name: 'Maíz asado', icon: '#c8b03a', fire: true,
+    mats: [['maiz', 1]],
+    desc: 'Mazorca a la brasa: +26 → +44 de hambre y +6 de energía. El mejor plato cultivado.',
   },
 ];
 
@@ -106,6 +130,15 @@ export const RECIPES_CON = [
     free: true,
     desc: 'Banco improvisado: estando a ≤ 140 px desbloquea las recetas marcadas «requiere mesa de trabajo».',
   },
+  // ---- v0.25: LA FOGATA — la cocina del refugio. Brasas contenidas (no
+  // dispara la alarma del fuego del molotov: esto es fuego DOMÉSTICO) que
+  // asan las verduras del huerto a ≤ 90 px. De noche además brilla. ----
+  {
+    id: 'fogata', name: 'Fogata', icon: '#d98a3a',
+    mats: [['tablas', 2], ['tela', 1]],
+    free: true,
+    desc: 'Círculo de piedras con leña y yesca. Con ella a ≤ 90 px puedes ASAR las verduras del huerto en la pestaña CRAFTEO (casi el doble de alimento). [E] junto a ella abre la cocina directamente. Sus brasas NO disparan la alarma del molotov.',
+  },
 ];
 
 // ================== VALIDACIÓN Y GASTO ==================
@@ -119,6 +152,19 @@ export function nearWorkbench(game) {
   for (const c of game.constructions) {
     if (c.type !== 'mesa') continue;
     if (Math.hypot(c.x - p.x, c.y - p.y) <= C.wbRange) return true;
+  }
+  return false;
+}
+
+/** v0.25: ¿Hay una FOGATA a menos de AGRICULTURA.cookRange px? (misma
+ *  planta, misma regla que la mesa de trabajo: las brasas de la baja no
+ *  asan nada desde el sótano). */
+export function nearFogata(game) {
+  const p = game.player;
+  if ((p.z || 0) !== 0 || p.climb) return false;
+  for (const c of game.constructions) {
+    if (c.type !== 'fogata') continue;
+    if (Math.hypot(c.x - p.x, c.y - p.y) <= AG.cookRange) return true;
   }
   return false;
 }
@@ -137,6 +183,7 @@ export function missingMaterials(game, recipe) {
 export function canCraft(game, recipe) {
   if (missingMaterials(game, recipe).length) return false;
   if (recipe.wb && !nearWorkbench(game)) return false;
+  if (recipe.fire && !nearFogata(game)) return false;   // v0.25: cocina de fogata
   return true;
 }
 
@@ -166,7 +213,8 @@ export function craftObject(game, recipe) {
   }
   consumeMaterials(game, recipe);
   game.player.inventory.add(makeItem(recipe.out));
-  game.audio.craft();
+  if (recipe.fire) game.audio.sizzle();   // v0.25: asado a la fogata
+  else game.audio.craft();
   if (game.stats) game.stats.crafted++;   // v0.23: obituario
   game.toasts.push('Crafteado: ' + recipe.name, 'save');
   return true;
@@ -197,6 +245,119 @@ export function cancelBuild(game, silent = false) {
   if (!game.build) return;
   game.build = null;
   if (!silent) game.toasts.push('Construcción cancelada');
+}
+
+// ================== v0.25: SIEMBRA ==================
+
+/** Días que tarda un cultivo en madurar (con el bono del GRANJERO si
+ *  aplica: growFast días MENOS, mínimo 1). El neutro de growFast es 0
+ *  (es aditivo, no multiplicativo: sin granjero no se resta nada). */
+export function cropGrowthDays(c, player) {
+  const d = CROPS[c.crop] || { days: 3 };
+  const fast = player && player.profMul ? player.profMul('growFast', 0) : 0;
+  return Math.max(1, d.days - fast);
+}
+
+/** Etapa de un cultivo según el DÍA de juego actual:
+ *  0 semilla · 1 brote · 2 planta · 3 MADURA ([E] cosecha) · 4 marchita.
+ *  El reloj decide: no hay que actualizar nada a mano — plantar el día N
+ *  y avanzar el reloj hace crecer la planta sola. */
+export function cropStage(game, c) {
+  const d = CROPS[c.crop];
+  if (!d) return 0;
+  const elapsed = game.daynight.day - c.plantedDay;
+  const days = cropGrowthDays(c, game.player);
+  if (elapsed >= days + AG.witherDays) return 4;   // se pasó de madura
+  if (elapsed >= days) return 3;                   // lista para cosechar
+  const k = elapsed / days;
+  return k < 0.34 ? 0 : k < 0.67 ? 1 : 2;
+}
+
+/** Etiqueta del prompt del cultivo (cosecha / progreso / marchita). */
+export function cropPromptLabel(game, c) {
+  const d = CROPS[c.crop];
+  if (!d) return 'Cultivo';
+  const stage = cropStage(game, c);
+  const days = cropGrowthDays(c, game.player);
+  const elapsed = game.daynight.day - c.plantedDay;
+  if (stage === 4) return 'Recoger semillas de ' + d.name + ' (marchita)';
+  if (stage === 3) return 'Cosechar ' + d.name;
+  const faltan = Math.max(1, Math.ceil(days - elapsed));
+  return d.name + ' — creciendo (madura en ' + faltan + ' día' + (faltan > 1 ? 's' : '') + ')';
+}
+
+/** COSECHAR (E sobre un cultivo maduro): piezas de verdura a la mochila
+ *  (a la tierra si no cabe). El GRANJERO duplica la cosecha. Una planta
+ *  MARCHITA devuelve 1 semilla (perdiste la verdura, no la siembra).
+ *  Devuelve true si hizo algo. */
+export function harvestCrop(game, c) {
+  const d = CROPS[c.crop];
+  if (!d) return false;
+  const stage = cropStage(game, c);
+  const p = game.player;
+
+  if (stage === 4) {
+    // se pasó de madura: la planta devuelve una semilla y libera el tile
+    const seed = makeItem(d.seed);
+    if (!p.inventory.add(seed)) {
+      game.toasts.push('Mochila llena — la semilla cae al suelo', 'warn');
+      game.groundItems.push({ x: c.x, y: c.y, z: 0, item: seed, visibleNow: true });
+    }
+    game.toasts.push(d.name + ' marchita — recuperas 1 semilla', 'warn');
+    removeConstruction(game, c);
+    return true;
+  }
+
+  if (stage !== 3) {
+    const faltan = Math.max(1, Math.ceil(cropGrowthDays(c, p) - (game.daynight.day - c.plantedDay)));
+    game.toasts.push(d.name + ' aún no está madura — faltan ' + faltan + ' día' + (faltan > 1 ? 's' : ''), 'info');
+    return false;
+  }
+
+  // piezas: base por dados de la cosecha × el bono del GRANJERO
+  const mul = p.profMul ? p.profMul('cropYieldMul') : 1;
+  const n = Math.max(1, Math.round((d.yield[0] + Math.floor(Math.random() * (d.yield[1] - d.yield[0] + 1))) * mul));
+  const it = makeItem(c.crop);
+  it.count = n;
+  if (!p.inventory.add(it)) {
+    game.toasts.push('Mochila llena — la cosecha cae al suelo', 'warn');
+    game.groundItems.push({ x: c.x + (Math.random() - 0.5) * 12, y: c.y + (Math.random() - 0.5) * 12, z: 0, item: it, visibleNow: true });
+  }
+  game.audio.harvest();
+  game.noise.emit(c.x, c.y, 35, 'cosecha');
+  game.toasts.push('Cosechado: ' + d.name + ' ×' + n +
+    (mul > 1 ? ' (GRANJERO ×' + mul + ')' : ''), 'save');
+  removeConstruction(game, c);
+  return true;
+}
+
+/** Entra en modo SIEMBRA con la semilla elegida del inventario (botón
+ *  PLANTAR). El fantasma solo es válido sobre CÉSPED o ACERA (tierra al
+ *  aire libre), como cualquier construcción libre. */
+export function startPlant(game, seedId) {
+  const cropKey = Object.keys(CROPS).find((k) => CROPS[k].seed === seedId);
+  const d = cropKey && CROPS[cropKey];
+  if (!d) return false;
+  if ((game.player.z || 0) !== 0 || game.player.climb) {
+    game.toasts.push('Solo se planta en la PLANTA BAJA', 'warn');
+    return false;
+  }
+  if (countItem(game.player.inventory, seedId) < 1) {
+    game.toasts.push('No te quedan semillas de ' + d.name.toLowerCase(), 'warn');
+    return false;
+  }
+  // pseudo-receta compatible con el modo construcción: gasta 1 semilla
+  const recipe = {
+    id: 'cultivo', plant: true, crop: cropKey,
+    name: 'Sembrar ' + d.name, icon: d.color,
+    mats: [[seedId, 1]],
+    desc: 'Semilla de ' + d.name.toLowerCase() + ' sobre tierra.',
+  };
+  game.build = { recipe, rot: 0, tx: 0, ty: 0, x: 0, y: 0, valid: false, reason: 'Colócate cerca' };
+  updateBuild(game);
+  game.toasts.push('SIEMBRA: ' + d.name + ' — madura en ' +
+    cropGrowthDays({ crop: cropKey }, game.player) + ' día(s) · CLIC DER. planta · CLIC IZQ. cancela', 'info');
+  return true;
 }
 
 /** Rota el fantasma (tecla R mientras se construye). */
@@ -264,6 +425,10 @@ export function updateBuild(game) {
         reason = 'Hay un contenedor ahí';
       } else if (b.recipe.indoors && !map.buildingAtTile(tx, ty)) {
         reason = 'La cama va DENTRO de una casa';
+      } else if (b.recipe.plant && tile !== T.GRASS && tile !== T.SIDEWALK) {
+        // v0.25: las semillas solo prenden en TIERRA al aire libre
+        // (césped o acera): no en suelo interior, calles ni escaleras
+        reason = 'Solo en tierra (césped o acera)';
       }
     }
 
@@ -299,12 +464,19 @@ export function placeBuild(game) {
     return;
   }
   consumeMaterials(game, recipe);
-  const c = addConstruction(game, recipe.id, b.tx, b.ty, b.rot);
-  game.audio.hammer();
+  // v0.25: sembrar — la semilla nace como construcción CULTIVO con su día
+  // de siembra (la planta crecerá sola con los días del reloj de juego)
+  const c = addConstruction(game, recipe.id, b.tx, b.ty, b.rot,
+    recipe.plant ? recipe.crop : null, recipe.plant ? game.daynight.day : null);
+  if (recipe.plant) game.audio.plant();
+  else game.audio.hammer();
   if (game.stats) game.stats.built++;   // v0.23: obituario
-  // clavar tablas hace un ruido que la cuadra entera oye
-  game.noise.emit(c.x, c.y, 140, 'construir');
-  game.toasts.push('Construido: ' + recipe.name, 'save');
+  // clavar tablas hace un ruido que la cuadra entera oye (sembrar, apenas)
+  game.noise.emit(c.x, c.y, recipe.plant ? 40 : 140, recipe.plant ? 'sembrar' : 'construir');
+  game.toasts.push(recipe.plant
+    ? 'Sembrado: ' + CON_NAMES.cultivo + ' de ' + CROPS[recipe.crop].name +
+      ' — madura en ' + cropGrowthDays(c, game.player) + ' día(s)'
+    : 'Construido: ' + recipe.name, 'save');
   if (recipe.id === 'cama') {
     game.toasts.push('La casa es un REFUGIO: nadie volverá a aparecer dentro. [E] para dormir', 'info');
   }
@@ -326,6 +498,10 @@ export const CON_DEFS = {
   caja:      { solid: false, opaque: false, zAtk: false, drop: [['tablas', 1]] },
   cama:      { solid: false, opaque: false, zAtk: false, drop: [['tablas', 1], ['tela', 1]] },
   mesa:      { solid: false, opaque: false, zAtk: false, drop: [['tablas', 1]] },
+  // v0.25: la fogata (frágil, no sólida) y los cultivos (pisan libre,
+  // se destrozan a golpe limpio: protege tu huerto)
+  fogata:    { solid: false, opaque: false, zAtk: false, drop: [['tablas', 1]] },
+  cultivo:   { solid: false, opaque: false, zAtk: false, drop: [] },
 };
 
 /** Nombres legibles (toasts/interacción). */
@@ -333,10 +509,13 @@ export const CON_NAMES = {
   barricada: 'Barricada', tapiar: 'Tablones', valla: 'Valla',
   trampa: 'Trampa de pinchos', caja: 'Caja de almacenamiento',
   cama: 'Cama', mesa: 'Mesa de trabajo',
+  fogata: 'Fogata', cultivo: 'Cultivo',
 };
 
-/** Crea una construcción en (tx, ty) y la registra en el mapa. */
-export function addConstruction(game, type, tx, ty, rot = 0) {
+/** Crea una construcción en (tx, ty) y la registra en el mapa.
+ *  v0.25: `crop`/`plantedDay` sólo para los CULTIVOS (qué se sembró y
+ *  qué día del reloj: el crecimiento se lee del día actual). */
+export function addConstruction(game, type, tx, ty, rot = 0, crop = null, plantedDay = null) {
   const map = game.map;
   const c = {
     type, tx, ty, rot: rot % 2,
@@ -347,6 +526,10 @@ export function addConstruction(game, type, tx, ty, rot = 0) {
   };
   if (type === 'trampa') { c.uses = C.trapUses; c.tick = 0; }
   if (type === 'caja') { c.items = []; c.searched = false; c.name = 'Caja de almacenamiento'; }
+  if (type === 'cultivo') {
+    c.crop = crop;                     // id del CROPS ('tomate'…)
+    c.plantedDay = plantedDay !== null ? plantedDay : game.daynight.day;
+  }
   game.constructions.push(c);
   map.registerConstruction(c);
   if (type === 'cama') map.recalcBedBuildings(game.constructions);
@@ -813,6 +996,99 @@ export function drawConstruction(ctx, c, sx, sy) {
       ctx.fillRect(sx - 13, sy + 6, 4, 6); ctx.fillRect(sx + 9, sy + 6, 4, 6);
       break;
     }
+    // ---- v0.25: FOGATA — círculo de piedras, leña cruzada y BRASAS con
+    // su halo cálido (fuego doméstico: brilla de noche pero NO dispara
+    // la alarma de atracción del molotov). ----
+    case 'fogata': {
+      ctx.fillStyle = 'rgba(0,0,0,0.30)';
+      ctx.fillRect(sx - 14, sy - 11, 30, 24);
+      // tierra removida del centro
+      ctx.fillStyle = '#3a2e22';
+      ctx.beginPath(); ctx.arc(sx, sy, 12, 0, Math.PI * 2); ctx.fill();
+      // piedras del círculo
+      ctx.fillStyle = '#8a8a92';
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4 + 0.39;
+        ctx.beginPath();
+        ctx.arc(sx + Math.cos(a) * 12, sy + Math.sin(a) * 10, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // leña cruzada
+      ctx.strokeStyle = dmg ? '#5a4028' : '#7a5a34';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(sx - 8, sy - 5); ctx.lineTo(sx + 8, sy + 5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx + 8, sy - 5); ctx.lineTo(sx - 8, sy + 5); ctx.stroke();
+      // brasas + llamitas contenidas
+      const fl = 2.2 + Math.sin((c._t || 0) * 7) * 0.8;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(sx, sy, 2, sx, sy, 20);
+      g.addColorStop(0, 'rgba(255, 150, 50, 0.30)');
+      g.addColorStop(1, 'rgba(255, 90, 20, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(sx, sy, 20, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255, 170, 60, 0.85)';
+      ctx.beginPath();
+      ctx.moveTo(sx - 3, sy + 2); ctx.lineTo(sx, sy - fl - 2); ctx.lineTo(sx + 3, sy + 2);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255, 110, 20, 0.8)';
+      ctx.beginPath();
+      ctx.moveTo(sx - 5, sy + 4); ctx.lineTo(sx - 2, sy - fl * 0.6); ctx.lineTo(sx + 1, sy + 4);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#c8442a';
+      ctx.beginPath(); ctx.arc(sx - 3, sy + 5, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx + 4, sy + 4, 1.4, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    // ---- v0.25: CULTIVO — tierra arada que crece CON LOS DÍAS: semilla
+    // (montículo) → brote (dos hojitas) → planta (mata frondosa) → MADURA
+    // (con el fruto del color de su verdura) → MARCHITA (parda, caída). ----
+    case 'cultivo': {
+      const d = CROPS[c.crop] || CROPS.tomate;
+      const stage = c._stage !== undefined ? c._stage : 0;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(sx - 13, sy - 9, 28, 20);
+      // surco de tierra arada
+      ctx.fillStyle = '#4a3626';
+      ctx.fillRect(sx - 12, sy - 7, 26, 16);
+      ctx.fillStyle = '#5a4430';
+      ctx.fillRect(sx - 12, sy - 7, 26, 4);
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(sx - 8, sy + 2); ctx.lineTo(sx + 8, sy + 2); ctx.stroke();
+      if (stage === 0) {
+        // semilla enterrada: montículo con puntito
+        ctx.fillStyle = '#6a5238';
+        ctx.beginPath(); ctx.arc(sx, sy + 1, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = d.color;
+        ctx.fillRect(sx - 1, sy - 1, 2, 2);
+      } else if (stage === 4) {
+        // marchita: tallos pardos caídos
+        ctx.strokeStyle = '#7a6a4a'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(sx, sy + 3); ctx.lineTo(sx - 6, sy - 4); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(sx, sy + 3); ctx.lineTo(sx + 6, sy - 4); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(sx, sy + 3); ctx.lineTo(sx, sy - 7); ctx.stroke();
+      } else {
+        // brote → planta: tallo + hojas que crecen con la etapa
+        const hgt = stage === 1 ? 6 : 11;
+        ctx.strokeStyle = d.leaf; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(sx, sy + 4); ctx.lineTo(sx, sy + 4 - hgt); ctx.stroke();
+        ctx.fillStyle = d.leaf;
+        ctx.beginPath(); ctx.ellipse(sx - 4, sy + 5 - hgt * 0.6, 4, 2, -0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(sx + 4, sy + 5 - hgt * 0.6, 4, 2, 0.6, 0, Math.PI * 2); ctx.fill();
+        if (stage === 3) {
+          // MADURA: el fruto del color de su verdura, bien visible
+          ctx.fillStyle = d.color;
+          ctx.beginPath(); ctx.arc(sx, sy - hgt - 1, 4.5, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(sx, sy - hgt - 1, 4.5, 0, Math.PI * 2); ctx.stroke();
+          // destello de «lista»
+          ctx.fillStyle = 'rgba(255,255,220,0.8)';
+          ctx.fillRect(sx - 2, sy - hgt - 3, 1.5, 1.5);
+        }
+      }
+      break;
+    }
   }
 
   // barra de vida si está dañada (como los zombis)
@@ -845,6 +1121,10 @@ export function drawConstructions(ctx, cam, game) {
   if (fade < 1) ctx.globalAlpha = fade;       // sustituye al entA del bloque de entidades
   for (const c of game.constructions) {
     if (c.z !== 0) continue;
+    // v0.25: los cultivos leen su etapa y el parpadeo de la fogata del
+    // reloj de juego (cacheado en la propia construcción cada frame)
+    c._t = game.time;
+    if (c.type === 'cultivo') c._stage = cropStage(game, c);
     const sx = Math.round(c.x - cam.x + cam.offX);
     const sy = Math.round(c.y - cam.y + cam.offY);
     if (sx < -40 || sy < -40 || sx > cam.w + 40 || sy > cam.h + 40) continue;
@@ -962,7 +1242,8 @@ export function drawBuildGhost(ctx, cam, game) {
   // fantasma del mueble
   ctx.save();
   ctx.globalAlpha = 0.62;
-  drawConstruction(ctx, { type: b.recipe.id, rot: b.rot, hp: 1, maxHp: 1 }, gs.x, gs.y);
+  drawConstruction(ctx, { type: b.recipe.id, rot: b.rot, hp: 1, maxHp: 1,
+    crop: b.recipe.crop || null, _stage: 3, _t: 0 }, gs.x, gs.y);
   ctx.restore();
   // tinte de validez sobre el fantasma
   ctx.fillStyle = tint + ' 0.20)';

@@ -77,6 +77,12 @@ export const SPECIALS = {
   store:  { w: 14, h: 10, inside: 3, around: 2 },   // pasillos de estanterías
   military: { w: 22, h: 20, inside: 18, around: 5, basement: 4 },  // arsenal subterráneo
   hospital: { w: 20, h: 16, inside: 15, around: 5, upper: 10 },    // apagón + 2 pisos infestados
+  // v0.25 — HOME & TOOLS: la FERRETERÍA tipo gran almacén. Tamaño MEDIO y
+  // UN SOLO piso (sin 2º planta ni sótano): la presión zombi es PARECIDA a
+  // la de la tienda (dentro/alrededor), pero el botín es otra cosa — los
+  // MATERIALES de construcción y de AGRICULTURA (semillas) salen aquí a
+  // porrillo, y el MAZO PESADO solo vive en sus estanterías.
+  tools:  { w: 16, h: 11, inside: 3, around: 2 },
 };
 
 // ---------- Linterna (v0.17) ----------
@@ -204,6 +210,7 @@ export const FISTS = {
 //  · medico:     healMul     → +5% de curación en objetos curativos
 //  · ladron:     stepNoiseMul→ pasos a la mitad de ruido (radios de paso)
 //  · carpintero: repairMul   → reparar construcciones cuesta la mitad
+//  · granjero:   cropYieldMul+growFast → cosecha ×2 y maduran 1 día antes
 //  · desempleado: sin efectos — la partida sin ayudas
 export const PROFESSIONS = [
   {
@@ -235,6 +242,14 @@ export const PROFESSIONS = [
     fx: { repairMul: 0.5 },
   },
   {
+    id: 'granjero',
+    name: 'Granjero', color: '#7aa348',
+    tagline: 'La tierra todavía da',
+    desc: 'Semillas, surcos y cielo: sacaba comida del suelo cuando la ciudad todavía compraba la suya enlatada. Sus cultivos maduran un día antes, cada cosecha rinde el doble y hasta el peor invierno respeta sus plántulas. Cuando las estanterías queden peladas, su huerto seguirá dando: el apocalipsis acaba de convertirse en una temporada de siembra.',
+    perks: ['Los cultivos maduran 1 día antes y la cosecha rinde EL DOBLE'],
+    fx: { cropYieldMul: 2, growFast: 1 },
+  },
+  {
     id: 'desempleado', name: 'Desempleado', color: '#6d6f64',
     tagline: 'Sin oficio ni ventaja',
     desc: 'Sin título, sin oficio, sin ventajas: no prometía nada y ahí sigue. La supervivencia en su forma pura, para quien quiera contarse la historia sin ninguna ayuda — nadie le regaló nada el día que amaneció el mundo muerto, y eso también es un motivo de orgullo.',
@@ -246,6 +261,29 @@ export const PROFESSIONS = [
 /** Índice id → definición de profesión. */
 export const PROF_BY_ID = {};
 for (const p of PROFESSIONS) PROF_BY_ID[p.id] = p;
+
+// ---------- AGRICULTURA (v0.25) ----------
+// Los CULTIVOS son construcciones vivas: se SIEMBRA una semilla sobre
+// césped o acera (botón PLANTAR del inventario → fantasma del modo
+// construcción) y la planta AVANZA SOLO CON LOS DÍAS de juego — no hay que
+// regarla ni tocarla: cada día que amanece cuenta un escalón
+// (semilla → brote → planta → MADURA). Madura → [E] cosecha verduras
+// apilables; si tardas witherDays días más, se MARCHITA (recuperas 1
+// semilla). La FOGATA (construcción nueva) convierte las verduras crudas
+// en ASADOS con el doble de alimento (recetas marcadas `fire`).
+//  · growFast (granjero): días que se restan a `days` (mínimo 1)
+//  · cropYieldMul (granjero): multiplicador de piezas por cosecha
+export const CROPS = {
+  tomate:    { name: 'Tomate',    seed: 'semillas_tomate',    days: 2, yield: [2, 3], color: '#c85a3a', leaf: '#5a7a3a' },
+  zanahoria: { name: 'Zanahoria', seed: 'semillas_zanahoria', days: 3, yield: [2, 3], color: '#d9822a', leaf: '#4a7a2a' },
+  calabaza:  { name: 'Calabaza',  seed: 'semillas_calabaza',  days: 4, yield: [1, 2], color: '#d9a520', leaf: '#6a8a3a' },
+  maiz:      { name: 'Maíz',      seed: 'semillas_maiz',      days: 5, yield: [2, 4], color: '#e8d05a', leaf: '#6a9a4a' },
+};
+
+export const AGRICULTURA = {
+  witherDays: 3,      // días tras madurar antes de marchitarse (recupera 1 semilla)
+  cookRange: 90,      // radio de la FOGATA para cocinar (px)
+};
 
 // ---------- Supervivencia ----------
 export const SURV = {
@@ -297,7 +335,7 @@ export const ZOMBIE_CFG = {
   // --- v0.14: variantes ---
   runnerChance: 0.15,        // proporción de corredores en la horda callejera
   nightRunnerChance: 0.25,   // de noche los corredores presionan más
-  bruteSpecials: { police: 2, store: 1, military: 4, hospital: 2 },  // brutos de guarnición por estructura
+  bruteSpecials: { police: 2, store: 1, military: 4, hospital: 2, tools: 1 },  // brutos de guarnición por estructura
   bruteRoamChance: 0.55,     // probabilidad de que el mapa tenga brutos errantes
   // --- v0.23: GRITADOR — 4ª variante RARA, ligada a la presión local ---
   // No forma parte de la horda inicial: EMERGE cuando el jugador está en
@@ -619,6 +657,35 @@ export const ITEMS = {
   },
   // ---- v0.16: ración militar (EXCLUSIVA de la Base Militar) ----
   racion_combate: { name: 'Ración de combate', cat: 'comida', hunger: 55, stamina: 20, color: '#4a5238', stack: 4, desc: 'Ración militar de campaña calórica y estable. +55 hambre, +20 energía. La mejor comida del juego.' },
+  // ---- v0.25: AGRICULTURA — SEMILLAS (cat 'semilla', apilables) ----
+  // Se PLANTAN desde el inventario (botón PLANTAR): sobre césped o acera
+  // nace un CULTIVO que avanza solo con los DÍAS de juego. Abundantes en
+  // el expositor de jardinería de HOME & TOOLS; la tienda y las alacenas
+  // guardan alguna que otra bolsa.
+  semillas_tomate: { name: 'Semillas de tomate', cat: 'semilla', color: '#c85a3a', stack: 12, lootMin: 2, lootMax: 5, desc: 'Bolsita de semillas de tomate. Se plantan sobre césped o acera (PLANTAR en el inventario) y en 2 días dan 2-3 tomates.' },
+  semillas_zanahoria: { name: 'Semillas de zanahoria', cat: 'semilla', color: '#d9822a', stack: 12, lootMin: 2, lootMax: 5, desc: 'Semillas de zanahoria. 3 días de cultivo para 2-3 piezas: la zanahoria asada alimenta mucho más.' },
+  semillas_calabaza: { name: 'Semillas de calabaza', cat: 'semilla', color: '#d9a520', stack: 8, lootMin: 1, lootMax: 3, desc: 'Semillas de calabaza. Cultivo LENTO (4 días) pero cada pieza asada es un banquete (+36 hambre).' },
+  semillas_maiz: { name: 'Semillas de maíz', cat: 'semilla', color: '#e8d05a', stack: 12, lootMin: 2, lootMax: 5, desc: 'Semillas de maíz. El cultivo más largo (5 días) y el más generoso: 2-4 mazorcas del mejor asado del juego.' },
+  // ---- v0.25: VERDURAS (crudas, cosecha del huerto) ----
+  tomate: { name: 'Tomate', cat: 'comida', hunger: 12, thirst: 3, color: '#c85a3a', stack: 8, desc: 'Tomate recién cosechado. +12 hambre crudo… pero ASADO a la fogata sube a +20.' },
+  zanahoria: { name: 'Zanahoria', cat: 'comida', hunger: 16, color: '#d9822a', stack: 8, desc: 'Zanahoria del huerto. +16 hambre cruda; asada a la fogata, +26.' },
+  calabaza: { name: 'Calabaza', cat: 'comida', hunger: 22, color: '#d9a520', stack: 6, desc: 'Calabaza madura. +22 hambre cruda; asada a la fogata, +36.' },
+  maiz: { name: 'Maíz', cat: 'comida', hunger: 26, color: '#e8d05a', stack: 6, desc: 'Mazorca de maíz. +26 hambre cruda; ASADA a la fogata alimenta +44, el mejor plato cultivado.' },
+  // ---- v0.25: VERDURAS ASADAS (receta FOGATA: ×1 cruda) ----
+  tomate_asado: { name: 'Tomate asado', cat: 'comida', hunger: 20, thirst: 4, color: '#b0402a', stack: 8, desc: 'Tomate pasado por la fogata. +20 hambre y +4 sed: el fuego concentra el azúcar.' },
+  zanahoria_asada: { name: 'Zanahoria asada', cat: 'comida', hunger: 26, color: '#b86a1a', stack: 8, desc: 'Zanahoria asada al rescoldo. +26 hambre: casi el doble que cruda.' },
+  calabaza_asada: { name: 'Calabaza asada', cat: 'comida', hunger: 36, color: '#b8861a', stack: 6, desc: 'Calabaza asada en la fogata. +36 hambre: comida seria de temporada.' },
+  maiz_asado: { name: 'Maíz asado', cat: 'comida', hunger: 44, stamina: 6, color: '#c8b03a', stack: 6, desc: 'Mazorca asada a la brasa. +44 hambre y +6 energía: el mejor plato que puedes CULTIVAR.' },
+  // ---- v0.25: HOME & TOOLS — el MAZO PESADO ----
+  // Contundente, lento y AGOTADOR (la mayor demanda de energía de todo el
+  // melee) con un empuje brutal. Su especialidad: DEMOLER construcciones
+  // al triple de velocidad (conDmgMul). EXCLUSIVO de la ferretería.
+  mazo: {
+    name: 'Mazo pesado', cat: 'arma',
+    dmg: 44, range: 48, stamina: 26, cd: 0.85, noise: 150, kb: 44,
+    conDmgMul: 2.5, color: '#8a8f96',
+    desc: 'Mazo de demolición: daño contundente 44 y el mayor EMPUJE del juego, pero cada golpe cuesta 26 de energía. A construcciones pega TRIPLE: desmonta barricadas en un momento. Exclusivo de HOME & TOOLS.',
+  },
 };
 
 // Slots de ropa (orden de render del equipo) — TRES ranuras de accesorio
@@ -650,6 +717,9 @@ export const CONTAINER_DEFS = {
   // ---- v0.18: solo dentro del HOSPITAL (ambos pisos) ----
   armario_medico: { name: 'Armario de medicina', color: '#3a7a6a', letter: 'F', slots: 6 },
   carrito_curas: { name: 'Carrito de curas', color: '#5a8a9a', letter: 'T', slots: 5 },
+  // ---- v0.25: solo dentro de HOME & TOOLS (ferretería, estructura única) ----
+  estanteria_ferreteria: { name: 'Estantería de ferretería', color: '#c8742a', letter: 'H', slots: 6 },
+  expositor_jardin: { name: 'Expositor de jardinería', color: '#6a9a4a', letter: 'J', slots: 5 },
 };
 
 // Tablas de botín ponderadas [idItem, peso]
@@ -660,7 +730,7 @@ export const CONTAINER_DEFS = {
 // raramente en casilleros de cualquier edificio del mapa.
 export const LOOT = {
   nevera: [['agua', 24], ['refresco', 14], ['manzana', 12], ['lata_frijoles', 9], ['lata_atun', 7], ['venda', 4]],
-  alacena: [['lata_frijoles', 20], ['lata_atun', 16], ['papas', 16], ['chocolate', 12], ['refresco', 8], ['agua', 6], ['botella_vacia', 7], ['alcohol_etilico', 4]],
+  alacena: [['lata_frijoles', 20], ['lata_atun', 16], ['papas', 16], ['chocolate', 12], ['refresco', 8], ['agua', 6], ['botella_vacia', 7], ['alcohol_etilico', 4], ['semillas_tomate', 3], ['semillas_zanahoria', 3]],
   armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3], ['linterna', 3], ['bateria', 4], ['tela', 12], ['cinta_adhesiva', 7], ['botella_vacia', 5], ['cuerda', 3]],
   // v0.16: revólver tan común como la VP-9 (peso 4 = pistola); doble Yarará
   // más común que la corredera (3.2 > 2.2); Ñandú a la par de la Yarará.
@@ -688,6 +758,9 @@ export const LOOT = {
     ['linterna', 5], ['bateria', 7],
     ['clavos', 18], ['tablas', 14], ['tela', 12], ['cinta_adhesiva', 10],
     ['botella_vacia', 9], ['queroseno', 6], ['alcohol_etilico', 5], ['cuerda', 5], ['chatarra', 4],
+    // v0.25: la tienda tiene su rinconcito de jardinería (semillas raras:
+    // lo abundante vive en el expositor de HOME & TOOLS)
+    ['semillas_tomate', 6], ['semillas_zanahoria', 5], ['semillas_maiz', 4], ['semillas_calabaza', 3],
   ],
   // ---- v0.16: BASE MILITAR — el mejor botín del juego, más abundante que
   // la comisaría. El Subfusil Cuervo y el equipo militar viven SOLO aquí. ----
@@ -737,10 +810,26 @@ export const LOOT = {
     ['agua', 10], ['refresco', 4],
     ['alcohol_etilico', 10], ['tela', 6],
   ],
+  // ---- v0.25: HOME & TOOLS — la FERRETERÍA del apocalipsis. Los
+  // MATERIALES DE CONSTRUCCIÓN salen aquí MÁS ABUNDANTES que en ningún
+  // otro rincón (la tienda era la ferretería improvisada: esta es la de
+  // verdad), y el MAZO PESADO vive en EXCLUSIVA en sus estanterías. El
+  // EXPOSITOR DE JARDINERÍA guarda las SEMILLAS a porrillo: el
+  // agricultor del fin del mundo hace aquí la compra de temporada. ----
+  estanteria_ferreteria: [
+    ['clavos', 30], ['tablas', 24], ['cuerda', 12], ['cinta_adhesiva', 16],
+    ['chatarra', 14], ['queroseno', 9], ['tela', 8], ['alcohol_etilico', 4],
+    ['botella_vacia', 6], ['bateria', 5], ['linterna', 3],
+    ['mazo', 5], ['hacha', 3], ['casco_obra', 6],
+  ],
+  expositor_jardin: [
+    ['semillas_tomate', 24], ['semillas_zanahoria', 22], ['semillas_maiz', 18],
+    ['semillas_calabaza', 14], ['cuerda', 6], ['cinta_adhesiva', 5], ['agua', 8],
+  ],
 };
 
 // Probabilidad de que la comida generada esté podrida, por contenedor
-export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0, armeria: 0, estanteria: 0.12, taquilla_mil: 0, caja_municion: 0, armeria_mil: 0, estanteria_mil: 0.05, armario_medico: 0, carrito_curas: 0 };
+export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0, armeria: 0, estanteria: 0.12, taquilla_mil: 0, caja_municion: 0, armeria_mil: 0, estanteria_mil: 0.05, armario_medico: 0, carrito_curas: 0, estanteria_ferreteria: 0, expositor_jardin: 0 };
 
 // ---------- Aparición de armas encontradas ----------
 // Un arma hallada SIEMPRE trae algo dentro (cargador con balas o tubo cargado):
@@ -773,6 +862,8 @@ export const CRAFTEO = {
   sleepHeal: 10,     // vida repuesta al dormir
   conHp: {           // vida de cada construcción (a golpes de zombi/melee)
     barricada: 140, tapiar: 100, valla: 90, trampa: 40, caja: 60, cama: 80, mesa: 50,
+    fogata: 40,       // v0.25: la fogata es frágil (unos pocos golpes)
+    cultivo: 25,      // v0.25: un cultivo pisoteado a golpes no sobrevive
   },
   // --- v0.23: el FUEGO ES UNA ALARMA ---
   // El estallido del molotov ROMPE CRISTAL (ruido fuerte y seco) y las

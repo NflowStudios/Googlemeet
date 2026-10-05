@@ -25,6 +25,7 @@ import {
   startBuild, updateBuild, rotateBuild, cancelBuild, placeBuild,
   updateFire, updateConstructions, sleepInBed, finishSleep, CON_NAMES,
   needsRepair, repairCost, repairCostLabel, repairConstruction,
+  cropPromptLabel, harvestCrop,
 } from './systems/crafting.js';
 import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, latestSlot, updateRecords, AUTOSAVE_SEC } from './systems/save.js';
 import { Player } from './entities/player.js';
@@ -164,6 +165,38 @@ class Game {
     return true;
   }
 
+  // ================== v0.25: garantía del MAZO de la ferretería ==================
+
+  /**
+   * EL MAZO ASEGURADO (gemela de la garantía del Cuervo): el mazo pesado
+   * es EXCLUSIVO de las estanterías de HOME & TOOLS y las tablas de botín
+   * podían dejar un mundo sin ninguno. Si en TODA la partida no hay ni
+   * uno — contenedores, mochila, equipo, barra rápida, suelo o cajas de
+   * almacenamiento — se coloca UNO garantizado en una estantería de
+   * ferretería sin registrar. Usa Math.random (no consume el Rng con
+   * semilla). Se llama al generar el mundo y también al CARGAR.
+   * Devuelve true si inyectó uno.
+   */
+  _guaranteeMazo() {
+    const has = (it) => !!it && it.id === 'mazo';
+    const anywhere =
+      this.map.containers.some((c) => c.items.some(has)) ||
+      this.player.inventory.slots.some(has) ||
+      Object.values(this.player.equipment).some(has) ||
+      (this.player.hotbar || []).some(has) ||
+      this.groundItems.some((gi) => has(gi.item)) ||
+      this.constructions.some((c) => c.type === 'caja' && c.items && c.items.some(has));
+    if (anywhere) return false;
+
+    const shelves = this.map.containers.filter((c) => c.type === 'estanteria_ferreteria');
+    if (!shelves.length) return false;
+    const target = shelves.find((c) => !c.searched) || shelves[0];
+
+    const it = makeItem('mazo');
+    target.items.push(it);
+    return true;
+  }
+
   _resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.canvas.width = Math.round(w * this.dpr);
@@ -228,6 +261,8 @@ class Game {
     // v0.21: garantía del Subfusil Cuervo (arma exclusiva de la base militar)
     // — DESPUÉS de limpiar el mundo, para no ver restos de la partida anterior
     this._guaranteeCuervo();
+    // v0.25: garantía del MAZO pesado (exclusivo de Home & Tools)
+    this._guaranteeMazo();
 
     // efectos de disparo limpios
     this.tracers.length = 0;
@@ -603,6 +638,12 @@ class Game {
           best = { kind: 'constr', obj: c, d, label: 'Dormir en la cama' };
         } else if (c.type === 'mesa') {
           best = { kind: 'constr', obj: c, d, label: 'Mesa de trabajo (recetas avanzadas)' };
+        } else if (c.type === 'fogata') {
+          // v0.25: la fogata abre la COCINA (pestaña CRAFTEO) al pulsarla
+          best = { kind: 'fire', obj: c, d, label: 'Cocinar en la fogata (asar verduras)' };
+        } else if (c.type === 'cultivo') {
+          // v0.25: el cultivo cuenta su progreso y se COSECHA maduro
+          best = { kind: 'crop', obj: c, d, label: cropPromptLabel(this, c) };
         } else if (needsRepair(c)) {
           // v0.23: barricada/tabiños/valla/trampa dañadas → REPARAR con su
           // coste real en el propio prompt (más dañada, más materiales)
@@ -677,6 +718,18 @@ class Game {
       case 'repair': {
         // v0.23: REPARAR la construcción dañada (gasta materiales según daño)
         repairConstruction(this, target.obj);
+        break;
+      }
+      case 'crop': {
+        // v0.25: COSECHAR el cultivo (maduro → verduras; creciendo → aviso;
+        // marchita → recupera 1 semilla)
+        harvestCrop(this, target.obj);
+        break;
+      }
+      case 'fire': {
+        // v0.25: la FOGATA abre la pestaña CRAFTEO (recetas de asado)
+        this.audio.container();
+        this.invUI.openCraft();
         break;
       }
       case 'item': {

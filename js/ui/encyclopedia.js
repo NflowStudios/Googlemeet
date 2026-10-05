@@ -23,7 +23,7 @@
 import {
   ITEMS, RANGED, ZOMBIE_CFG, SURV, PLAYER_CFG, FISTS, WEATHER, FLOORS,
   CRAFTEO, CONTAINER_DEFS, LOOT, ROTTEN_CHANCE, DAYNIGHT, FLASH,
-  PROFESSIONS, PROF_BY_ID,
+  PROFESSIONS, PROF_BY_ID, CROPS, AGRICULTURA, SPECIALS,
 } from '../config.js';
 import { RECIPES_OBJ, RECIPES_CON } from '../systems/crafting.js';
 
@@ -41,6 +41,7 @@ const min = (rate) => n((100 / rate / 60).toFixed(1)) + ' min';
 
 const MIL_CONT = new Set(['taquilla_mil', 'caja_municion', 'armeria_mil', 'estanteria_mil']);
 const HOS_CONT = new Set(['armario_medico', 'carrito_curas']);
+const FER_CONT = new Set(['estanteria_ferreteria', 'expositor_jardin']);   // v0.25: Home & Tools
 
 const WHERE = {};      // idItem → [nombre de contenedor, ...]
 const WHERE_KEY = {};  // idItem → [tipo de contenedor, ...]
@@ -78,6 +79,8 @@ function rarityTag(id) {
   const allIn = (allowed) => [...set].every((c) => allowed.has(c));
   if (allIn(MIL_CONT)) return { cls: 'mil', txt: 'SOLO BASE MILITAR' };
   if (allIn(HOS_CONT)) return { cls: 'hos', txt: 'SOLO HOSPITAL' };
+  // v0.25: el MAZO y lo que solo salga en la ferretería
+  if (allIn(FER_CONT)) return { cls: 'fer', txt: 'SOLO HOME & TOOLS' };
   if (set.has('armeria') && allIn(new Set([...MIL_CONT, 'armeria']))) {
     return { cls: 'mil', txt: 'COMISARÍA O BASE MILITAR' };
   }
@@ -221,12 +224,16 @@ export class Encyclopedia {
       'Cada planta es su propio mundo: desde el sótano no se ve la planta baja (ni sus construcciones ni su fuego) y viceversa — el techo de tu refugio también tapa a los zombis de arriba abajo. Las ' + b('construcciones solo se colocan en planta baja') + '. Recuerda qué edificios tienen sótano antes de tapiarte dentro: es la mejor bodega y el peor callejón sin salida.') +
 
     guide('El mundo y sus rincones',
-      'El mapa es una ciudad de ' + b('27.232 m²') + ' con casas, coches, contenedores y ' + ZOMBIE_CFG.count + '+ zombis de salida. Cuatro rincones valen el viaje. La ' + b('COMISARÍA') + ': estructura única con su armería (única fuente civil del rifle Cóndor AR-56) y sus brutos de guarnición. La ' + b('TIENDA') + ': comida a porrillo y ferretería improvisada (tablas, clavos, queroseno…).',
-      b('LA BASE MILITAR') + ' — el rincón más lejano: planta baja infestada (' + 18 + ' zombis, 4 brutos de guarnición) y un ' + b('sótano-arsenal') + ' con el mejor botín del juego: el subfusil Cuervo (exclusivo y SIEMPRE garantizado al menos uno), equipo militar completo y munición a saco. ' + b('EL HOSPITAL SAN RAFAEL') + ' — dos pisos en apagón total e infestación doble: guarda los exclusivos médicos (suero, adrenalina, antibióticos potentes y morfina). Ve de día o con linterna bien cargada.') +
+      'El mapa es una ciudad de ' + b('27.232 m²') + ' con casas, coches, contenedores y ' + ZOMBIE_CFG.count + '+ zombis de salida. Cinco rincones valen el viaje. La ' + b('COMISARÍA') + ': estructura única con su armería (única fuente civil del rifle Cóndor AR-56) y sus brutos de guarnición. La ' + b('TIENDA') + ': comida a porrillo y ferretería improvisada (tablas, clavos, queroseno…).',
+      b('HOME & TOOLS') + ' — la FERRETERÍA de la ciudad (v0.25): nave mediana de un solo piso con la MISMA presión que la tienda (' + SPECIALS.tools.inside + ' dentro, 1 bruto de guarnición, ' + SPECIALS.tools.around + ' alrededor), pero el botín que manda: MATERIALES DE CONSTRUCCIÓN más abundantes que en ningún otro rincón, el EXPOSITOR DE JARDINERÍA con las SEMILLAS del huerto… y el MAZO PESADO, que solo vive aquí. ' + b('LA BASE MILITAR') + ' — el rincón más lejano: planta baja infestada (' + 18 + ' zombis, 4 brutos de guarnición) y un ' + b('sótano-arsenal') + ' con el mejor botín del juego: el subfusil Cuervo (exclusivo y SIEMPRE garantizado al menos uno), equipo militar completo y munición a saco. ' + b('EL HOSPITAL SAN RAFAEL') + ' — dos pisos en apagón total e infestación doble: guarda los exclusivos médicos (suero, adrenalina, antibióticos potentes y morfina). Ve de día o con linterna bien cargada.') +
 
     guide('Refugio, cama y sueño',
       'Monta una ' + b('CAMA') + ' dentro de una casa (receta de Construcciones: 4 tablas, 8 clavos, 3 tela y 1 cuerda) y esa casa se convierte en tu ' + b('REFUGIO') + ': nadie vuelve a aparecer dentro de sus muros. Duerme con ' + b('E') + ' junto a ella — solo si no hay zombis a ' + CRAFTEO.sleepSafeR + ' px a la redonda — y pasarás la noche de un tirón hasta el amanecer: despiertas con la energía y algo de vida repuestos (+' + CRAFTEO.sleepHeal + ' de vida).',
-      'Un refugio serio se construye tapiando: barricada en la puerta, tablones en las ventanas (dejan de verte por el cristal), una caja de almacenamiento para el equipo de reserva y una cama. Con eso, la noche pasa de ser una amenaza a ser un trámite — y tu ranura de guardado, una herencia.') +
+      'Un refugio serio se construye tapiando: barricada en la puerta, tablones en las ventanas (dejan de verte por el cristal), una caja de almacenamiento para el equipo de reserva, una cama… y desde la v0.25, un HUERTO al lado y una FOGATA para cocinar: la despensa que se recicla sola (ver Agricultura). Con eso, la noche pasa de ser una amenaza a ser un trámite — y tu ranura de guardado, una herencia.') +
+
+    guide('Agricultura: sembrar, esperar, cosechar (v0.25)',
+      'La comida enlatada se acaba; la tierra no. Consigue ' + b('SEMILLAS') + ' (el EXPOSITOR DE JARDINERÍA de HOME & TOOLS es el sitio: la tienda y las alacenas guardan alguna bolsa) y ' + b('PLANTARLAS') + ' desde el inventario sobre ' + b('césped o acera') + ' — el fantasma verde te dice dónde prenden. La planta crece ' + b('SOLO CON LOS DÍAS de juego') + ' (semilla → brote → planta → MADURA): no hay que regarla, solo sobrevivir mientras trabaja por ti. Madura, el prompt ' + b('[E] Cosechar') + ' recoge ' + b('verduras apilables') + ' — y si tardas ' + AGRICULTURA.witherDays + ' días de más, se MARCHITA (recuperas 1 semilla, pero pierdes la cosecha).',
+      'Cuatro cultivos, cuatro caracteres: ' + b(CROPS.tomate.name + ' ' + CROPS.tomate.days + ' días') + ' (' + CROPS.tomate.yield[0] + '–' + CROPS.tomate.yield[1] + ' piezas), ' + b(CROPS.zanahoria.name + ' ' + CROPS.zanahoria.days + ' días') + ' (' + CROPS.zanahoria.yield[0] + '–' + CROPS.zanahoria.yield[1] + '), ' + b(CROPS.calabaza.name + ' ' + CROPS.calabaza.days + ' días') + ' (' + CROPS.calabaza.yield[0] + '–' + CROPS.calabaza.yield[1] + ') y ' + b(CROPS.maiz.name + ' ' + CROPS.maiz.days + ' días') + ' (' + CROPS.maiz.yield[0] + '–' + CROPS.maiz.yield[1] + ', el más generoso). Crudas alimentan poco: ' + b('ASALAS EN LA FOGATA') + ' y casi duplican su valor (pestaña CRAFTEOS). Y si tu profesión es GRANJERO, maduran un día antes y cada cosecha rinde EL DOBLE.') +
 
     guide('Consejos de arranque',
       'Junto a tu punto de aparición hay un ' + b('tubo de acero') + ' y una ' + b('pistola Víbora con cargador') + ' con 7 balas, más suministros y materiales de crafteo dispersos. La casa más cercana esconde un bate. Prioridades de cualquier primera hora: arma melee en la mano, agua y comida en la mochila, vendas o materiales para coserlas, y un plan de dónde pasar la primera noche.',
@@ -256,14 +263,15 @@ export class Encyclopedia {
 
     return '' +
       guide('Quién eras antes del apocalipsis',
-        'Al ' + b('CREAR una partida') + ' (ranura vacía, reintento tras la muerte o ENTER sin partidas) el juego te pregunta ' + b('QUIÉN ERAS') + ': una de las cinco profesiones. La elección se hace ' + b('UNA sola vez y NO se puede cambiar') + ' — es tu pasado, y te acompaña como una ' + b('bonificación PASIVA') + ' durante TODA la partida: no hay que activar nada, siempre está funcionando. La profesión viaja en el guardado (cada ranura recuerda la suya: se ve en el resumen del menú, en la pausa y en el obituario), y las partidas creadas antes de la v0.24 siguen SIN profesión: sin bonos, la partida clásica.',
-        'Ninguna profesión gana la partida por ti: son ' + b('matices de estilo a largo plazo') + '. El policía mata un poco mejor, el médico estira un poco más el botiquín, el ladrón atraviesa barrios sin despertarlos, el carpintero mantiene el refugio a mitad de precio… y el desempleado presume de no necesitar nada de eso. Elige la que mejor encaje con ' + b('cómo quieres jugar ESA partida') + ': agresivo, médico de campaña, fantasma silencioso o ingeniero de refugios.') +
-        guideCards('Las cinco profesiones', null, cards) +
+        'Al ' + b('CREAR una partida') + ' (ranura vacía, reintento tras la muerte o ENTER sin partidas) el juego te pregunta ' + b('QUIÉN ERAS') + ': una de las seis profesiones. La elección se hace ' + b('UNA sola vez y NO se puede cambiar') + ' — es tu pasado, y te acompaña como una ' + b('bonificación PASIVA') + ' durante TODA la partida: no hay que activar nada, siempre está funcionando. La profesión viaja en el guardado (cada ranura recuerda la suya: se ve en el resumen del menú, en la pausa y en el obituario), y las partidas creadas antes de la v0.24 siguen SIN profesión: sin bonos, la partida clásica.',
+        'Ninguna profesión gana la partida por ti: son ' + b('matices de estilo a largo plazo') + '. El policía mata un poco mejor, el médico estira un poco más el botiquín, el ladrón atraviesa barrios sin despertarlos, el carpintero mantiene el refugio a mitad de precio, el granjero hace que la tierra dé el doble… y el desempleado presume de no necesitar nada de eso. Elige la que mejor encaje con ' + b('cómo quieres jugar ESA partida') + ': agresivo, médico de campaña, fantasma silencioso, ingeniero de refugios o señor del huerto.') +
+        guideCards('Las seis profesiones', null, cards) +
       guide('Qué toca exactamente cada bono',
         b('POLICÍA — +5% de daño con armas de fuego') + ': TODAS las armas de fuego (pistola, revólver, escopetas por cada posta, rifles, subfusil), siempre y en cada disparo. La Víbora VP-9 pasa de ' + pistola + ' a ' + n(pistolaPoli) + ' de daño por bala; en un rifle automático o una ráfaga de Cuervo, el 5% se nota en cada zombi que ya no llega a ti. El melee y los cócteles NO se benefician: el bono es de plomo.',
         b('MÉDICO — +5% de curación con objetos curativos') + ': todo lo que cura vida. El botiquín pasa de +50 a ' + n(52.5) + ' y la venda de +25 en 5 s a ' + n(26.3) + ' — y lo mismo sobre los exclusivos del hospital. No afecta a comida, bebida ni al sueño de la cama: solo a la MEDICINA.',
         b('LADRÓN — pasos un 50% más silenciosos') + ': el radio de ruido de TUS pasos se parte en dos — agachado ' + ladronSneak + ' px, caminando ' + ladronWalk + ' px, corriendo ' + ladronRun + ' px. Se apila con la ropa silenciosa y con la lluvia (que enmascara el ruido de todos). Los zombis que cazan por el oído te oyen desde la mitad de distancia: el sigilo del ladrón es caminar como si lloviera siempre. Solo los PASOS: disparos, puertas y martillazos siguen oyéndose enteros.',
         b('CARPINTERO — reparar cuesta la mitad de materiales') + ': el coste de REPARAR cualquier construcción dañada (barricada, tablones, valla, trampa, mesa) se divide entre dos, con mínimo de 1 por material. Una barricada al 50% que a cualquiera le cuesta 2 tablas + 2 clavos, al carpintero le cuesta ' + b('1 y 1') + '; aguantar asedios sale a mitad de precio. Las CONSTRUCCIONES nuevas se pagan enteras: el bono es de mantener, no de montar.',
+        b('GRANJERO — la tierra da el doble (v0.25)') + ': sus cultivos maduran ' + b('1 DÍA ANTES') + ' (el tomate pasa de ' + CROPS.tomate.days + ' a ' + (CROPS.tomate.days - 1) + ' días, el maíz de ' + CROPS.maiz.days + ' a ' + (CROPS.maiz.days - 1) + ') y cada COSECHA rinde ' + b('EL DOBLE') + ' — el tomate de ' + CROPS.tomate.yield[0] + '–' + CROPS.tomate.yield[1] + ' piezas pasa a ' + (CROPS.tomate.yield[0] * 2) + '–' + (CROPS.tomate.yield[1] * 2) + ', y el maíz hasta ' + (CROPS.maiz.yield[1] * 2) + ' mazorcas. Con las semillas de Home & Tools, un huerto de granjero alimenta una partida entera: la profesión que más rinde CUANTO MÁS VIVES. Solo la agricultura: nada de botín, combate ni curación.',
         b('DESEMPLEADO — nada') + ': sin bonos, sin ventajas, sin arrepentimiento. La partida pura, exactamente como se jugó toda la historia del juego. Para quien quiera contarse la historia sin ayudas — o comparar cuánto le dan las demás profesiones.');
   }
 
@@ -290,7 +298,7 @@ export class Encyclopedia {
         chip('vida ' + Z.variants.brute.hp, 'dmg') + chip('persecución ' + Z.variants.brute.chaseSpeed + ' px/s') +
         chip('daño ' + Z.variants.brute.dmgMin + '–' + Z.variants.brute.dmgMax, 'dmg') +
         chip('alcance ' + Z.variants.brute.attackRange) + chip('apenas retrocede'),
-        'Masa putrefacta: ' + Z.variants.brute.hp + ' de vida (más que tú y tu barricada juntos), golpes doblados y alcance largo — pero ' + Z.variants.brute.chaseSpeed + ' px/s: ' + b('hasta caminando lo dejas atrás') + '. Casi no retrocede con los golpes, así que no cuentes con aturdirlo. Guarnición fija: 2 en la comisaría, 1 en la tienda, 4 en la base militar y 2 en el hospital; a veces, alguno vaga por las calles.') +
+        'Masa putrefacta: ' + Z.variants.brute.hp + ' de vida (más que tú y tu barricada juntos), golpes doblados y alcance largo — pero ' + Z.variants.brute.chaseSpeed + ' px/s: ' + b('hasta caminando lo dejas atrás') + '. Casi no retrocede con los golpes, así que no cuentes con aturdirlo. Guarnición fija: 2 en la comisaría, 1 en la tienda, 1 en la ferretería, 4 en la base militar y 2 en el hospital; a veces, alguno vaga por las calles.') +
       zCard('GRITADOR', '#a8a460',
         chip('vida ' + Z.variants.screamer.hp, 'dmg') + chip('CHILLIDO de ' + Z.variants.screamer.screamR + ' px', 'dmg') +
         chip('aviso de ' + n(Z.variants.screamer.screamWindup) + ' s parado') +
@@ -300,7 +308,7 @@ export class Encyclopedia {
         'La ALARMA ambulante (v0.23). Pajizo, boca abierta, ojos lechosos: no forma parte de la horda — ' + b('EMERGE donde hay MUCHA población zombi') + ' (a ' + Z.screamerPopR + ' px a la redonda, máximo ' + Z.screamerMax + ' vivos). Al verte se PARA e hincha el pecho ' + n(Z.variants.screamer.screamWindup) + ' s: ' + b('ESA es tu ventana — mátalo ahí') + '. Si chilla, todo zombi en ' + Z.variants.screamer.screamR + ' px (varias manzanas; la lluvia lo amortigua) va a INVESTIGAR su posición, que persigue tu rastro. Su grito se ve como una ONDA ROJA en el suelo. Frágil (' + Z.variants.screamer.hp + ' de vida) y su golpe es flojo: el peligro no es él, es lo que trae.');
 
     // ---- melee ----
-    const meleeIds = ['tubo', 'bate', 'hacha', 'bate_con_clavos', 'lanza_chatarra', 'antorcha'];
+    const meleeIds = ['tubo', 'bate', 'hacha', 'mazo', 'bate_con_clavos', 'lanza_chatarra', 'antorcha'];
     const melee = rawCard(FISTS.name, FISTS.color,
       chip('daño ' + FISTS.dmg) + chip('alcance ' + FISTS.range) + chip('energía ' + FISTS.stamina),
       FISTS.desc, null, null) +
@@ -309,7 +317,8 @@ export class Encyclopedia {
         return card(id, chip('daño ' + d.dmg, 'dmg') + chip('alcance ' + d.range) +
           chip('energía ' + d.stamina) + chip('cadencia ' + n(d.cd) + ' s') +
           chip('ruido ' + d.noise, 'noise') + chip('empuje ' + d.kb) +
-          (d.ignite ? chip('PRENDE ' + n(d.ignite) + ' s', 'fire') : ''));
+          (d.ignite ? chip('PRENDE ' + n(d.ignite) + ' s', 'fire') : '') +
+          (d.conDmgMul ? chip('DEMUELE construcciones ×' + n(d.conDmgMul), 'ok') : ''));
       }).join('');
 
     // ---- armas de fuego ----
@@ -337,7 +346,7 @@ export class Encyclopedia {
         'Toda amenaza comparte base: oyen, olfatean y persiguen tu última posición conocida, y de noche la presión sube (+' + Z.nightBatch + ' zombis por hora, tope ' + Z.nightCap + '). Pero hay ' + b('cuatro variantes') + ' y confundirlas te mata: el común es lento pero tenaz, el corredor es un sprinter de vidrio, el bruto es un tanque que camina… y el GRITADOR no mata: CONVOCA. Identifica la silueta y el gemido antes de comprometerte — el corredor chilla agudo, el bruto retumba grave y el gritador huele a paja mojada y abre la boca ANTES de gritar. Si oyes su chillido, no lo dudes: cambia de calle o prepárate para la avalancha.') +
         guideCards('Bestiario', null, zombis) +
       guide('Combate cuerpo a cuerpo',
-        'Silencioso, barato y honesto: cada arma melee tiene daño, alcance, coste de energía, cadencia y EMPUJE (retroceso del zombi al golpearlo). El ritmo ganador es ' + b('golpe → retrocede → golpe') + ': dejas que el zombi entre en tu alcance, pegas y el empuje lo saca antes de que su cooldown de ' + n(Z.attackCd) + ' s le deje responder. Vigila la ENERGÍA: sin aliento no hay swings, y un cansado ante un corredor es comida. El ruido del melee (' + ITEMS.tubo.noise + '–' + ITEMS.hacha.noise + ' px) es casi susurro junto al de un disparo.') +
+        'Silencioso, barato y honesto: cada arma melee tiene daño, alcance, coste de energía, cadencia y EMPUJE (retroceso del zombi al golpearlo). El ritmo ganador es ' + b('golpe → retrocede → golpe') + ': dejas que el zombi entre en tu alcance, pegas y el empuje lo saca antes de que su cooldown de ' + n(Z.attackCd) + ' s le deje responder. Vigila la ENERGÍA: sin aliento no hay swings, y un cansado ante un corredor es comida. El ruido del melee (' + ITEMS.tubo.noise + '–' + ITEMS.mazo.noise + ' px) es casi susurro junto al de un disparo. Y ojo al MAZO PESADO de la ferretería: pega como un camión (empuje ' + ITEMS.mazo.kb + ') pero cada golpe cuesta ' + ITEMS.mazo.stamina + ' de energía — y a CONSTRUCCIONES pega ×' + n(ITEMS.mazo.conDmgMul) + ': el demoledor de barricadas.') +
         guideCards('Armas cuerpo a cuerpo', null, melee) +
       guide('Armas de fuego',
         'Siete armas, siete caracteres — y un precio común: el ' + b('RUIDO') + '. Un disparo se oye a 620–900 px: medio mapa acude. La recarga es un momento vulnerable (la pistola con funda táctica la acelera hasta la mitad), las automáticas mantienen el gatillo, y las escopetas pegan por postas (' + RANGED.escopeta.pellets + ' proyectiles por cartucho: a bocajarro, guillotina; a distancia, ruido). Un arma hallada ' + b('siempre trae algo dentro') + ': 50% llena, 50% a medias. Y si tu profesión es POLICÍA, cada bala pega un 5% más (pestaña PROFESIONES).') +
@@ -360,7 +369,8 @@ export class Encyclopedia {
     const objRecipes = RECIPES_OBJ.map((r) => {
       const mats = r.mats.map(([id, k]) => chip(ITEMS[id].name + ' × ' + k, 'mat')).join('');
       return rawCard(r.name, r.icon,
-        mats + (r.wb ? chip('MESA DE TRABAJO', 'wb') : ''), r.desc, null, null);
+        mats + (r.wb ? chip('MESA DE TRABAJO', 'wb') : '') +
+          (r.fire ? chip('FOGATA', 'fire') : ''), r.desc, null, null);
     }).join('');
 
     const conRecipes = RECIPES_CON.map((r) => {
@@ -380,19 +390,34 @@ export class Encyclopedia {
         (ITEMS[id].lootMin ? chip(ITEMS[id].lootMin + '–' + ITEMS[id].lootMax + ' por hallazgo') : '')))
       .join('');
 
+    // v0.25: las semillas del huerto (fichas con días y cosecha reales)
+    const semillas = Object.keys(ITEMS).filter((id) => ITEMS[id].cat === 'semilla')
+      .map((id) => {
+        const crop = Object.values(CROPS).find((k) => k.seed === id);
+        return card(id, chip('crece en ' + (crop ? crop.days : '?') + ' días') +
+          (crop ? chip('cosecha ' + crop.yield[0] + '–' + crop.yield[1] + ' piezas') : '') +
+          chip('se planta con PLANTAR'));
+      }).join('');
+
     return '' +
       guide('Cómo se craftea',
-        'Abre el inventario con ' + b('TAB') + ' y entra en la pestaña ' + b('CRAFTEO') + ': dos familias de recetas. Los ' + b('OBJETOS') + ' (vendas, molotovs, armas artesanales…) se craftean al instante y van a la mochila — si está llena, el juego te avisa y no gasta nada. Las ' + b('CONSTRUCCIONES') + ' no se guardan en la mochila: al pulsar CONSTRUIR entras en ' + b('modo construcción') + ' (ver más abajo) y los materiales se gastan al COLOCAR, no al activar el modo: puedes cancelar sin perder nada.') +
-      guide('La mesa de trabajo',
-        'Un banco improvisado (' + b('2 tablas, 6 clavos y 1 cinta') + ') que se construye como cualquier otra cosa y, estando a ' + C.wbRange + ' px o menos, ' + b('desbloquea las recetas de taller') + ': el botiquín, el bate con clavos, la lanza, la trampa de pinchos y la cama. Las recetas marcadas con el chip MESA DE TRABAJO la exigen. Ojo: cuenta solo en la MISMA planta — la mesa de la planta baja no habilita nada desde el sótano o el 2º piso.') +
+        'Abre el inventario con ' + b('TAB') + ' y entra en la pestaña ' + b('CRAFTEO') + ': dos familias de recetas. Los ' + b('OBJETOS') + ' (vendas, molotovs, armas artesanales, ASADOS de la fogata…) se craftean al instante y van a la mochila — si está llena, el juego te avisa y no gasta nada. Las ' + b('CONSTRUCCIONES') + ' no se guardan en la mochila: al pulsar CONSTRUIR entras en ' + b('modo construcción') + ' (ver más abajo) y los materiales se gastan al COLOCAR, no al activar el modo: puedes cancelar sin perder nada.') +
+      guide('La mesa de trabajo — y la FOGATA (v0.25)',
+        'Un banco improvisado (' + b('2 tablas, 6 clavos y 1 cinta') + ') que se construye como cualquier otra cosa y, estando a ' + C.wbRange + ' px o menos, ' + b('desbloquea las recetas de taller') + ': el botiquín, el bate con clavos, la lanza, la trampa de pinchos y la cama. Las recetas marcadas con el chip MESA DE TRABAJO la exigen. Ojo: cuenta solo en la MISMA planta — la mesa de la planta baja no habilita nada desde el sótano o el 2º piso.',
+        b('LA FOGATA') + ' (' + b('2 tablas y 1 tela') + ') es la COCINA del refugio: estando a ' + AGRICULTURA.cookRange + ' px o menos desbloquea las recetas marcadas FOGATA — los cuatro ASADOS que convierten cada verdura cruda del huerto en casi el DOBLE de alimento. Pulsa ' + b('E') + ' junto a ella para abrir la cocina directamente. Sus brasas contenidas NO disparan la alarma de atracción del fuego del molotov: es fuego doméstico, tranquilo… y de noche brilla.') +
       guideCards('Recetas de objetos', null, objRecipes) +
+      guide('Sembrar: el huerto (v0.25)',
+        'Las SEMILLAS no se craftean: se ENCUENTRAN (el expositor de jardinería de HOME & TOOLS, sobre todo) y se plantan desde el inventario con el botón ' + b('PLANTAR') + '. Entra en modo SIEMBRA — el fantasma verde solo prende sobre ' + b('CÉSPED o ACERA') + ' — y al colocarla nace un CULTIVO que avanza SOLO CON LOS DÍAS del reloj: sin riego, sin mantenimiento. Madura → ' + b('[E] cosecha') + ' la verdura apilable; ' + AGRICULTURA.witherDays + ' días de más → MARCHITA (devuelve 1 semilla). Los cultivos viajan en el guardado con su día de siembra: el huerto espera a tu regreso. Y con la profesión GRANJERO: maduran 1 día antes y la cosecha rinde EL DOBLE (fichas al final de la pestaña).') +
       guide('El modo construcción',
         'Al pulsar CONSTRUIR, un ' + b('fantasma transparente') + ' sigue al ratón: ' + b('verde') + ' = sitio válido, ' + b('rojo') + ' = colisión, demasiado lejos (' + C.range + ' px) o terreno inadecuado. ' + b('R') + ' rota la pieza (vallas y trampas), el ' + b('CLIC DERECHO la coloca') + ' gastando ahí los materiales, y el ' + b('CLIC IZQUIERDO o ESC cancela') + ' sin gastar nada. Las barricadas se imantan a puertas y los tablones a ventanas (' + C.snapR + ' px de imán). Todo se construye ' + b('solo en planta baja') + ', y las piezas aguantan daño de zombi antes de ceder — el fuego también las respeta.') +
       guideCards('Construcciones', null, conRecipes) +
       guide('Reparar lo dañado (v0.23)',
         'Barricadas, tablones, vallas, trampas y mesas se estropean a golpes de zombi (y a los tuyos). Acércate a una pieza dañada y ' + b('E') + ' ofrece REPARARLA con su coste REAL en el propio prompt: ' + b('cuanto más dañada, más materiales') + ' — la parte proporcional de lo que falta, redondeada hacia arriba y con mínimo de 1 por material. Una barricada al 50% pide ' + b('2 tablas + 2 clavos') + ' (de sus 3+4); al 90%, casi la receta entera. La reparación devuelve la pieza a su vida MÁXIMA (la trampa además re-arma sus 10 pisadas)… pero martillar hace el mismo ruido que construir (' + 140 + ' px): piénsalo con la horda llamando a la puerta. La caja y la cama no se reparan con E: su función (abrir/dormir) manda. Y si tu profesión es CARPINTERO, todo coste se parte en dos (la barricada al 50% te sale a 1 tabla + 1 clavo).') +
       guide('Materiales: la ferretería del apocalipsis',
-        'Los materiales (cat MATERIAL) no tienen uso directo: son los ladrillos de todas las recetas. Salen de casilleros, estanterías de tienda y base, armarios y botiquines de pared — cada ficha dice dónde. Regla de oro del herrero urbano: ' + b('saquea la TIENDA') + ' (estanterías: clavos, tablas, tela, queroseno, cinta…) antes de comprometerte con la base militar; y recuerda que el punto de partida ya esparce tela, alcohol, tablas, clavos y chatarra para tus primeras vendas o barricada.', mats);
+        'Los materiales (cat MATERIAL) no tienen uso directo: son los ladrillos de todas las recetas. Salen de casilleros, estanterías de tienda y base, armarios y botiquines de pared — cada ficha dice dónde. Regla de oro del herrero urbano desde la v0.25: ' + b('saquea HOME & TOOLS') + ' — la ferretería de verdad: sus estanterías de ferretería escupen clavos, tablas, cuerdas y cintas a porrillo (y el MAZO PESADO en exclusiva). La tienda sigue siendo la ferretería improvisada de urgencias; y recuerda que el punto de partida ya esparce tela, alcohol, tablas, clavos y chatarra para tus primeras vendas o barricada.', mats) +
+      guide('Las semillas del huerto (v0.25)',
+        'Las SEMILLAS (cat SEMILLA) son apilables y se plantan con el botón PLANTAR del inventario: cada una nace como un cultivo que crece con los días. Su mina es el EXPOSITOR DE JARDINERÍA de Home & Tools; la tienda y las alacenas guardan alguna bolsa de repuesto.',
+        semillas);
   }
 
   // ================== 5 · OBJETOS ==================
@@ -451,6 +476,13 @@ export class Encyclopedia {
     const mats = byCat('material').map((id) => card(id,
       chip('apilable × ' + ITEMS[id].stack) +
       (ITEMS[id].lootMin ? chip(ITEMS[id].lootMin + '–' + ITEMS[id].lootMax + ' por hallazgo') : ''))).join('');
+    // v0.25: las semillas del huerto
+    const semillas = byCat('semilla').map((id) => {
+      const crop = Object.values(CROPS).find((k) => k.seed === id);
+      return card(id, chip('crece en ' + (crop ? crop.days : '?') + ' días') +
+        (crop ? chip('cosecha ' + crop.yield[0] + '–' + crop.yield[1] + ' piezas') : '') +
+        chip('se planta con PLANTAR'));
+    }).join('');
 
     return '' +
       guide('El catálogo',
@@ -460,6 +492,7 @@ export class Encyclopedia {
       guideCards('Medicina', 'Del curita de campaña a los exclusivos del hospital (etiqueta SOLO HOSPITAL).', medico) +
       ropa +
       guideCards('Herramientas', 'La luz es supervivencia: la linterna y sus pilas.', tools) +
+      guideCards('Semillas del huerto (v0.25)', 'El principio de la despensa infinita: PLANTAR, esperar, cosechar, asar.', semillas) +
       guideCards('Materiales de crafteo', 'Sin uso directo, imprescindibles: alimentan todas las recetas de la pestaña CRAFTEO.', mats);
   }
 }

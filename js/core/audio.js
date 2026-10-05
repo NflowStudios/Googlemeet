@@ -285,6 +285,26 @@ export class AudioFX {
     setTimeout(() => this._tone('square', 700, 900, 0.07, 0.1), 150);
   }
 
+  // ---- v0.25: agricultura ----
+
+  /** Sembrar: palada de tierra suave. */
+  plant() {
+    this._noise(0.16, 'lowpass', 300, 0.3);
+    this._tone('sine', 170, 110, 0.12, 0.2);
+  }
+
+  /** Cosechar: arranque + crujido vegetal. */
+  harvest() {
+    this._noise(0.1, 'highpass', 1800, 0.14);
+    this._tone('square', 520, 780, 0.08, 0.16);
+  }
+
+  /** Asar a la fogata: chisporroteo. */
+  sizzle() {
+    this._noise(0.5, 'bandpass', 3200, 0.18, 0, 1.4);
+    this._noise(0.3, 'highpass', 2400, 0.1, 0, 1);
+  }
+
   /** Clavar una construcción: martillazo seco (x2). */
   hammer() {
     this._noise(0.05, 'lowpass', 900, 0.3);

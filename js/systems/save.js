@@ -217,11 +217,14 @@ export function buildSaveData(game) {
   // v0.20: CONSTRUCCIONES del jugador (con el contenido de las cajas vía
   // registro de objetos) — el fuego y el fantasma de construcción son
   // efímeros y NO viajan
+  // v0.25: los CULTIVOS guardan su semilla (cp) y su DÍA de siembra (pd):
+  // al restaurar, el reloj dice en qué etapa van
   const cons = game.constructions.map((c) => {
     const o = {
       t: c.type, tx: c.tx, ty: c.ty, rt: c.rot || 0,
       hp: Math.round(c.hp), us: c.uses,
       it: (c.type === 'caja' && c.items) ? c.items.map((x) => reg(x)) : undefined,
+      cp: c.crop || undefined, pd: c.plantedDay !== undefined ? c.plantedDay : undefined,
     };
     return o;
   });
@@ -440,7 +443,8 @@ export function restoreGame(game, data) {
     // ---- v0.20: CONSTRUCCIONES (materiales del registro para las cajas) ----
     game.constructions = [];
     for (const cs of data.cons || []) {
-      const c = addConstruction(game, cs.t, cs.tx, cs.ty, cs.rt || 0);
+      const c = addConstruction(game, cs.t, cs.tx, cs.ty, cs.rt || 0,
+        cs.cp || null, cs.pd !== undefined ? cs.pd : null);   // v0.25: cultivo
       if (cs.hp !== undefined) c.hp = cs.hp;
       if (cs.us !== undefined && c.uses !== undefined) c.uses = cs.us;
       if (cs.t === 'caja' && cs.it) {
@@ -474,6 +478,9 @@ export function restoreGame(game, data) {
     // guardado sin ninguno (mala suerte de las tablas en v0.20) recibe el
     // suyo en una armería de la base militar
     if (typeof game._guaranteeCuervo === 'function') game._guaranteeCuervo();
+    // v0.25: garantía del MAZO también al CARGAR (mundo sin ninguno → uno
+    // en una estantería de la ferretería)
+    if (typeof game._guaranteeMazo === 'function') game._guaranteeMazo();
 
     return { day: game.daynight.day, clock: game.daynight.clock };
   } catch (e) {

@@ -555,13 +555,16 @@ export function spawnZombies(map, rng, count, spawnPoint) {
   // --- Densidad extra por estructura especial (v0.10) ---
   // La COMISARÍA concentra el mayor peligro del mapa (los agentes cayeron
   // dentro) y la TIENDA tiene presión media: zombis dentro + alrededor.
+  // v0.25: HOME & TOOLS lleva la MISMA presión que la tienda (3 dentro con
+  // su bruto de guarnición + 2 alrededor): la ferretería vale la pena.
   // Cantidades FIJAS (SPECIALS.inside/around) → total determinista.
   // v0.13: los de ALREDEDOR también rehúyen la burbuja del spawn del jugador
   // (la estructura puede quedar cerca del centro del mapa).
   // v0.14: cada estructura guarda SUS BRUTOS de guarnición (comisaría 2,
-  // tienda 1) entre su gente de dentro.
+  // tienda 1, ferretería 1) entre su gente de dentro.
   for (const b of map.buildings) {
-    if (b.kind !== 'police' && b.kind !== 'store' && b.kind !== 'military' && b.kind !== 'hospital') continue;
+    if (b.kind !== 'police' && b.kind !== 'store' && b.kind !== 'military' &&
+        b.kind !== 'hospital' && b.kind !== 'tools') continue;
     const sp = SPECIALS[b.kind];
     const brutes = Z.bruteSpecials[b.kind] || 0;
     for (let i = 0; i < sp.inside; i++) {

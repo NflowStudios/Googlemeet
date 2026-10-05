@@ -9,8 +9,8 @@ import { EQUIP_SLOTS, EQUIP_LABELS, ITEMS, PROF_BY_ID } from '../config.js';
 import { itemLabel, countItem } from '../systems/inventory.js';
 import { hotbarAssign, hotbarClear, hotbarSlotFor } from '../systems/hotbar.js';
 import {
-  RECIPES_OBJ, RECIPES_CON, canCraft, missingMaterials, nearWorkbench,
-  craftObject, startBuild, cancelBuild,
+  RECIPES_OBJ, RECIPES_CON, canCraft, missingMaterials, nearWorkbench, nearFogata,
+  craftObject, startBuild, startPlant, cancelBuild,
 } from '../systems/crafting.js';
 
 export class InventoryUI {
@@ -109,6 +109,15 @@ export class InventoryUI {
     this.el.classList.add('hidden');
     this.container = null;
     this.selected = -1;
+  }
+
+  /** v0.25: abre el inventario DIRECTO en la pestaña CRAFTEO (sub-pestaña
+   *  OBJETOS) — lo llama la FOGATA al pulsarla: su cocina a un clic. */
+  openCraft() {
+    this.openUI(null);
+    this.tab = 'craft';
+    this.craftTab = 'obj';
+    this.render();
   }
 
   render() {
@@ -225,6 +234,7 @@ export class InventoryUI {
     });
     const recipes = this.craftTab === 'obj' ? RECIPES_OBJ : RECIPES_CON;
     const wb = nearWorkbench(g);
+    const fire = nearFogata(g);   // v0.25: la cocina de la fogata
 
     for (const r of recipes) {
       const card = document.createElement('div');
@@ -239,16 +249,19 @@ export class InventoryUI {
       }).join('');
 
       const needWb = !!r.wb;
+      const needFire = !!r.fire;   // v0.25: receta de asado
       const ok = canCraft(g, r);
       let why = '';
       if (miss.length) why = 'Faltan materiales';
       else if (needWb && !wb) why = 'Requiere mesa de trabajo cerca';
+      else if (needFire && !fire) why = 'Requiere fogata cerca';
 
       card.innerHTML = `
         <div class="cr-head">
           <span class="cr-icon" style="background:${r.icon}"></span>
           <span class="cr-name">${r.name}</span>
           ${needWb ? `<span class="cr-wb ${wb ? 'ok' : 'lack'}">MESA DE TRABAJO</span>` : ''}
+          ${needFire ? `<span class="cr-wb ${fire ? 'ok' : 'lack'}">FOGATA</span>` : ''}
         </div>
         <p class="cr-desc">${r.desc}</p>
         <div class="cr-mats">${matsHtml}</div>`;
@@ -277,12 +290,13 @@ export class InventoryUI {
       list.appendChild(card);
     }
 
-    // resumen de contexto (mesa cerca / planta)
+    // resumen de contexto (mesa/fogata cerca · planta)
     const info = document.getElementById('craft-wbinfo');
     if (info) {
       info.textContent = (wb ? 'Mesa de trabajo: CERCA' : 'Mesa de trabajo: lejos (o sin construir)') +
+        ' · ' + (fire ? 'Fogata: CERCA (cocina de verduras)' : 'Fogata: lejos (o sin construir)') +
         ' · Construcciones solo en PLANTA BAJA';
-      info.className = wb ? 'ok' : '';
+      info.className = (wb || fire) ? 'ok' : '';
     }
   }
 
@@ -302,6 +316,18 @@ export class InventoryUI {
     if (it.def.cat === 'comida' || it.def.cat === 'bebida') mk('Consumir', () => this.consume(this.selected));
     if (it.def.cat === 'medico') mk('Usar', () => this.consume(this.selected));
     if (it.def.cat === 'arma' || it.def.cat === 'ropa') mk('Equipar', () => this.equipItem(this.selected));
+    // v0.25: PLANTAR una semilla (modo siembra: fantasma sobre césped/acera)
+    if (it.def.cat === 'semilla') {
+      mk('Plantar', () => {
+        const id = it.id;
+        this.closeUI();
+        startPlant(g, id);
+      });
+      const n = document.createElement('span');
+      n.className = 'action-note';
+      n.textContent = 'Sobre césped o acera · crece con los días · [E] cosechar madura';
+      bar.appendChild(n);
+    }
     {
       // v0.17: la ranura se elige según categoría y disponibilidad
       const slot = hotbarSlotFor(it, g.player);

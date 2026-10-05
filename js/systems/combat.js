@@ -77,9 +77,11 @@ function meleeAttack(game) {
   } else {
     // v0.20: sin zombi en el arco → el golpe cae sobre una CONSTRUCCIÓN
     // (desmontar barricadas propias o ajenas a leñazos)
+    // v0.25: el MAZO PESADO demuele a conDmgMul × lo que diga su ficha
+    // (2,5: las barricadas caen a golpes de demolición de verdad)
     const c = constructionInArc(game, w.range);
     if (c) {
-      damageConstruction(game, c, w.dmg, true);
+      damageConstruction(game, c, w.dmg * (w.conDmgMul || 1), true);
       game.noise.emit(c.x, c.y, 110, 'golpe');
     }
   }
