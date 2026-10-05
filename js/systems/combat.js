@@ -337,6 +337,20 @@ export function finishReload(game) {
  *  v0.14: el daño lo fija la VARIANTE del zombi (un bruto pega el doble). */
 export function zombieHit(game, z) {
   const p = game.player;
+  // v0.26: CONDUCIENDO — el golpe cae sobre el COCHE, no sobre ti: la
+  // chapa te protege, pero la horda a la puerta destroza el motor
+  if (p.inCar) {
+    const car = p.inCar;
+    const dmg = z.dmgMin + Math.random() * (z.dmgMax - z.dmgMin);
+    const wasSmoking = car.engineHp > 0 && car.engineHp <= 35;
+    car.engineHp = Math.max(0, car.engineHp - dmg * 0.4);
+    game.audio.hitWood();
+    game.cam.shake(2);
+    game.noise.emit(car.x, car.y, 80, 'golpe');
+    if (car.engineHp <= 0) game.toasts.push('¡La horda ha MATADO el motor!', 'bad');
+    else if (!wasSmoking && car.engineHp <= 35) game.toasts.push('El motor empieza a ECHAR HUMO', 'warn');
+    return false;
+  }
   const dmg = z.dmgMin + Math.random() * (z.dmgMax - z.dmgMin);
   const reduced = dmg * (1 - p.damageReduction());
   const wasBite = game.survival.zombieHit(reduced, game);

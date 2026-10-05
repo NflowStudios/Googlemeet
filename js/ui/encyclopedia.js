@@ -23,7 +23,7 @@
 import {
   ITEMS, RANGED, ZOMBIE_CFG, SURV, PLAYER_CFG, FISTS, WEATHER, FLOORS,
   CRAFTEO, CONTAINER_DEFS, LOOT, ROTTEN_CHANCE, DAYNIGHT, FLASH,
-  PROFESSIONS, PROF_BY_ID, CROPS, AGRICULTURA, SPECIALS,
+  PROFESSIONS, PROF_BY_ID, CROPS, AGRICULTURA, SPECIALS, VEHICULOS, MAP_W, MAP_H,
 } from '../config.js';
 import { RECIPES_OBJ, RECIPES_CON } from '../systems/crafting.js';
 
@@ -224,12 +224,20 @@ export class Encyclopedia {
       'Cada planta es su propio mundo: desde el sótano no se ve la planta baja (ni sus construcciones ni su fuego) y viceversa — el techo de tu refugio también tapa a los zombis de arriba abajo. Las ' + b('construcciones solo se colocan en planta baja') + '. Recuerda qué edificios tienen sótano antes de tapiarte dentro: es la mejor bodega y el peor callejón sin salida.') +
 
     guide('El mundo y sus rincones',
-      'El mapa es una ciudad de ' + b('27.232 m²') + ' con casas, coches, contenedores y ' + ZOMBIE_CFG.count + '+ zombis de salida. Cinco rincones valen el viaje. La ' + b('COMISARÍA') + ': estructura única con su armería (única fuente civil del rifle Cóndor AR-56) y sus brutos de guarnición. La ' + b('TIENDA') + ': comida a porrillo y ferretería improvisada (tablas, clavos, queroseno…).',
-      b('HOME & TOOLS') + ' — la FERRETERÍA de la ciudad (v0.25): nave mediana de un solo piso con la MISMA presión que la tienda (' + SPECIALS.tools.inside + ' dentro, 1 bruto de guarnición, ' + SPECIALS.tools.around + ' alrededor), pero el botín que manda: MATERIALES DE CONSTRUCCIÓN más abundantes que en ningún otro rincón, el EXPOSITOR DE JARDINERÍA con las SEMILLAS del huerto… y el MAZO PESADO, que solo vive aquí. ' + b('LA BASE MILITAR') + ' — el rincón más lejano: planta baja infestada (' + 18 + ' zombis, 4 brutos de guarnición) y un ' + b('sótano-arsenal') + ' con el mejor botín del juego: el subfusil Cuervo (exclusivo y SIEMPRE garantizado al menos uno), equipo militar completo y munición a saco. ' + b('EL HOSPITAL SAN RAFAEL') + ' — dos pisos en apagón total e infestación doble: guarda los exclusivos médicos (suero, adrenalina, antibióticos potentes y morfina). Ve de día o con linterna bien cargada.') +
+      'El mapa es una ciudad de ' + b(MAP_W + '×' + MAP_H + ' tiles — ' + (MAP_W * MAP_H).toLocaleString('es') + ' m²') + ' (v0.26: al TRIPLE para que los COCHES tengan carretera de sobra) con casas, coches, contenedores y ' + ZOMBIE_CFG.count + '+ zombis de salida. La retícula de calles de 4 tiles deja manzanas de 24×22 con aceras, y ' + b(VEHICULOS.carCount + ' coches abandonados') + ' esperan un conductor. La ' + b('COMISARÍA') + ': estructura única con su armería (única fuente civil del rifle Cóndor AR-56) y sus brutos de guarnición. La ' + b('TIENDA') + ': comida a porrillo y ferretería improvisada (tablas, clavos, queroseno…).',
+      b('HOME & TOOLS') + ' — la FERRETERÍA de la ciudad (v0.25): nave mediana de un solo piso con la MISMA presión que la tienda (' + SPECIALS.tools.inside + ' dentro, 1 bruto de guarnición, ' + SPECIALS.tools.around + ' alrededor), pero el botín que manda: MATERIALES DE CONSTRUCCIÓN más abundantes que en ningún otro rincón, el EXPOSITOR DE JARDINERÍA con las SEMILLAS del huerto… y el MAZO PESADO, que solo vive aquí. ' + b('LAS TRES GASOLINERAS YUNQUE GAS') + ' (v0.26) — al ' + b('NORTE, al SUR y al ESTE') + ' del mapa: cada una con su tienda-taller y su pista de SURTIDORES (B) — la fuente REINA de BIDONES DE GASOLINA y el sitio donde más salen las PIEZAS DE MOTOR (presión zombi ligera: ' + SPECIALS.gas.inside + ' dentro + ' + SPECIALS.gas.around + ' alrededor). ' + b('LA BASE MILITAR') + ' — el rincón más lejano: planta baja infestada y un ' + b('sótano-arsenal') + ' con el mejor botín del juego: el subfusil Cuervo (exclusivo y SIEMPRE garantizado al menos uno). ' + b('EL HOSPITAL SAN RAFAEL') + ' — dos pisos en apagón total e infestación doble: guarda los exclusivos médicos (suero, adrenalina, antibióticos potentes y morfina).') +
 
-    guide('Refugio, cama y sueño',
+    guide('Los coches: las llaves de la ciudad (v0.26)',
+      'Cada coche del mapa es un vehículo de verdad. Acércate y ' + b('[E] ENTRAS') + ' (W/S acelera y frena · A/D gira · L enciende los FAROS cuando oscurece · [E] de nuevo para bajarte, donde quede queda aparcado) o ' + b('[Q] LO INSPECCIONAS') + ': la ficha completa con PIEZAS montadas y faltantes, GASOLINA, estado del motor y ODÓMETRO — y desde ahí instalas piezas, REPOSTAS con bidones, abres la CAJUELA (6–16 huecos según el modelo) o remiendas el motor si eres MECÁNICO.',
+      'La mayoría de coches nacen cojos: sin ' + b('BATERÍA') + ' (no se gasta: solo hace falta para arrancar) o sin ' + b('BUJÍAS') + ' el motor ni se mueve; cada ' + b('NEUMÁTICO') + ' puesto devuelve velocidad (con 4 ruedas vas a fondo); sin ' + b('RADIADOR') + ' el motor SOBRECALIENTA al rato y va perdiendo vida. Y ojo a los ' + b('CHOQUES frontales') + ': el motor recibe el impacto directo, el coche se PARA en seco… y tocado, ECHA HUMO hasta que muere (el MECÁNICO lo remienda con 4 de chatarra). Con velocidad (desde 70 px/s) ATROPELLAS zombis — cada cuerpo frena el coche y muerde al motor: una horda entera puede dejarte clavado en medio de la calle. Cada motor SUENA distinto: la furgoneta se oye desde LEJOS y hasta el sedán canturrea más que tus pasos — conducir es rápido, pero ANUNCIA tu posición durante varias manzanas.') +
+
+    guide('Los cuatro modelos',
+      b('AURORA CIERZO 400 (sedán)') + ': ligero y razonablemente rápido en PAVIMENTO (' + Math.round(VEHICULOS.models.sedan.top / 32 * 3.6) + ' km/h), el que menos bebe (' + n(VEHICULOS.models.sedan.fuelRate) + ' L/s a fondo) y el más silencioso (ruido ' + VEHICULOS.models.sedan.noise + ' px). Cajuela media (' + VEHICULOS.models.sedan.storage + ' huecos). En tierra se queda: es un coche de ciudad. ' + b('YAGUARETE SIERRA 4×4 (pickup)') + ': algo más lento pero con CAJUELA GRANDE (' + VEHICULOS.models.pickup.storage + ') y a sus anchas fuera del asfalto. Bebe moderado-alto (' + n(VEHICULOS.models.pickup.fuelRate) + ' L/s).',
+      b('BÓER MERIDIANO (SUV)') + ': pesado y bebedor (' + n(VEHICULOS.models.suv.fuelRate) + ' L/s a fondo) con ' + VEHICULOS.models.suv.storage + ' huecos — el término medio. ' + b('CARABELA MULA 3000 (furgoneta)') + ': el ALMACÉN MÓVIL (' + VEHICULOS.models.van.storage + ' huecos)… a cambio de la aceleración más lenta (' + VEHICULOS.models.van.accel + '), el giro más torpe y el motor MÁS RUIDOSO del juego (' + VEHICULOS.models.van.noise + ' px: media ciudad sabe que llegas). Depósitos de ' + VEHICULOS.models.sedan.fuelCap + '–' + VEHICULOS.models.van.fuelCap + ' L; cada BIDÓN de gasolina vierte ' + VEHICULOS.fuelPerBidon + ' L y se consiguen sobre todo en las GASOLINERAS.') +
+
+    guide('Refugio, cama, agua y sueño',
       'Monta una ' + b('CAMA') + ' dentro de una casa (receta de Construcciones: 4 tablas, 8 clavos, 3 tela y 1 cuerda) y esa casa se convierte en tu ' + b('REFUGIO') + ': nadie vuelve a aparecer dentro de sus muros. Duerme con ' + b('E') + ' junto a ella — solo si no hay zombis a ' + CRAFTEO.sleepSafeR + ' px a la redonda — y pasarás la noche de un tirón hasta el amanecer: despiertas con la energía y algo de vida repuestos (+' + CRAFTEO.sleepHeal + ' de vida).',
-      'Un refugio serio se construye tapiando: barricada en la puerta, tablones en las ventanas (dejan de verte por el cristal), una caja de almacenamiento para el equipo de reserva, una cama… y desde la v0.25, un HUERTO al lado y una FOGATA para cocinar: la despensa que se recicla sola (ver Agricultura). Con eso, la noche pasa de ser una amenaza a ser un trámite — y tu ranura de guardado, una herencia.') +
+      'Un refugio serio se construye tapiando: barricada en la puerta, tablones en las ventanas (dejan de verte por el cristal), una caja de almacenamiento para el equipo de reserva, una cama… y desde la v0.25, un HUERTO al lado y una FOGATA para cocinar. Desde la v0.26, el ' + b('BARRIL DE LLUVIA') + ' (3 tablas + 4 clavos + 1 tela, al aire libre) cierra el círculo: se LLENA SOLO cada vez que llueve y con ' + b('[E]') + ' BEBES (+35 de sed) o LLENAS una botella vacía — el AGUA a largo plazo de la despensa que se recicla sola. Con eso, la noche pasa de ser una amenaza a ser un trámite — y tu ranura de guardado, una herencia.') +
 
     guide('Agricultura: sembrar, esperar, cosechar (v0.25)',
       'La comida enlatada se acaba; la tierra no. Consigue ' + b('SEMILLAS') + ' (el EXPOSITOR DE JARDINERÍA de HOME & TOOLS es el sitio: la tienda y las alacenas guardan alguna bolsa) y ' + b('PLANTARLAS') + ' desde el inventario sobre ' + b('césped o acera') + ' — el fantasma verde te dice dónde prenden. La planta crece ' + b('SOLO CON LOS DÍAS de juego') + ' (semilla → brote → planta → MADURA): no hay que regarla, solo sobrevivir mientras trabaja por ti. Madura, el prompt ' + b('[E] Cosechar') + ' recoge ' + b('verduras apilables') + ' — y si tardas ' + AGRICULTURA.witherDays + ' días de más, se MARCHITA (recuperas 1 semilla, pero pierdes la cosecha).',
@@ -370,7 +378,8 @@ export class Encyclopedia {
       const mats = r.mats.map(([id, k]) => chip(ITEMS[id].name + ' × ' + k, 'mat')).join('');
       return rawCard(r.name, r.icon,
         mats + (r.wb ? chip('MESA DE TRABAJO', 'wb') : '') +
-          (r.fire ? chip('FOGATA', 'fire') : ''), r.desc, null, null);
+          (r.fire ? chip('FOGATA', 'fire') : '') +
+          (r.mech ? chip('SOLO MECÁNICO', 'fer') : ''), r.desc, null, null);
     }).join('');
 
     const conRecipes = RECIPES_CON.map((r) => {
@@ -483,6 +492,17 @@ export class Encyclopedia {
         (crop ? chip('cosecha ' + crop.yield[0] + '–' + crop.yield[1] + ' piezas') : '') +
         chip('se planta con PLANTAR'));
     }).join('');
+    // v0.26: las PIEZAS DE COCHE y el COMBUSTIBLE
+    const piezas = byCat('pieza').map((id) => card(id,
+      chip('apilable × ' + ITEMS[id].stack) +
+      chip('se INSTALA desde la ficha del coche') +
+      (id === 'bateria_coche' ? chip('no se gasta', 'ok') : '') +
+      (id === 'neumatico' ? chip('hasta 4 por coche') : '') +
+      (id === 'radiador' ? chip('sin él: SOBRECALENTAMIENTO', 'warn') : ''))).join('');
+    const fuel = byCat('combustible').map((id) => card(id,
+      chip('+' + VEHICULOS.fuelPerBidon + ' L por bidón', 'ok') +
+      chip('repostar desde la ficha del coche') +
+      chip('fuente: GASOLINERAS', 'fer'))).join('');
 
     return '' +
       guide('El catálogo',
@@ -493,6 +513,8 @@ export class Encyclopedia {
       ropa +
       guideCards('Herramientas', 'La luz es supervivencia: la linterna y sus pilas.', tools) +
       guideCards('Semillas del huerto (v0.25)', 'El principio de la despensa infinita: PLANTAR, esperar, cosechar, asar.', semillas) +
+      guideCards('Piezas de coche (v0.26)', 'La otra cara de los vehículos: sin batería o sin bujías el motor ni arranca; cada neumático devuelve velocidad; el radiador evita el sobrecalentamiento. Las cosechan los MECÁNICOS con chatarra (pestaña CRAFTEOS) y, sobre todo, las ESTANTERÍAS DE TALLER de las gasolineras.', piezas) +
+      guideCards('Combustible (v0.26)', 'El oro nuevo: cada bidón vierte ' + VEHICULOS.fuelPerBidon + ' L en el depósito. La fuente REINA son los SURTIDORES de las tres gasolineras.', fuel) +
       guideCards('Materiales de crafteo', 'Sin uso directo, imprescindibles: alimentan todas las recetas de la pestaña CRAFTEO.', mats);
   }
 }

@@ -39,18 +39,18 @@ import { zombieToData, zombieFromData } from '../entities/zombie.js';
 import { flashlightItem } from './flashlight.js';
 import { HOTBAR_N } from './hotbar.js';
 import { addConstruction } from './crafting.js';
+import { vehiclesToData, applyVehicles, enterCar } from './vehicles.js';
 
-// v0.20: bump a 4 — el mundo ganó CONSTRUCCIONES del jugador (barricadas,
-// vallas, trampas, cajas con su contenido, camas que hacen refugio y mesas
-// de trabajo). Los guardados de la v3 se rechazan limpiamente (el menú
-// arranca partida nueva), como en cada salto de versión.
-// v0.22: el FORMATO no cambia (mismos campos); solo pasa de una clave
-// única a una por ranura → SAVE_VERSION se mantiene en 4 y los guardados
-// v0.21 migran solos a la ranura 1 (ver migrateLegacySave).
-// v0.24: campo aditivo player.pf (profesión, v0.24). El FORMATO no cambia
-// y los guardados v0.23 sin pf cargan con profesión NULL (sin bonos, la
-// partida se creó antes de que existieran) → SIN bump de versión.
-export const SAVE_VERSION = 4;
+// v0.26: bump a 5 — el mapa pasó de 184×148 a 300×300 tiles y el mundo se
+// REGENERA con la misma semilla: un guardado de la v4 apuntaría a una
+// geografía que ya no existe (posición del jugador dentro de un muro,
+// contenedores desplazados…). Como en cada salto de versión, los guardados
+// antiguos se rechazan limpiamente y el menú ofrece partida nueva.
+// NUEVO en el formato: bloque `veh` (estado de los COCHES: posición,
+// combustible, piezas, motor, cajuela) y `player.pc` (índice del coche que
+// estabas CONDUCIENDO al guardar); las construcciones suman `wt` (agua del
+// barril de lluvia).
+export const SAVE_VERSION = 5;
 export const AUTOSAVE_SEC = 300;        // autoguardado cada 5 min DE PARTIDA
 export const SAVE_SLOTS = 3;            // v0.22: 3 partidas independientes
 const KEY = 'zonacero.save.v' + SAVE_VERSION;
@@ -96,15 +96,11 @@ export function clearRecords() {
  * v0.22: MIGRACIÓN — el guardado único de la v0.21 (clave sin sufijo) pasa
  * a la ranura 1 si esta está libre. Se ejecuta una sola vez (al importar el
  * módulo) y no toca nada más: las ranuras 2 y 3 nacen vacías.
+ * v0.26: RETIRADA — con el salto a la v5 (mapa 300×300) la migración ya
+ * no tiene sentido: un v4 jamás cargaría. Las claves viejas se limpian.
  */
 function migrateLegacySave() {
-  try {
-    const legacy = localStorage.getItem(KEY);
-    if (legacy !== null && localStorage.getItem(slotKey(1)) === null) {
-      localStorage.setItem(slotKey(1), legacy);
-    }
-    if (legacy !== null) localStorage.removeItem(KEY);
-  } catch (e) { /* sin localStorage: nada que migrar */ }
+  try { localStorage.removeItem('zonacero.save.v4'); } catch (e) { /* nada */ }
 }
 migrateLegacySave();
 
@@ -168,6 +164,7 @@ export function buildSaveData(game) {
     sk: p.sneak ? 1 : 0,
     fl: p.flashOn ? 1 : 0,   // v0.17: linterna encendida
     pf: p.prof || null,      // v0.24: profesión de la partida (id o null)
+    pc: p.inCar ? game.map.cars.indexOf(p.inCar) : null,   // v0.26: coche al volante
     z: p.z || 0,
     // si se guardó a mitad de escalera: se da por terminada la subida/bajada
     zc: p.climb ? p.climb.to : null,
@@ -219,15 +216,22 @@ export function buildSaveData(game) {
   // efímeros y NO viajan
   // v0.25: los CULTIVOS guardan su semilla (cp) y su DÍA de siembra (pd):
   // al restaurar, el reloj dice en qué etapa van
+  // v0.26: los BARRILES guardan su AGUA (wt): lo que la lluvia llenó
   const cons = game.constructions.map((c) => {
     const o = {
       t: c.type, tx: c.tx, ty: c.ty, rt: c.rot || 0,
       hp: Math.round(c.hp), us: c.uses,
       it: (c.type === 'caja' && c.items) ? c.items.map((x) => reg(x)) : undefined,
       cp: c.crop || undefined, pd: c.plantedDay !== undefined ? c.plantedDay : undefined,
+      wt: c.type === 'barril' ? Math.round(c.water || 0) : undefined,
     };
     return o;
   });
+
+  // v0.26: LOS COCHES — posición, combustible, piezas, motor, odómetro y
+  // cajuela (con su contenido vía registro). El mapa se regenera con la
+  // semilla y encima se aplican estas diferencias (como puertas y decals)
+  const veh = vehiclesToData(game, reg);
 
   // v0.23: estadísticas del obituario (disparos, molotovs, crafteos,
   // construcciones y odómetro)
@@ -252,7 +256,7 @@ export function buildSaveData(game) {
     wx: game.weather ? game.weather.toData() : null,   // v0.15: clima
     player, surv,
     zombies: game.zombies.map(zombieToData),
-    containers, ground, cons, doors,
+    containers, ground, cons, doors, veh,
     decals: game.map.decalOps.slice(-500),
     items,
   };
@@ -447,9 +451,19 @@ export function restoreGame(game, data) {
         cs.cp || null, cs.pd !== undefined ? cs.pd : null);   // v0.25: cultivo
       if (cs.hp !== undefined) c.hp = cs.hp;
       if (cs.us !== undefined && c.uses !== undefined) c.uses = cs.us;
+      if (cs.wt !== undefined && c.type === 'barril') c.water = cs.wt;   // v0.26: agua del barril
       if (cs.t === 'caja' && cs.it) {
         c.items = cs.it.map(get).filter(Boolean);
       }
+    }
+
+    // ---- v0.26: LOS COCHES — posición, combustible, piezas, motor y
+    // cajuela sobre el mapa regenerado (como puertas/decals: diferencias) ----
+    applyVehicles(game, data.veh, get);
+    // ¿se guardó CONDUCIENDO? El jugador vuelve al volante (silencioso)
+    if (pd.pc !== null && pd.pc !== undefined && game.map.cars[pd.pc]) {
+      const car = game.map.cars[pd.pc];
+      if (car.driven) enterCar(game, car, true);
     }
 
     // ---- decals: reproducir sangre y cadáveres ----

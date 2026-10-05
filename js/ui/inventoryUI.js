@@ -250,9 +250,11 @@ export class InventoryUI {
 
       const needWb = !!r.wb;
       const needFire = !!r.fire;   // v0.25: receta de asado
+      const needMech = !!r.mech;  // v0.26: pieza de coche del MECÁNICO
       const ok = canCraft(g, r);
       let why = '';
       if (miss.length) why = 'Faltan materiales';
+      else if (needMech && g.player.prof !== 'mecanico') why = 'Requiere la profesión MECÁNICO';
       else if (needWb && !wb) why = 'Requiere mesa de trabajo cerca';
       else if (needFire && !fire) why = 'Requiere fogata cerca';
 
@@ -262,6 +264,7 @@ export class InventoryUI {
           <span class="cr-name">${r.name}</span>
           ${needWb ? `<span class="cr-wb ${wb ? 'ok' : 'lack'}">MESA DE TRABAJO</span>` : ''}
           ${needFire ? `<span class="cr-wb ${fire ? 'ok' : 'lack'}">FOGATA</span>` : ''}
+          ${needMech ? `<span class="cr-wb ${g.player.prof === 'mecanico' ? 'ok' : 'lack'}">MECÁNICO</span>` : ''}
         </div>
         <p class="cr-desc">${r.desc}</p>
         <div class="cr-mats">${matsHtml}</div>`;
@@ -431,7 +434,10 @@ export class InventoryUI {
     const g = this.game, inv = g.player.inventory, c = this.container;
     const it = inv.removeAt(i);
     if (!it) return;
-    if (c.items.length >= 8) {
+    // v0.26: la CAJUELA del coche (y cualquier contenedor con tope propio)
+    // llena según sus huecos reales (modelo.storage); el resto, 8
+    const cap = c.slots || 8;
+    if (c.items.length >= cap) {
       inv.slots[i] = it;
       g.toasts.push('El contenedor está lleno', 'warn');
       return;

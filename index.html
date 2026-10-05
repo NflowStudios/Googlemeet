@@ -51,6 +51,33 @@
 
   <div id="prompt" class="hidden"></div>
 
+  <!-- v0.26: CUADRO DE MANDO del coche — visible solo AL VOLANTE.
+       Velocímetro, depósito, odómetro, temperatura, faros y piezas. -->
+  <div id="car-dash" class="hidden">
+    <div id="dash-name">—</div>
+    <div class="dash-main">
+      <div class="dash-kv">
+        <span class="dash-lbl">VEL</span>
+        <span id="dash-speed">0</span><span class="dash-unit">km/h</span>
+      </div>
+      <div class="dash-kv">
+        <span class="dash-lbl">ODÓMETRO</span>
+        <span id="dash-odo">0 km</span>
+      </div>
+    </div>
+    <div class="dash-bars">
+      <div id="dash-fuel" class="dash-bar"><div class="fill"></div></div>
+      <span id="dash-fuel-txt">—</span>
+      <div id="dash-tempbar" class="dash-bar temp"><div class="fill"></div></div>
+      <span id="dash-temp" class="">—</span>
+    </div>
+    <div class="dash-foot">
+      <span id="dash-engine">—</span>
+      <span id="dash-lights">—</span>
+      <span id="dash-tires">—</span>
+    </div>
+  </div>
+
   <!-- Barra rápida (v0.17, 5 ranuras): 1 = arma de fuego · 2 = arma de fuego
        secundaria · 3 = melee · 4 y 5 = misceláneo (la linterna vive aquí) -->
   <div id="hotbar">
@@ -61,7 +88,7 @@
     <div class="hb-slot" data-hb="4"><span class="hb-key">5</span><span class="hb-tag">OBJETO</span><div class="hb-item"></div></div>
   </div>
 
-  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar/rotar · 1-5 barra rápida · L linterna · E interactuar · TAB inventario/crafteo · P pausa · M audio · CLIC DER. colocar construcción</div>
+  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar/rotar · 1-5 barra rápida · L linterna · E interactuar · Q inspeccionar coche · TAB inventario/crafteo · P pausa · M audio · CLIC DER. colocar construcción</div>
   <div id="toasts"></div>
 </div>
 
@@ -134,11 +161,21 @@
   </div>
 </div>
 
+<!-- ==================== v0.26: FICHA DE COCHE (INSPECCIÓN) ==================== -->
+<!-- Estado general del vehículo: piezas montadas/faltantes, nivel de
+     gasolina, motor, odómetro y acciones (entrar, repostar, instalar
+     piezas, abrir la cajuela, remendar el motor si eres MECÁNICO). -->
+<div id="carscreen" class="hidden">
+  <div class="car-panel">
+    <!-- el contenido lo rellena js/systems/vehicles.js (renderInspect) -->
+  </div>
+</div>
+
 <!-- ==================== MENÚ PRINCIPAL ==================== -->
 <div id="menu">
   <div class="menu-inner">
     <h1>ZONA<em>CERO</em></h1>
-    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.25</span></p>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.26</span></p>
     <div class="menu-controls">
       <div><kbd>W A S D</kbd><span>Moverse</span></div>
       <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
@@ -148,7 +185,8 @@
       <div><kbd>R</kbd><span>Recargar / rotar la construcción</span></div>
       <div><kbd>1 · 2 · 3 · 4 · 5</kbd><span>Barra rápida: arma de fuego · secundaria · melee · objetos</span></div>
       <div><kbd>L</kbd><span>Linterna (encender / apagar — gasta pilas)</span></div>
-      <div><kbd>E</kbd><span>Interactuar · puertas · botín · escaleras · cosechar</span></div>
+      <div><kbd>E</kbd><span>Interactuar · puertas · botín · escaleras · cosechar · COCHES</span></div>
+      <div><kbd>Q</kbd><span>Inspeccionar el coche (piezas, gasolina, odómetro)</span></div>
       <div><kbd>CLIC DER.</kbd><span>Colocar construcción (modo construcción)</span></div>
       <div><kbd>TAB / I</kbd><span>Inventario, equipo y CRAFTEO</span></div>
       <div><kbd>P</kbd><span>Pausa</span> <kbd>M</kbd><span>Audio</span></div>
@@ -167,7 +205,7 @@
     <div class="menu-buttons">
       <button id="btn-encyc" class="btn-ency">ENCICLOPEDIA</button>
     </div>
-    <p class="menu-tip">Consejo: LLEGÓ LA AGRICULTURA — consigue SEMILLAS (el expositor de jardinería de HOME & TOOLS, la nueva FERRETERÍA del mapa) y PLÁNTALAS desde el inventario sobre césped o acera: cada cultivo crece SOLO CON LOS DÍAS de juego y maduro se COSECHA con [E]. Con la FOGATA (2 tablas + 1 tela) asas las verduras al doble de alimento. NUEVA PROFESIÓN: GRANJERO — sus cultivos maduran 1 día antes y la cosecha rinde EL DOBLE. HOME & TOOLS es la ferretería de verdad: materiales de construcción y semillas MÁS ABUNDANTES que en ningún otro rincón, y el MAZO PESADO (daño contundente brutal que DEMUELE construcciones… y mucha energía por golpe) solo vive allí. TRES PARTIDAS A LA VEZ — cada ranura es un mundo aparte (ENTER continúa la más reciente). Al crear una partida eliges QUIÉN ERAS (policía, médico, ladrón, carpintero, granjero o desempleado) y su PROFESIÓN pasiva te acompaña TODA la partida: el policía pega un 5% más con las armas de fuego, el médico cura un 5% más, el ladrón pisa a la mitad de ruido y el carpintero repara con la mitad de materiales… y el desempleado no te da nada: la partida pura. Consulta la ENCICLOPEDIA del menú o de la pausa: profesiones, mecánicas, combate, crafteos y objetos, con los datos reales del juego. LLEGÓ EL CRAFTEO — abre el inventario (TAB) y entra en la pestaña CRAFTEO: con retazos de tela y alcohol haces VENDAS; con botella, queroseno y tela, un CÓCTEL MOLOTOV; y junto a una MESA DE TRABAJO mejorarás el bate con clavos o forjarás una lanza. En CONSTRUCCIONES tienes barricadas para sellar puertas, tablones para tapiar ventanas, trampas de pinchos, cajas para guardar equipo, la FOGATA para cocinar y la CAMA: montada dentro de una casa, convierte tu hogar en REFUGIO y puedes DORMIR en ella para pasar la noche. Las barricadas dañadas se REPARAN con E (cuanto más rotas, más tablas y clavos piden). El FUEGO es una ALARMA — el cristal del molotov al estallar hace ruido y las LLAMAS SE VEN desde lejos: atraen a los zombis de varias manzanas. Y cuidado con el GRITADOR (pajizo, boca abierta): raro, solo aparece donde hay MUCHOS zombis juntos… y al verte CHILLA y convoca a toda la zona: mátalo durante el aviso. En el rincón más lejano del mapa espera la BASE MILITAR — el sótano-arsenal guarda el mejor botín (subfusil Cuervo, equipo militar). El HOSPITAL SAN RAFAEL, de dos pisos y en pleno APAGÓN, guarda SUS EXCLUSIVOS — suero, adrenalina, antibióticos potentes y morfina. Cuando anochezca, hazte con una linterna y pilas (tecla L). La LLUVIA enmascara tu ruido y la NEBLINA reduce la visibilidad a la mitad, también la de ellos. Cuidado con los CORREDORES (esprintando les ganas) y los BRUTOS (masa oscura: la comisaría, la tienda y la ferretería guardan los suyos).</p>
+    <p class="menu-tip">Consejo: LLEGARON LOS COCHES — acércate a cualquiera del mapa y púlsalo: [E] para ENTRAR (W/S acelera y frena · A/D gira · L enciende los FAROS de noche · [E] de nuevo para bajarte) y [Q] para INSPECCIONARLO: piezas montadas y faltantes, GASOLINA, motor y odómetro. La mayoría de coches nacen cojos (BATERÍA, BUJÍAS, NEUMÁTICOS o RADIADOR): instala lo que encuentres en las GASOLINERAS (hay TRES: al norte, al sur y al este del mapa, con surtidores de gasolina y taller de piezas) o craftea las piezas con chatarra siendo MECÁNICO. Cuatro modelos con su genio: el sedán AURORA CIERZO 400 (ligero, rápido en pavimento, el que menos bebe), la pickup YAGUARETE SIERRA 4x4 (cajuela grande), el SUV BÓER MERIDIANO (pesado y bebedor) y la furgoneta CARABELA MULA 3000 (ALMACÉN con ruedas… lentísima, torpe y que se oye desde LEJOS: cada motor suena distinto). CUIDADO con los CHOQUES frontales: el motor recibe el golpe, el coche se PARA… y si queda tocado, ECHA HUMO (el MECÁNICO lo remienda con 4 de chatarra). Con velocidad ATROPELLAS a los zombis — una horda entera puede frenarte en seco. El mapa se ha triplicado (300×300): la ciudad entera para conducir. NUEVO EN EL REFUGIO: el BARRIL DE LLUVIA (3 tablas + 4 clavos + 1 tela, en CONSTRUCCIONES) se LLENA SOLO cada vez que llueve: [E] para BEBER o para LLENAR botellas vacías — el agua a largo plazo junto al huerto de la AGRICULTURA. Consigue SEMILLAS (el expositor de jardinería de HOME & TOOLS, la FERRETERÍA) y PLÁNTALAS sobre césped o acera: crecen SOLO CON LOS DÍAS y maduras se cosechan con [E]; con la FOGATA (2 tablas + 1 tela) las asas al doble de alimento. El GRANJERO madura antes y cosecha doble; el MAZO PESADO (contundente, DEMUELE construcciones) solo vive en HOME & TOOLS. NUEVA PROFESIÓN: MECÁNICO — craftea PIEZAS DE COCHE con chatarra y remienda motores. Al crear la partida eliges QUIÉN ERAS (policía, médico, ladrón, carpintero, granjero, mecánico o desempleado) y su bono pasivo te acompaña TODA la partida: el policía pega un 5% más con las armas de fuego, el médico cura un 5% más, el ladrón pisa a la mitad de ruido y el carpintero repara con la mitad de materiales. TRES PARTIDAS A LA VEZ (ENTER continúa la más reciente). LLEGÓ EL CRAFTEO — con tela y alcohol haces VENDAS; junto a una MESA DE TRABAJO, el bate con clavos o la lanza; barricadas para sellar puertas, tablones para tapiar ventanas, trampas, cajas, la CAMA (REFUGIO + dormir) y las REPARAN con [E]. El FUEGO es una ALARMA — LLAMAS SE VEN de lejos y atraen a los zombis. Cuidado con el GRITADOR: al verte CHILLA y convoca a toda la zona. La BASE MILITAR guarda el mejor botín (subfusil Cuervo) y el HOSPITAL SAN RAFAEL, en APAGÓN, sus exclusivos. De noche, LINTERNA y pilas (tecla L). La LLUVIA enmascara tu ruido (y llena los barriles); la NEBLINA reduce la visibilidad a la mitad. Cuidado con los CORREDORES y los BRUTOS (la comisaría, la tienda y la ferretería guardan los suyos). Consulta la ENCICLOPEDIA del menú o de la pausa: mecánicas, profesiones, combate, crafteos y objetos, con los datos reales del juego.</p>
   </div>
 </div>
 

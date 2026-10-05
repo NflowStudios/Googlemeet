@@ -11,17 +11,20 @@
  * y el arte comparten esta geometría (ver _runsFor / _inRuns / _drawStructStrips).
  */
 
-import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T, ROOF, FLOORS, SPECIALS } from '../config.js';
+import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T, ROOF, FLOORS, SPECIALS, VEHICULOS } from '../config.js';
 import { Rng } from '../rng.js';
 import { hash2, angDiff } from '../utils.js';
+import { makeItem, setupLootItem } from '../systems/inventory.js';
 
-// v0.16: mapa ampliado al DOBLE → 7 columnas × 6 filas de manzanas útiles
-// (184×148 tiles · 27.232 m² · 5.888×4.736 px). Calles de 4 tiles con
-// márgenes de hierba/acera de 1 a cada lado (huecos de 6 entre manzanas).
-const V_ROADS = [[16, 19], [46, 49], [76, 79], [106, 109], [136, 139], [166, 169]]; // bandas verticales [ini, fin] inclusive
-const H_ROADS = [[14, 17], [42, 45], [70, 73], [98, 101], [126, 129]];  // bandas horizontales
-const X_BLOCKS = [[1, 14], [21, 44], [51, 74], [81, 104], [111, 134], [141, 164], [171, 182]];
-const Y_BLOCKS = [[1, 12], [19, 40], [47, 68], [75, 96], [103, 124], [131, 146]];
+// v0.26: mapa AL TRIPLE → 11 columnas × 11 filas de manzanas útiles
+// (300×300 tiles · 90.000 m² · 9.600×9.600 px). Calles de 4 tiles cada 30
+// verticales / 28 horizontales (márgenes de hierba/acera de 1 a cada lado,
+// huecos de 26 entre manzanas) — carretera de sobra para los VEHÍCULOS y
+// hueco para las TRES GASOLINERAS (norte, sur y este).
+const V_ROADS = [[16, 19], [46, 49], [76, 79], [106, 109], [136, 139], [166, 169], [196, 199], [226, 229], [256, 259], [286, 289]]; // bandas verticales [ini, fin] inclusive
+const H_ROADS = [[14, 17], [42, 45], [70, 73], [98, 101], [126, 129], [154, 157], [182, 185], [210, 213], [238, 241], [266, 269]];  // bandas horizontales
+const X_BLOCKS = [[1, 14], [21, 44], [51, 74], [81, 104], [111, 134], [141, 164], [171, 194], [201, 224], [231, 254], [261, 284], [291, 298]];
+const Y_BLOCKS = [[1, 12], [19, 40], [47, 68], [75, 96], [103, 124], [131, 152], [159, 180], [187, 208], [215, 236], [243, 264], [271, 298]];
 
 function shuffle(arr, rng) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -37,7 +40,7 @@ export class GameMap {
     this.rng = rng;
     this.tiles = new Uint8Array(MAP_W * MAP_H); // GRASS por defecto (0)
     this.trees = [];        // {x, y, r} (centro px, radio de copa)
-    this.cars = [];         // {x, y, w, h, color}
+    this.cars = [];         // v0.26: {x, y, w, h, horiz, model, brand, name, type, color, fuel, odoBase, odoPx, parts{bat,buj,rad,tires}, engineHp, heat, lights, trunk}
     this.treeByTile = new Map(); // idx de tile → objeto árbol (redraw nítido)
     this.carByTile = new Map();  // idx de tile (2 por coche) → objeto coche
     this.containers = [];   // {type, name, x, y, color, letter, searched, z}
@@ -64,10 +67,13 @@ export class GameMap {
     // cargar una partida guardada (el canvas de decals no es serializable).
     this.decalOps = [];     // {t:'corpse'|'blood', x, y, a?, b?}
 
-    // Canvas de decals (sangre/cadáveres) a media resolución de mundo
+    // Canvas de decals (sangre/cadáveres) a resolución reducida de mundo.
+    // v0.26: con el mapa a 9.600×9.600 px, media resolución serían 92 MB de
+    // bitmap — se pasa a 1/3 (3.200×3.200, ~41 MB) para no fundir la memoria.
+    this.decScale = WORLD_W > 7000 ? 3 : 2;
     this.decalCanvas = document.createElement('canvas');
-    this.decalCanvas.width = WORLD_W / 2;
-    this.decalCanvas.height = WORLD_H / 2;
+    this.decalCanvas.width = Math.floor(WORLD_W / this.decScale);
+    this.decalCanvas.height = Math.floor(WORLD_H / this.decScale);
     this.dctx = this.decalCanvas.getContext('2d');
 
     this._generate();
@@ -476,9 +482,9 @@ export class GameMap {
     c.fillStyle = 'rgba(96, 14, 14, 0.72)';
     const n = big ? 5 : 3;
     for (let i = 0; i < n; i++) {
-      const rx = (x + (this.rng.range(-7, 7))) / 2;
-      const ry = (y + (this.rng.range(-7, 7))) / 2;
-      const r = (big ? this.rng.range(4, 9) : this.rng.range(2, 5));
+      const rx = (x + (this.rng.range(-7, 7))) / this.decScale;
+      const ry = (y + (this.rng.range(-7, 7))) / this.decScale;
+      const r = (big ? this.rng.range(4, 9) : this.rng.range(2, 5)) / (this.decScale / 2);
       c.beginPath();
       c.ellipse(rx, ry, r, r * this.rng.range(0.6, 1), this.rng.range(0, 3.14), 0, Math.PI * 2);
       c.fill();
@@ -488,23 +494,27 @@ export class GameMap {
   stampCorpse(x, y, ang, scale = 1) {
     this._trackDecal({ t: 'corpse', x, y, a: +ang.toFixed(3), s: scale });
     const c = this.dctx;
-    const px = x / 2, py = y / 2;
+    const k = this.decScale;
+    const px = x / k, py = y / k;
     // v0.14: scale distingue cadáveres por variante (bruto 1.4 · corredor 0.85)
+    // v0.26: m re-escala la geometría al cambio de resolución del canvas de
+    // decals (las medidas nacieron a 1/2: se conservan EN EL MUNDO)
+    const m = (2 / k) * scale;
     // charco
     c.fillStyle = 'rgba(88, 12, 12, 0.8)';
     c.beginPath();
-    c.ellipse(px, py, 13 * scale, 9 * scale, ang, 0, Math.PI * 2);
+    c.ellipse(px, py, 13 * m, 9 * m, ang, 0, Math.PI * 2);
     c.fill();
     // cuerpo caído
     c.save();
     c.translate(px, py);
     c.rotate(ang);
     c.fillStyle = '#5c6650';
-    c.beginPath(); c.ellipse(0, 0, 9 * scale, 5.5 * scale, 0, 0, Math.PI * 2); c.fill();   // torso
+    c.beginPath(); c.ellipse(0, 0, 9 * m, 5.5 * m, 0, 0, Math.PI * 2); c.fill();   // torso
     c.fillStyle = '#6e7a5a';
-    c.beginPath(); c.ellipse(8 * scale, 0, 4.5 * scale, 4 * scale, 0, 0, Math.PI * 2); c.fill();   // cabeza
-    c.strokeStyle = '#4e5844'; c.lineWidth = 2.5;
-    c.beginPath(); c.moveTo(-4 * scale, -3 * scale); c.lineTo(-11 * scale, -6 * scale); c.stroke();        // brazo
+    c.beginPath(); c.ellipse(8 * m, 0, 4.5 * m, 4 * m, 0, 0, Math.PI * 2); c.fill();   // cabeza
+    c.strokeStyle = '#4e5844'; c.lineWidth = 2.5 * (2 / k);
+    c.beginPath(); c.moveTo(-4 * m, -3 * m); c.lineTo(-11 * m, -6 * m); c.stroke();        // brazo
     c.restore();
   }
 
@@ -563,11 +573,24 @@ export class GameMap {
     const hospPool = farBig.slice(3, Math.min(6, farBig.length));
     const hospitalBlock = hospPool.length ? hospPool[rng.index(hospPool.length)] : null;
     const pool = shuffle(allBlocks.filter((b) => !isCenter(b) && b !== militaryBlock && b !== hospitalBlock), rng);
-    const policeBlock = pool.find((b) => bigEnough(b, SPECIALS.police.w, SPECIALS.police.h)) || null;
-    const storeBlock = pool.find((b) => b !== policeBlock && bigEnough(b, SPECIALS.store.w, SPECIALS.store.h)) || null;
+    // v0.26: LAS TRES GASOLINERAS — norte, sur y este, cada una en su
+    // extremo del mapa (nunca las de las demás estructuras: se eligen
+    // ANTES de comisaría/tienda/ferretería para quedarse con la periferia).
+    // Un viaje a la gasolina tiene que SER un viaje.
+    const taken = (b) => b === militaryBlock || b === hospitalBlock;
+    const northGas = pool.find((b) => !taken(b) && b.by1 <= 90 && bigEnough(b, SPECIALS.gas.w, SPECIALS.gas.h)) || null;
+    const southGas = pool.find((b) => !taken(b) && b !== northGas && b.by0 >= MAP_H - 95 && bigEnough(b, SPECIALS.gas.w, SPECIALS.gas.h)) || null;
+    // la del ESTE, en latitudes medias del borde derecho (ni esquina NE ni SE)
+    const eastGas = pool.find((b) => !taken(b) && b !== northGas && b !== southGas &&
+      b.bx0 >= MAP_W - 75 && b.by0 >= 19 && b.by1 <= MAP_H - 36 &&
+      bigEnough(b, SPECIALS.gas.w, SPECIALS.gas.h)) || null;
+    const gasBlocks = [northGas, southGas, eastGas].filter(Boolean);
+    const isGasBlock = (b) => gasBlocks.some((gb) => gb && gb.bx0 === b.bx0 && gb.by0 === b.by0);
+    const policeBlock = pool.find((b) => !isGasBlock(b) && bigEnough(b, SPECIALS.police.w, SPECIALS.police.h)) || null;
+    const storeBlock = pool.find((b) => !isGasBlock(b) && b !== policeBlock && bigEnough(b, SPECIALS.store.w, SPECIALS.store.h)) || null;
     // v0.25: HOME & TOOLS — otra manzana grande para la ferretería (nunca
     // la misma que comisaría o tienda: cada estructura única en su bloque)
-    const toolsBlock = pool.find((b) => b !== policeBlock && b !== storeBlock &&
+    const toolsBlock = pool.find((b) => !isGasBlock(b) && b !== policeBlock && b !== storeBlock &&
       bigEnough(b, SPECIALS.tools.w, SPECIALS.tools.h)) || null;
 
     // --- Edificios por manzana ---
@@ -582,10 +605,11 @@ export class GameMap {
         const isMilitary = militaryBlock && militaryBlock.bx0 === bx0 && militaryBlock.by0 === by0;
         const isHospital = hospitalBlock && hospitalBlock.bx0 === bx0 && hospitalBlock.by0 === by0;
         const isTools = toolsBlock && toolsBlock.bx0 === bx0 && toolsBlock.by0 === by0;   // v0.25
-        if (isPolice || isStore || isMilitary || isHospital || isTools) {
+        const gasIdx = gasBlocks.findIndex((gb) => gb && gb.bx0 === bx0 && gb.by0 === by0);   // v0.26
+        if (isPolice || isStore || isMilitary || isHospital || isTools || gasIdx >= 0) {
           const sp = isPolice ? SPECIALS.police : isStore ? SPECIALS.store
             : isMilitary ? SPECIALS.military : isHospital ? SPECIALS.hospital
-            : SPECIALS.tools;
+            : isTools ? SPECIALS.tools : SPECIALS.gas;
           const w = Math.min(sp.w, bw - 2), h = Math.min(sp.h, bh - 2);
           const x0 = bx0 + 1 + rng.int(0, Math.max(0, bw - 2 - w));
           const y0 = by0 + 1 + rng.int(0, Math.max(0, bh - 2 - h));
@@ -594,7 +618,8 @@ export class GameMap {
           else if (isStore) this._placeStore(x0, y0, x0 + w - 1, y0 + h - 1);
           else if (isMilitary) this._placeMilitaryBase(x0, y0, x0 + w - 1, y0 + h - 1);
           else if (isHospital) this._placeHospital(x0, y0, x0 + w - 1, y0 + h - 1);
-          else this._placeHomeTools(x0, y0, x0 + w - 1, y0 + h - 1);
+          else if (isTools) this._placeHomeTools(x0, y0, x0 + w - 1, y0 + h - 1);
+          else this._placeGasStation(x0, y0, x0 + w - 1, y0 + h - 1, gasIdx, { bx0, bx1, by0, by1 });   // v0.26
           continue;
         }
 
@@ -654,7 +679,7 @@ export class GameMap {
     this.spawnTile = { tx: sx, ty: sy };   // para el guardián de árboles
 
     // --- Árboles ---
-    const treeTries = 430;   // v0.16: mapa al doble → misma densidad arbolada
+    const treeTries = 1400;   // v0.26: mapa al triple → misma densidad arbolada
     // v0.13: sin árboles pegados al punto de aparición (chebyshev ≤ 2)
     const sTx = this.spawnTile.tx, sTy = this.spawnTile.ty;
     for (let i = 0; i < treeTries; i++) {
@@ -679,10 +704,18 @@ export class GameMap {
       this.treeByTile.set(this.idx(tx, ty), tr);
     }
 
-    // --- Coches abandonados en la calle ---
-    const carColors = ['#7a3030', '#3a4a5a', '#6a6a3a', '#54423a', '#42548a'];
+    // --- v0.26: COCHES ABANDONADOS → VEHÍCULOS DE VERDAD ---
+    // Cada coche de la calle ahora tiene MODELO (de cuatro), marca, estado de
+    // PIEZAS (batería/bujías/radiador/neumáticos — la mayoría nace cojo),
+    // gasolina a medias y un odómetro de antes del apocalipsis. Se puede
+    // INSPECCIONAR ([Q]), ENTRAR ([E]) y CONDUCIR (ver systems/vehicles.js).
+    const modelPool = [];
+    for (const [mk, wgt] of Object.entries(VEHICULOS.modelWeights))
+      for (let i = 0; i < wgt; i++) modelPool.push(mk);
+    const trunkLoot = ['agua', 'lata_frijoles', 'venda', 'chatarra', 'tubo', 'bateria',
+      'cuerda', 'cinta_adhesiva', 'botella_vacia', 'papas', 'queroseno', 'bidon_gasolina'];
     let carTries = 0;
-    while (this.cars.length < 20 && carTries < 900) {   // v0.16: 10 → 20 coches
+    while (this.cars.length < VEHICULOS.carCount && carTries < 2600) {
       carTries++;
       const tx = rng.int(2, MAP_W - 4), ty = rng.int(2, MAP_H - 3);
       if (this.tileAtIdx(tx, ty) !== T.ROAD || this.tileAtIdx(tx + 1, ty) !== T.ROAD) continue;
@@ -691,10 +724,67 @@ export class GameMap {
       if (Math.hypot(cx - this.spawn.x, cy - this.spawn.y) < 220) continue;
       this.setTile(tx, ty, T.CAR);
       this.setTile(tx + 1, ty, T.CAR);
-      const car = { x: cx, y: cy, w: 58, h: 26, color: rng.pick(carColors) };
+      const model = rng.pick(modelPool);
+      const md = VEHICULOS.models[model];
+      const car = {
+        x: cx, y: cy, w: md.w, h: md.h, horiz: true,
+        dir: 0, speed: 0, running: false,   // aparcado mirando al ESTE (como el arte)
+        model, brand: md.brand, name: md.name, type: md.type,
+        color: rng.pick(md.colors),
+        // gasolina a medias (0 … 60% del depósito) y odómetro heredado
+        fuel: +rng.range(0, md.fuelCap * 0.6).toFixed(1),
+        odoBase: Math.round(rng.range(20000, 180000)),
+        odoPx: 0,
+        // piezas: la MAYORÍA de coches nacen cojos (prob. de pieza ausente)
+        parts: {
+          bat: !rng.chance(VEHICULOS.partsMissing.bat),
+          buj: !rng.chance(VEHICULOS.partsMissing.buj),
+          rad: !rng.chance(VEHICULOS.partsMissing.rad),
+          tires: rng.chance(VEHICULOS.partsMissing.tires) ? rng.int(0, 3) : 4,
+        },
+        engineHp: +rng.range(45, 100).toFixed(1),
+        heat: 0, lights: false, driven: false,
+      };
+      // cajuela: contenedor de VEHICULOS.models[model].storage huecos; a
+      // veces guarda algo de la vida de antes (determinista con el rng)
+      car.trunk = {
+        type: 'cajuela', name: 'Cajuela', color: '#6a5a3a', letter: 'V',
+        x: cx, y: cy, z: 0, searched: false, items: [],
+        slots: md.storage, car: null,
+      };
+      if (rng.chance(0.35)) {
+        const n = rng.int(1, 2);
+        for (let i = 0; i < n; i++) {
+          const it = makeItem(rng.pick(trunkLoot));
+          setupLootItem(it, rng);
+          car.trunk.items.push(it);
+        }
+      }
       this.cars.push(car);
+      car.parkTiles = [[tx, ty, T.ROAD], [tx + 1, ty, T.ROAD]];
       this.carByTile.set(this.idx(tx, ty), car);
       this.carByTile.set(this.idx(tx + 1, ty), car);
+    }
+
+    // --- v0.26: GARANTÍA — al menos UN coche ARRANCABLE cerca del arranque ---
+    // Como el Cuervo y el Mazo: las tablas podrían dejar un mundo sin nada
+    // conducible. Se asegura UNO con batería + bujías + ≥3 ruedas y algo de
+    // gasolina a ≤ ~1.600 px del spawn (preferencia) o, si no, el más
+    // cercano se "restaura" SIN consumir rng (el mundo queda determinista).
+    {
+      const startable = (c) => c.parts.bat && c.parts.buj && c.parts.tires >= 3 &&
+        c.fuel >= 8 && c.engineHp >= 30;
+      const dS = (c) => Math.hypot(c.x - this.spawn.x, c.y - this.spawn.y);
+      let target = this.cars.filter(startable).sort((a, b) => dS(a) - dS(b))[0] || null;
+      if (!target || dS(target) > 1600) {
+        const near = this.cars.slice().sort((a, b) => dS(a) - dS(b))[0];
+        if (near && (!target || dS(near) < dS(target))) {
+          near.parts.bat = true; near.parts.buj = true;
+          near.parts.tires = Math.max(3, near.parts.tires);
+          near.fuel = Math.max(near.fuel, 12);
+          near.engineHp = Math.max(near.engineHp, 55);
+        }
+      }
     }
 
     // --- Listas de tiles caminables (spawns) ---
@@ -1114,6 +1204,75 @@ export class GameMap {
       kind: 'tools',
       upper: null, basement: null, stairs: null,
       roof: this._buildHomeToolsRoofCanvas(x0, y0, x1, y1),
+      roofW: w * TILE, roofH: h * TILE,
+    });
+  }
+
+  /**
+   * GASOLINERA YUNQUE GAS (v0.26 — TRES en el mapa: norte, sur y este).
+   * Tienda pequeña de minimercado + TALLER (estanterías K con las PIEZAS DE
+   * MOTOR más comunes del juego) y, al sur, la PISTA con el asfalto pintado
+   * de hormigón y una fila de SURTIDORES (B): la fuente REINA de BIDONES DE
+   * GASOLINA. El tejado de la tienda lleva el rótulo rojo del yunque y el
+   * poste de precios de la marquesina. Presión zombi ligera (2 dentro +
+   * 2 alrededor, sin brutos): la gasolina del apocalipsis casi se guarda
+   * sola… casi.
+   * @param {number} idx 0=norte · 1=sur · 2=este (solo para etiquetado)
+   * @param {object} block rect de la MANZANA completa (para la pista)
+   */
+  _placeGasStation(x0, y0, x1, y1, idx, block) {
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+
+    // perímetro + interior de la TIENDA
+    for (let x = x0; x <= x1; x++) { this.setTile(x, y0, T.WALL); this.setTile(x, y1, T.WALL); }
+    for (let y = y0; y <= y1; y++) { this.setTile(x0, y, T.WALL); this.setTile(x1, y, T.WALL); }
+    for (let y = y0 + 1; y < y1; y++)
+      for (let x = x0 + 1; x < x1; x++) this.setTile(x, y, T.FLOOR);
+
+    // escaparate sur (cada 2) + ventanas laterales
+    for (let x = x0 + 2; x <= x1 - 2; x += 2) this.setTile(x, y1, T.WINDOW);
+    this.setTile(x0 + 2, y0, T.WINDOW);
+    this.setTile(x1 - 2, y0, T.WINDOW);
+
+    // doble puerta centrada en el frente sur (da a la PISTA de surtidores)
+    const dx = x0 + Math.floor(w / 2) - 1;
+    for (const d of [dx, dx + 1]) {
+      this.setTile(d, y1, T.DOOR_CLOSED);
+      this.doors.push({ tx: d, ty: y1 });
+    }
+
+    // interior: minimercado a la izquierda, TALLER a la derecha
+    this._addContainer('estanteria_taller', x1 - 2, y0 + 1, 0);
+    this._addContainer('estanteria_taller', x1 - 2, y0 + 4, 0);
+    this._addContainer('estanteria_taller', x1 - 2, y1 - 3, 0);
+    this._addContainer('alacena', x0 + 2, y0 + 1, 0);
+    this._addContainer('nevera', x0 + 2, y1 - 2, 0);
+    this._addContainer('casillero', x0 + 2, y0 + 4, 0);
+
+    // ---- PISTA de surtidores: hormigón + fila de bombas al sur de la
+    // tienda (dentro de la manzana, entre el edificio y la calle) ----
+    const py0 = y1 + 1, py1 = Math.min(block.by1 - 1, y1 + 5);
+    const px0 = Math.max(block.bx0 + 1, x0);
+    const px1 = Math.min(block.bx1 - 1, x1);
+    for (let y = py0; y <= py1; y++)
+      for (let x = px0; x <= px1; x++)
+        if (this.tileAtIdx(x, y) !== T.ROAD) this.setTile(x, y, T.SIDEWALK);
+    // tres surtidores repartidos en la fila central de la pista
+    const pumpY = Math.floor((py0 + py1) / 2);
+    const span = px1 - px0;
+    const pumps = [px0 + Math.floor(span * 0.22), px0 + Math.floor(span * 0.5), px0 + Math.floor(span * 0.78)];
+    for (const sx of pumps) {
+      if (sx <= px0 || sx >= px1) continue;
+      this._addContainer('surtidor', sx, pumpY, 0);
+    }
+
+    this.buildings.push({
+      x0, y0, x1, y1,
+      cx: (x0 + x1) / 2 * TILE + TILE / 2,
+      cy: (y0 + y1) / 2 * TILE + TILE / 2,
+      kind: 'gas',
+      upper: null, basement: null, stairs: null,
+      roof: this._buildGasRoofCanvas(x0, y0, x1, y1, idx),
       roofW: w * TILE, roofH: h * TILE,
     });
   }
@@ -2334,6 +2493,108 @@ export class GameMap {
     return rc;
   }
 
+  /**
+   * Tejado de la GASOLINERA YUNQUE GAS (v0.26): chapa ondulada clara con
+   * remate perimetral, franja ROJA de marca en el frente, RÓTULO con el
+   * YUNQUE y la gota de combustible en cuadro rojo y el clavo de PRECIOS
+   * al sur. Inconfundible desde el aire (y desde la carretera).
+   */
+  _buildGasRoofCanvas(x0, y0, x1, y1, idx = 0) {
+    const w = (x1 - x0 + 1) * TILE, h = (y1 - y0 + 1) * TILE;
+    const rc = document.createElement('canvas');
+    rc.width = w; rc.height = h;
+    const c = rc.getContext('2d');
+
+    // base: chapa metálica clara con ondas horizontales
+    c.fillStyle = '#8a8a90';
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = 'rgba(255,255,255,0.07)';
+    for (let y = 0; y < h; y += 14) c.fillRect(0, y, w, 5);
+    c.fillStyle = 'rgba(0,0,0,0.10)';
+    for (let y = 7; y < h; y += 14) c.fillRect(0, y, w, 2);
+    // manchas de óxido
+    c.fillStyle = 'rgba(90, 50, 30, 0.25)';
+    c.beginPath(); c.arc(w * 0.16, h * 0.2, 9, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(w * 0.82, h * 0.66, 12, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(w * 0.6, h * 0.14, 6, 0, Math.PI * 2); c.fill();
+
+    // remate perimetral
+    c.fillStyle = '#5a5a62';
+    c.fillRect(0, 0, w, 4); c.fillRect(0, h - 4, w, 4);
+    c.fillRect(0, 0, 4, h); c.fillRect(w - 4, 0, 4, h);
+
+    // franja de marca ROJA con el nombre en el frente sur
+    const bandH = Math.min(34, Math.floor(h * 0.16));
+    c.fillStyle = '#c8341f';
+    c.fillRect(0, h - bandH, w, bandH);
+    c.fillStyle = 'rgba(0,0,0,0.3)';
+    c.fillRect(0, h - bandH - 3, w, 3);
+    c.fillStyle = '#f2ece0';
+    c.font = 'bold ' + Math.floor(bandH * 0.62) + 'px Rajdhani, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText('YUNQUE GAS', w / 2, h - bandH / 2);
+
+    // rótulo central: cuadro rojo con el YUNQUE (silueta) y la GOTA
+    const px = w / 2, py = h / 2 - bandH / 2;
+    const R = Math.min(w, h) * 0.21;
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.fillRect(px - R + 4, py - R + 4, R * 2, R * 2);
+    c.fillStyle = '#f2ece0';
+    c.fillRect(px - R, py - R, R * 2, R * 2);
+    c.fillStyle = '#c8341f';
+    c.fillRect(px - R + 4, py - R + 4, R * 2 - 8, R * 2 - 8);
+    c.strokeStyle = 'rgba(0,0,0,0.4)';
+    c.lineWidth = 2;
+    c.strokeRect(px - R, py - R, R * 2, R * 2);
+    // el yunque: cuerpo + cuerno + base
+    c.fillStyle = '#f2ece0';
+    c.fillRect(px - R * 0.55, py - R * 0.28, R * 0.9, R * 0.3);
+    c.beginPath();
+    c.moveTo(px - R * 0.55, py - R * 0.28); c.lineTo(px - R * 0.62, py - R * 0.28);
+    c.lineTo(px - R * 0.34, py - R * 0.5); c.lineTo(px - R * 0.2, py - R * 0.5);
+    c.lineTo(px - R * 0.34, py - R * 0.28); c.closePath(); c.fill();     // cuerno
+    c.fillRect(px - R * 0.34, py + R * 0.02, R * 0.5, R * 0.14);
+    c.fillRect(px - R * 0.5, py + R * 0.16, R * 0.82, R * 0.16);         // base
+    // la gota de gasolina, a la derecha
+    c.fillStyle = '#f2ece0';
+    c.beginPath();
+    c.moveTo(px + R * 0.52, py - R * 0.42);
+    c.quadraticCurveTo(px + R * 0.78, py - R * 0.02, px + R * 0.52, py + R * 0.26);
+    c.quadraticCurveTo(px + R * 0.26, py - R * 0.02, px + R * 0.52, py - R * 0.42);
+    c.fill();
+
+    // clavo de PRECIOS (marquesina sur): tablero blanco con cifras
+    const bw2 = Math.min(w * 0.42, 150), bh2 = Math.min(bandH + 14, 44);
+    const bx = w / 2 - bw2 / 2, by = h - bandH - bh2 - 6;
+    c.fillStyle = '#d8d0c0';
+    c.fillRect(bx, by, bw2, bh2);
+    c.strokeStyle = 'rgba(0,0,0,0.45)';
+    c.lineWidth = 2;
+    c.strokeRect(bx, by, bw2, bh2);
+    c.fillStyle = '#20242a';
+    c.font = 'bold ' + Math.floor(bh2 * 0.5) + 'px Rajdhani, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText('GAS  ∙  ∙  ∙', w / 2, by + bh2 / 2);
+
+    // extractores (2)
+    for (const [ex, ey] of [[w * 0.82, h * 0.26], [w * 0.18, h * 0.72]]) {
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      c.beginPath(); c.arc(ex + 3, ey + 3, 10, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#6a6a74';
+      c.beginPath(); c.arc(ex, ey, 10, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#4a4a54';
+      c.beginPath(); c.arc(ex, ey, 6, 0, Math.PI * 2); c.fill();
+    }
+
+    // contorno
+    c.strokeStyle = 'rgba(8,10,8,0.85)';
+    c.lineWidth = 2;
+    c.strokeRect(1, 1, w - 2, h - 2);
+    return rc;
+  }
+
   _addContainer(type, tx, ty, z = 0) {
     const defs = {
       nevera: { name: 'Nevera', color: '#aeb6ba', letter: 'N' },
@@ -2354,6 +2615,9 @@ export class GameMap {
       // v0.25: Home & Tools (ferretería)
       estanteria_ferreteria: { name: 'Estantería de ferretería', color: '#c8742a', letter: 'H' },
       expositor_jardin: { name: 'Expositor de jardinería', color: '#6a9a4a', letter: 'J' },
+      // v0.26: gasolineras y cajuelas de coche
+      surtidor: { name: 'Surtidor de gasolina', color: '#c8341f', letter: 'B' },
+      estanteria_taller: { name: 'Estantería de taller', color: '#3a7a8a', letter: 'K' },
     };
     const d = defs[type];
     const c = {
@@ -2656,30 +2920,32 @@ export class GameMap {
       ctx.fillRect(sx - 4, sy - 1, 8, 2);
     }
 
-    // coches (arte compartido: base bajo la niebla; versión nítida encima)
+    // coches (arte compartido: base bajo la niebla; versión nítida encima).
+    // v0.26: el coche EN MARCHA lo dibuja vehicles.js con rotación libre.
     for (const car of this.cars) {
-      const sx = Math.round(car.x - cam.x + cam.offX - car.w / 2);
-      const sy = Math.round(car.y - cam.y + cam.offY - car.h / 2);
-      if (sx > cam.w + 40 || sy > cam.h + 40 || sx + car.w < -40 || sy + car.h < -40) continue;
-      this._drawCarArt(ctx, sx, sy, car);
+      if (car.driven) continue;
+      const r = this._carScreenRect(car, cam);
+      if (r.x > cam.w + 40 || r.y > cam.h + 40 || r.x + r.w < -40 || r.y + r.h < -40) continue;
+      this._drawCarAt(ctx, car, cam);
     }
 
-    // decals de sangre/cadáveres: el canvas vive a MEDIA resolución (u = x/2),
-    // así que se dibuja a 2x ANCLADO AL MUNDO (u → pantalla = 2u - cam.x + offX).
+    // decals de sangre/cadáveres: el canvas vive a resolución REDUCIDA
+    // (u = x/decScale), así que se dibuja a decScale× ANCLADO AL MUNDO.
     // FIX v0.8: antes se pintaba a escala 1:1 con el offset partido a la mitad,
     // con lo que la sangre quedaba pegada a una posición fija de pantalla que
     // "seguía" al jugador. Ahora queda donde cayó, como debe ser.
     // Solo se arrastra la región visible (recorte fuente → destino 2x).
     {
+      const k = this.decScale;
       const dvx = cam.x - cam.offX, dvy = cam.y - cam.offY; // esquina visible en mundo
-      const sx0 = Math.max(0, Math.floor(dvx / 2) - 4);
-      const sy0 = Math.max(0, Math.floor(dvy / 2) - 4);
-      const sw = Math.min(this.decalCanvas.width - sx0, Math.ceil((cam.w + 16) / 2));
-      const sh = Math.min(this.decalCanvas.height - sy0, Math.ceil((cam.h + 16) / 2));
+      const sx0 = Math.max(0, Math.floor(dvx / k) - 4);
+      const sy0 = Math.max(0, Math.floor(dvy / k) - 4);
+      const sw = Math.min(this.decalCanvas.width - sx0, Math.ceil((cam.w + 16) / k));
+      const sh = Math.min(this.decalCanvas.height - sy0, Math.ceil((cam.h + 16) / k));
       if (sw > 0 && sh > 0) {
         ctx.drawImage(this.decalCanvas,
           sx0, sy0, sw, sh,
-          sx0 * 2 - cam.x + cam.offX, sy0 * 2 - cam.y + cam.offY, sw * 2, sh * 2);
+          sx0 * k - cam.x + cam.offX, sy0 * k - cam.y + cam.offY, sw * k, sh * k);
       }
     }
 
@@ -2830,10 +3096,14 @@ export class GameMap {
   /**
    * Arte de coche abandonado — compartido por la base bajo la niebla
    * (drawGround) y el redibujado NÍTIDO sobre la niebla (drawStructOver).
+   * v0.26: cada MODELO tiene su silueta (sedán 3 cuerpos, pickup con caja
+   * abierta, SUV largo con barras de techo, furgoneta cajón) y el coche puede
+   * quedar APARCADO EN VERTICAL (tras conducirlo) — _drawCarAt lo rota.
    * Contorno definido, techo con brillo, parabrisas con reflejo y faros.
    */
   _drawCarArt(ctx, sx, sy, car) {
     const w = car.w, h = car.h;
+    const model = car.model || 'sedan';
     // sombra proyectada
     ctx.fillStyle = 'rgba(0,0,0,0.38)';
     ctx.fillRect(sx + 3, sy + 4, w, h);
@@ -2843,15 +3113,57 @@ export class GameMap {
     // techo/capó con brillo direccional
     ctx.fillStyle = 'rgba(255,255,255,0.14)';
     ctx.fillRect(sx + 2, sy + 2, w * 0.56, h - 4);
-    // parabrisas + reflejo
-    ctx.fillStyle = '#1e2630';
-    ctx.fillRect(sx + w * 0.62, sy + 4, w * 0.2, h - 8);
-    ctx.fillStyle = 'rgba(140,180,200,0.30)';
-    ctx.fillRect(sx + w * 0.62, sy + 5, w * 0.2, 3);
-    // ventanas laterales
-    ctx.fillStyle = '#15181c';
-    ctx.fillRect(sx + 6, sy + 3, w * 0.28, 4);
-    ctx.fillRect(sx + 6, sy + h - 7, w * 0.28, 4);
+
+    if (model === 'pickup') {
+      // caja abierta trasera (izquierda) con listones
+      ctx.fillStyle = 'rgba(0,0,0,0.30)';
+      ctx.fillRect(sx + 3, sy + 3, w * 0.34, h - 6);
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(sx + 3, sy + (h - 6) * i / 4 + 3);
+        ctx.lineTo(sx + w * 0.34, sy + (h - 6) * i / 4 + 3);
+        ctx.stroke();
+      }
+      // cabina delantera (derecha)
+      ctx.fillStyle = '#15181c';
+      ctx.fillRect(sx + w * 0.46, sy + 3, w * 0.22, h - 6);
+      ctx.fillStyle = 'rgba(140,180,200,0.30)';
+      ctx.fillRect(sx + w * 0.46, sy + 4, w * 0.22, 3);
+    } else if (model === 'suv') {
+      // SUV: cabina larga + barras de techo
+      ctx.fillStyle = '#15181c';
+      ctx.fillRect(sx + w * 0.30, sy + 4, w * 0.42, h - 8);
+      ctx.fillStyle = 'rgba(140,180,200,0.30)';
+      ctx.fillRect(sx + w * 0.30, sy + 5, w * 0.42, 3);
+      ctx.fillStyle = '#3a3a40';
+      ctx.fillRect(sx + w * 0.32, sy + 1, w * 0.38, 2);
+      ctx.fillRect(sx + w * 0.32, sy + h - 3, w * 0.38, 2);
+    } else if (model === 'van') {
+      // furgoneta: cajón alto, parabrisas corto y línea de puerta corredera
+      ctx.fillStyle = '#15181c';
+      ctx.fillRect(sx + w * 0.68, sy + 3, w * 0.2, h - 6);
+      ctx.fillStyle = 'rgba(140,180,200,0.30)';
+      ctx.fillRect(sx + w * 0.68, sy + 4, w * 0.2, 3);
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx + w * 0.42, sy + 2); ctx.lineTo(sx + w * 0.42, sy + h - 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.fillRect(sx + 3, sy + 3, w * 0.56, 3);
+    } else {
+      // sedán clásico de 3 cuerpos: maletero (izq) · cabina · capó (der)
+      ctx.fillStyle = '#1e2630';
+      ctx.fillRect(sx + w * 0.60, sy + 4, w * 0.2, h - 8);
+      ctx.fillStyle = 'rgba(140,180,200,0.30)';
+      ctx.fillRect(sx + w * 0.60, sy + 5, w * 0.2, 3);
+      // ventanas laterales
+      ctx.fillStyle = '#15181c';
+      ctx.fillRect(sx + 6, sy + 3, w * 0.28, 4);
+      ctx.fillRect(sx + 6, sy + h - 7, w * 0.28, 4);
+    }
     // ruedas
     ctx.fillStyle = '#111';
     ctx.fillRect(sx + 8, sy - 3, 12, 5);
@@ -2869,6 +3181,33 @@ export class GameMap {
     ctx.strokeStyle = 'rgba(10,12,14,0.85)';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(sx + 0.5, sy + 0.5, w - 1, h - 1);
+  }
+
+  /**
+   * v0.26: dibuja un coche APARCADO en su posición y orientación del mundo
+   * (los que se condujeron pueden haber quedado en vertical). El coche en
+   * MARCHA (driven) no pasa por aquí: lo dibuja systems/vehicles.js con su
+   * rotación libre y el humo del motor.
+   */
+  _drawCarAt(ctx, car, cam) {
+    const sx = car.x - cam.x + cam.offX;
+    const sy = car.y - cam.y + cam.offY;
+    if (car.horiz === false) {
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(Math.PI / 2);
+      this._drawCarArt(ctx, -car.w / 2, -car.h / 2, car);
+      ctx.restore();
+    } else {
+      this._drawCarArt(ctx, sx - car.w / 2, sy - car.h / 2, car);
+    }
+  }
+
+  /** AABB de pantalla de un coche aparcado (para culling y atenuado). */
+  _carScreenRect(car, cam) {
+    const horiz = car.horiz !== false;
+    const cw = (horiz ? car.w : car.h) + 8, ch = (horiz ? car.h : car.w) + 8;
+    return { x: car.x - cam.x + cam.offX - cw / 2, y: car.y - cam.y + cam.offY - ch / 2, w: cw, h: ch };
   }
 
   /**
@@ -2976,16 +3315,16 @@ export class GameMap {
         const car = this.carByTile.get(idx);
         if (!car || drawnCars.has(car)) continue; // 2 tiles → 1 solo coche
         drawnCars.add(car);
-        const csx = Math.round(car.x - cam.x + cam.offX - car.w / 2);
-        const csy = Math.round(car.y - cam.y + cam.offY - car.h / 2);
-        if (csx > cam.w + 40 || csy > cam.h + 40 || csx + car.w < -40 || csy + car.h < -40) continue;
-        this._drawCarArt(ctx, csx, csy, car);
+        if (car.driven) continue;   // v0.26: el conducido lo pinta vehicles.js
+        const r = this._carScreenRect(car, cam);
+        if (r.x > cam.w + 40 || r.y > cam.h + 40 || r.x + r.w < -40 || r.y + r.h < -40) continue;
+        this._drawCarAt(ctx, car, cam);
         const kc = Math.max(0, Math.min(1,
           (Math.hypot(car.x - p.x, car.y - p.y) - VISION.nearR) / (VISION.range - VISION.nearR)));
         const dimC = kc * VISION.propDim;
         if (dimC > 0.01) {
           ctx.fillStyle = `rgba(3,5,3,${dimC.toFixed(3)})`;
-          ctx.fillRect(csx, csy, car.w, car.h);
+          ctx.fillRect(r.x, r.y, r.w, r.h);
         }
         continue;
       }

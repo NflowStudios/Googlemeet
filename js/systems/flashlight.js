@@ -22,6 +22,7 @@
  */
 
 import { FLASH, HOSPITAL } from '../config.js';
+import { headlightRangeMul } from './vehicles.js';
 
 /** La linterna equipada (en cualquiera de las tres ranuras de accesorio). */
 export function flashlightItem(player) {
@@ -91,8 +92,11 @@ export function hospitalVisionMul(game) {
  * climático o la oscuridad de la hora para que no haya saltos bruscos.
  */
 export function flashRangeMul(game) {
-  if (!flashActive(game)) return 1;
-  let best = FLASH.rangeDay;
+  // v0.26: los FAROS del coche alumbran como un haz ancho y constante
+  // (no usan pilas: es luz de coche); no se apilan con la linterna.
+  const carMul = headlightRangeMul(game);
+  if (!flashActive(game)) return carMul;
+  let best = Math.max(FLASH.rangeDay, carMul);
   const dn = game.daynight, wx = game.weather;
   if (dn) {
     // la noche llega por fases: el bono crece con la oscuridad (pleno a 0.6)

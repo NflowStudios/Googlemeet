@@ -10,6 +10,7 @@ import { flashActive, isInHospital } from './systems/flashlight.js';
 import {
   drawConstructions, drawFires, drawMolotovs, drawBuildGhost,
 } from './systems/crafting.js';
+import { drawVehicles } from './systems/vehicles.js';
 
 export function renderGame(ctx, game) {
   const cam = game.cam;
@@ -63,8 +64,9 @@ export function renderGame(ctx, game) {
 
   if (entA < 1) ctx.globalAlpha = 1;
 
-  // jugador
-  if (game.player) game.player.draw(ctx, cam);
+  // jugador (v0.26: DENTRO del coche no se dibuja — va dentro de la
+  // carrocería que pinta drawVehicles con el conductor asomando)
+  if (game.player && !game.player.inCar) game.player.draw(ctx, cam);
 
   // copas de árboles por encima
   game.map.drawOverhead(ctx, cam);
@@ -79,6 +81,10 @@ export function renderGame(ctx, game) {
   // visión redibujados NÍTIDOS por encima de la niebla: se distinguen con
   // claridad en todo el cono. Árboles y coches no tapan la vista.
   game.map.drawStructOver(ctx, cam, game);
+
+  // v0.26: EL COCHE EN MARCHA (rotación libre, faros y humo del motor) por
+  // encima de la niebla — el vehículo propio siempre se ve nítido
+  drawVehicles(ctx, cam, game);
 
   // TECHOS por encima de todo lo estructural — solo de los edificios dentro
   // del cono actual (filosofía de visión estricta: a tu espalda, oscuridad).

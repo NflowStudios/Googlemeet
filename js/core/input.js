@@ -32,7 +32,8 @@ export class Input {
         'KeyE': 'interact', 'Tab': 'inventory', 'KeyI': 'inventory',
         'KeyC': 'sneak', 'KeyP': 'pause', 'KeyM': 'mute',
         'KeyF': 'attack', 'KeyR': 'reload', 'Escape': 'escape', 'Enter': 'enter',
-        'KeyL': 'flash',   // v0.17: encender / apagar la linterna
+        'KeyL': 'flash',   // v0.17: encender / apagar la linterna (faros en el coche)
+        'KeyQ': 'inspect', // v0.26: inspeccionar el coche más cercano
         'Digit1': 'hot1', 'Digit2': 'hot2', 'Digit3': 'hot3', 'Digit4': 'hot4', 'Digit5': 'hot5',
         'Numpad1': 'hot1', 'Numpad2': 'hot2', 'Numpad3': 'hot3', 'Numpad4': 'hot4', 'Numpad5': 'hot5',
       };

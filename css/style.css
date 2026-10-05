@@ -1468,3 +1468,222 @@ kbd {
   margin-top: -2px;
 }
 .ec-where::before { content: '⌖ '; color: #9fc37a; }
+
+/* ================== v0.26: VEHÍCULOS ================== */
+
+/* categorías nuevas del inventario: piezas de coche y combustible */
+.slot.cat-pieza { border-left: 3px solid #7ab0a8; }
+.slot.cat-combustible { border-left: 3px solid #c8341f; }
+
+/* chip AL VOLANTE */
+.chip.car { color: #c8dce8; border-color: #3a6a8a; animation: critPulse 1.8s infinite; }
+
+/* ---- CUADRO DE MANDO (dashboard) del coche: abajo-centro, al volante ---- */
+#car-dash {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 13, 11, 0.92);
+  border: 1px solid #2c3430;
+  border-top: 2px solid #4a6a8a;
+  padding: 8px 18px 9px;
+  min-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 30;
+}
+#dash-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #c8dce8;
+  text-align: center;
+}
+.dash-main {
+  display: flex;
+  justify-content: center;
+  gap: 26px;
+  align-items: baseline;
+}
+.dash-kv { display: flex; align-items: baseline; gap: 6px; }
+.dash-lbl { font-size: 9px; letter-spacing: 1.5px; color: #6d7a70; font-weight: 700; }
+#dash-speed {
+  font-size: 30px;
+  font-weight: 700;
+  color: #e8ede8;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.dash-unit { font-size: 11px; color: #8a958c; font-weight: 600; }
+#dash-odo {
+  font-size: 16px;
+  font-weight: 700;
+  color: #c8dce8;
+  font-variant-numeric: tabular-nums;
+}
+.dash-bars {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dash-bar {
+  flex: 1;
+  height: 9px;
+  background: #171c18;
+  border: 1px solid #2c3430;
+  overflow: hidden;
+}
+.dash-bar .fill { height: 100%; background: linear-gradient(90deg, #6a8a3a, #9fc37a); }
+.dash-bar.temp .fill { background: linear-gradient(90deg, #4a6a8a, #d9822a); }
+#dash-fuel-txt, #dash-temp {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #8a958c;
+  white-space: nowrap;
+}
+.dash-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #8a958c;
+}
+#dash-engine.ok, #dash-temp.ok, #dash-lights.ok, #dash-tires.ok { color: #9fc37a; }
+#dash-engine.warn, #dash-temp.warn, #dash-tires.warn { color: #d9c34a; }
+#dash-engine.bad, #dash-temp.bad { color: #e05a4f; animation: critPulse 1.2s infinite; }
+
+/* ---- FICHA DE INSPECCIÓN del coche (modal [Q]) ---- */
+#carscreen {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 5, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+.car-panel {
+  width: min(760px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: #101310;
+  border: 1px solid #3f443a;
+  border-top: 3px solid #c8341f;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+.car-panel::-webkit-scrollbar { width: 8px; }
+.car-panel::-webkit-scrollbar-thumb { background: #33362c; }
+.car-panel header {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 14px 22px;
+  border-bottom: 1px solid #2c2f28;
+}
+.car-panel h2 { font-size: 22px; font-weight: 700; letter-spacing: 3px; }
+.car-head-txt span { font-size: 12px; color: var(--text-dim); letter-spacing: 1px; }
+.car-panel header button, .car-panel .car-act, .car-panel .car-part button {
+  margin-left: auto;
+  background: #1c211c;
+  border: 1px solid #3a3f35;
+  color: #d8d5cc;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.car-panel header button:hover, .car-panel .car-act:hover:not(:disabled),
+.car-panel .car-part button:hover { background: #2c342c; border-color: #6a8a5a; color: #fff; }
+.car-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 16px 22px 8px;
+}
+@media (max-width: 720px) { .car-body { grid-template-columns: 1fr; } }
+.car-col h3 {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #7a8578;
+  margin: 4px 0 8px;
+}
+.car-kv {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 3px 0;
+  border-bottom: 1px dashed #232823;
+}
+.car-kv span { color: #8a958c; }
+.car-kv b { color: #d8d5cc; font-weight: 600; }
+.car-kv b.ok { color: #9fc37a; }
+.car-kv b.warn { color: #d9c34a; }
+.car-kv b.bad { color: #e05a4f; }
+.car-fuel {
+  height: 14px;
+  background: #171c18;
+  border: 1px solid #2c3430;
+  overflow: hidden;
+  margin: 4px 0 6px;
+}
+.car-fuel .fill { height: 100%; background: linear-gradient(90deg, #8a2418, #c8341f); }
+.car-act {
+  display: block;
+  width: 100%;
+  margin: 8px 0 0 !important;
+  text-align: center;
+}
+.car-act:disabled { opacity: 0.45; cursor: not-allowed; }
+.car-part {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 3px 0;
+  background: #151a15;
+  border: 1px solid #232823;
+  font-size: 12.5px;
+}
+.car-part.ok { border-left: 3px solid #6a8a3a; }
+.car-part.miss { border-left: 3px solid #c8341f; }
+.cp-ico {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #8a958c;
+  border: 1px solid #3a3f35;
+  padding: 1px 4px;
+}
+.cp-name { font-weight: 600; color: #d8d5cc; }
+.cp-state { margin-left: auto; font-size: 10px; letter-spacing: 1px; font-weight: 700; }
+.car-part.ok .cp-state { color: #9fc37a; }
+.car-part.miss .cp-state { color: #e05a4f; }
+.car-part button { margin-left: 6px !important; padding: 4px 10px !important; }
+.car-note {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: #6d6f64;
+  margin-top: 10px;
+}
+.car-actions { padding: 12px 22px 18px; }
+.car-actions button {
+  width: 100%;
+  background: #26301f;
+  border: 1px solid #456a2a;
+  color: #c9e0b0;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+.car-actions button:hover:not(:disabled) { background: #31402a; }
+.car-actions button:disabled { opacity: 0.4; cursor: not-allowed; }

@@ -6,7 +6,7 @@
  * contenedores) y cableado de todos los sistemas modulares.
  */
 
-import { TILE, T, ZOMBIE_CFG, FLOORS, DAYNIGHT } from './config.js';
+import { TILE, T, ZOMBIE_CFG, FLOORS, DAYNIGHT, VEHICULOS } from './config.js';
 import { Rng } from './rng.js';
 import { Input } from './core/input.js';
 import { Camera } from './core/camera.js';
@@ -25,8 +25,12 @@ import {
   startBuild, updateBuild, rotateBuild, cancelBuild, placeBuild,
   updateFire, updateConstructions, sleepInBed, finishSleep, CON_NAMES,
   needsRepair, repairCost, repairCostLabel, repairConstruction,
-  cropPromptLabel, harvestCrop,
+  cropPromptLabel, harvestCrop, barrilPromptLabel, barrilUse,
 } from './systems/crafting.js';
+import {
+  enterCar, exitCar, updateVehicle, updateVehicleFX, drawVehicles,
+  openInspect, closeInspect, forceExit, carLabel,
+} from './systems/vehicles.js';
 import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, latestSlot, updateRecords, AUTOSAVE_SEC } from './systems/save.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
@@ -63,6 +67,8 @@ class Game {
     this.uiOpen = false;
     this.zombies = [];
     this.groundItems = [];
+    this.smokes = [];        // v0.26: humo de motores moribundos {x, y, t, life, r}
+    this.carsUI = null;      // v0.26: ficha de inspección de coche abierta
     // v0.20: sistema de crafteo/construcción
     this.constructions = [];  // barricadas, vallas, trampas, cajas, camas, mesas
     this.build = null;        // modo construcción activo (fantasma)
@@ -257,6 +263,8 @@ class Game {
     this.molotovs = [];
     this.sleepT = 0;
     this._sleepTarget = null;
+    this.smokes = [];       // v0.26: sin humo de motores
+    this.carsUI = null;
 
     // v0.21: garantía del Subfusil Cuervo (arma exclusiva de la base militar)
     // — DESPUÉS de limpiar el mundo, para no ver restos de la partida anterior
@@ -328,6 +336,9 @@ class Game {
     this.impacts.length = 0;
     this.fires.length = 0;        // v0.20: sin fuego al restaurar
     this.molotovs.length = 0;
+    this.smokes = [];             // v0.26: humo efímero, no viaja
+    if (this.carsUI) closeInspect(this);   // v0.26: sin ficha de coche colgada
+    this.audio.setEngine(null);   // v0.26: motor apagado al restaurar
     this.build = null;
     this.sleepT = 0;
     this._sleepTarget = null;
@@ -405,6 +416,10 @@ class Game {
     this.uiOpen = false;
     this.build = null;            // v0.20: sin fantasma en el menú
     this.sleepT = 0;
+    forceExit(this);              // v0.26: nadie se queda durmiendo al volante
+    if (this.carsUI) closeInspect(this);
+    this.audio.setEngine(null);   // v0.26: motor y lluvia callados en el menú
+    this.smokes = [];
     this.invUI.closeUI();
     this.ency.close();            // v0.22: sin enciclopedia abierta al volver
     this.hud.hide();
@@ -472,6 +487,12 @@ class Game {
   // ================== Entrada ==================
 
   onAction(name) {
+    // v0.26: FICHA DE INSPECCIÓN de coche abierta — ESC/VOLVER cierra y
+    // devuelve al juego (antes de nada, para que P no despausee debajo)
+    if (this.carsUI) {
+      if (name === 'escape' || name === 'pause' || name === 'inventory') closeInspect(this);
+      return;
+    }
     // v0.22: ENCICLOPEDIA abierta (desde el menú o la pausa) — ESC/VOLVER
     // cierra y devuelve a la pantalla desde la que se abrió. Se maneja lo
     // primero de todo para que P/ESC no despauseen por debajo.
@@ -514,6 +535,20 @@ class Game {
       return;
     }
     if (this.state !== STATE.PLAYING) return;
+    // ---- v0.26: AL VOLANTE — solo E (bajar), L (faros) y P/M funcionan ----
+    if (this.player.inCar) {
+      switch (name) {
+        case 'interact': exitCar(this); break;
+        case 'flash': {
+          const car = this.player.inCar;
+          car.lights = !car.lights;
+          this.audio.flashClick();
+          this.toasts.push(car.lights ? 'Faros encendidos' : 'Faros apagados');
+          break;
+        }
+      }
+      return;
+    }
     // ---- v0.20: modo construcción ----
     if (this.build) {
       if (name === 'reload') { rotateBuild(this); return; }        // R rota
@@ -523,6 +558,12 @@ class Game {
     }
     switch (name) {
       case 'interact': this.interact(); break;
+      case 'inspect': {
+        // v0.26: [Q] — inspeccionar el coche más cercano (ficha completa)
+        const car = this.nearestCar();
+        if (car) openInspect(this, car);
+        break;
+      }
       case 'inventory': this.invUI.openUI(null); break;
       case 'reload': reloadRanged(this); break;
       case 'place': break;   // clic derecho fuera de construcción: nada
@@ -608,11 +649,27 @@ class Game {
 
   // ================== Interacción con el mundo ==================
 
+  /** v0.26: coche aparcado más cercano a menos de VEHICULOS.enterR px. */
+  nearestCar() {
+    if (!this.map || !this.player) return null;
+    const p = this.player;
+    if (p.inCar || (p.z || 0) !== 0 || p.climb) return null;
+    let best = null, bd = VEHICULOS.enterR;
+    for (const car of this.map.cars) {
+      if (car.driven) continue;
+      const d = Math.hypot(car.x - p.x, car.y - p.y);
+      if (d < bd) { bd = d; best = car; }
+    }
+    return best;
+  }
+
   interactTarget() {
     if (this.state !== STATE.PLAYING || this.uiOpen || !this.player) return null;
     const p = this.player;
     // en mitad de la escalera no hay interacción con el mundo
     if (p.climb) return null;
+    // v0.26: AL VOLANTE solo hay una interacción: BAJARSE
+    if (p.inCar) return { kind: 'exitcar', obj: p.inCar, d: 0, label: '[E] Salir del coche (' + carLabel(p.inCar) + ')' };
     const pz = p.z || 0;
     let best = null;
 
@@ -641,6 +698,9 @@ class Game {
         } else if (c.type === 'fogata') {
           // v0.25: la fogata abre la COCINA (pestaña CRAFTEO) al pulsarla
           best = { kind: 'fire', obj: c, d, label: 'Cocinar en la fogata (asar verduras)' };
+        } else if (c.type === 'barril') {
+          // v0.26: el barril de lluvia — BEBER o LLENAR botella
+          best = { kind: 'barril', obj: c, d, label: barrilPromptLabel(this, c) };
         } else if (c.type === 'cultivo') {
           // v0.25: el cultivo cuenta su progreso y se COSECHA maduro
           best = { kind: 'crop', obj: c, d, label: cropPromptLabel(this, c) };
@@ -659,6 +719,16 @@ class Game {
       const d = Math.hypot(gi.x - p.x, gi.y - p.y);
       if (d < 38 && (!best || d < best.d)) {
         best = { kind: 'item', obj: gi, d, label: 'Recoger ' + itemLabel(gi.item) };
+      }
+    }
+    // v0.26: COCHES — [E] entra, [Q] inspecciona (la ficha completa)
+    if (pz === 0) {
+      for (const car of this.map.cars) {
+        if (car.driven) continue;
+        const d = Math.hypot(car.x - p.x, car.y - p.y);
+        if (d < VEHICULOS.enterR && (!best || d < best.d)) {
+          best = { kind: 'car', obj: car, d, label: 'Entrar al ' + car.brand + ' ' + car.name + ' · [Q] Inspeccionar' };
+        }
       }
     }
     if (pz === 0) {              // las puertas solo existen en planta baja
@@ -732,6 +802,21 @@ class Game {
         this.invUI.openCraft();
         break;
       }
+      case 'barril': {
+        // v0.26: BEBER del barril o LLENAR una botella vacía
+        barrilUse(this, target.obj);
+        break;
+      }
+      case 'car': {
+        // v0.26: ENTRAR al coche (y arrancar si puede)
+        enterCar(this, target.obj);
+        break;
+      }
+      case 'exitcar': {
+        // v0.26: BAJARSE del coche (queda aparcado donde esté)
+        exitCar(this);
+        break;
+      }
       case 'item': {
         const gi = target.obj;
         const fully = this.player.inventory.add(gi.item);
@@ -798,6 +883,9 @@ class Game {
     this.deathCause = cause;
     this.build = null;            // v0.20: sin fantasma tras morir
     this.sleepT = 0;
+    forceExit(this);              // v0.26: si moriste al volante, el coche queda aparcado
+    if (this.carsUI) closeInspect(this);
+    this.audio.setEngine(null);
     this.hud.hide();
     this.map.stampCorpse(this.player.x, this.player.y, this.player.angle);
     this.map.stampBlood(this.player.x, this.player.y, true);
@@ -867,6 +955,11 @@ class Game {
     if (this.build) updateBuild(this);
     updateFire(this, dt);
     updateConstructions(this, dt);
+
+    // v0.26: EL COCHE EN MARCHA — física de conducción, combustible,
+    // choques, atropellos y ruido de motor (el jugador va dentro)
+    if (this.player.inCar) updateVehicle(this, dt);
+    updateVehicleFX(this, dt);
 
     // v0.23: chequeo periódico de población para la EMERGENCIA del GRITADOR
     this._screamerCheckT += dt;

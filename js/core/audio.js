@@ -347,6 +347,99 @@ export class AudioFX {
     setTimeout(() => this._noise(0.4, 'lowpass', 500, 0.16), 120);
   }
 
+  // ---- v0.26: LOS COCHES — motor continuo por modelo, arranque y repostaje ----
+
+  /**
+   * MOTOR CONTINUO: cada modelo suena DISTINTO (no todos los motores
+   * cantan igual):
+   *  · sedan — 4 cilindros educados: sierra suave a tono medio-alto
+   *  · pickup — V8 de camioneta: tono bajo y redondo
+   *  · suv — bloque grande: aún más grave, con poca prisa
+   *  · van — DIÉSEL de furgón: sierra grave + TRAQUETEO (AM cuadrado a
+   *    ~11 Hz sobre el volumen: el clatter de las inyecciones)
+   * `model` = id del modelo o null (para/apaga). `throttle` 0..1 fija tono
+   * y volumen (marcha alta = más agudo y presente). Se llama cada frame
+   * conduciendo (como setRain); el bucle se crea una sola vez.
+   */
+  setEngine(model, throttle = 0.5) {
+    if (!this.ctx || !this.master) return;
+    this._ensureEngine();
+    if (!this._engGain) return;
+    const t = this.ctx.currentTime;
+    if (!model) {
+      this._engGain.gain.setTargetAtTime(0, t, 0.18);   // se apaga suave
+      if (this._engLfoG) this._engLfoG.gain.setTargetAtTime(0, t, 0.18);
+      return;
+    }
+    const base = model === 'sedan' ? 92 : model === 'pickup' ? 66 : model === 'suv' ? 56 : 44;
+    const f = base * (0.8 + 0.5 * throttle);
+    this._engOsc.frequency.setTargetAtTime(f, t, 0.12);
+    if (this._engOsc2) this._engOsc2.frequency.setTargetAtTime(f * 1.98, t, 0.12);
+    const vol = 0.05 + 0.13 * throttle;
+    this._engGain.gain.setTargetAtTime(vol, t, 0.12);
+    // traqueteo diésel: solo la furgoneta (y algo la pickup)
+    if (this._engLfoG) {
+      const clat = model === 'van' ? 0.55 : model === 'pickup' ? 0.1 : 0;
+      this._engLfo.frequency.setTargetAtTime(model === 'van' ? 11 : 8, t, 0.2);
+      this._engLfoG.gain.setTargetAtTime(vol * clat, t, 0.2);
+    }
+  }
+
+  /** Crea (una sola vez) el bucle del motor: sierra grave filtrada +
+   *  subarmónico + LFO cuadrado de traqueteo sobre el volumen. */
+  _ensureEngine() {
+    if (this._engSrc || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = 70;
+      const osc2 = this.ctx.createOscillator();
+      osc2.type = 'square';
+      osc2.frequency.value = 139;
+      const g2 = this.ctx.createGain();
+      g2.gain.value = 0.35;                     // el subarmónico, más quedado
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = 340;                  // motor apagado al exterior
+      const g = this.ctx.createGain();
+      g.gain.value = 0;
+      // traqueteo diésel: AM cuadrada lenta sobre el volumen
+      const lfo = this.ctx.createOscillator();
+      lfo.type = 'square';
+      lfo.frequency.value = 11;
+      const lfoG = this.ctx.createGain();
+      lfoG.gain.value = 0;
+      lfo.connect(lfoG); lfoG.connect(g.gain);
+      osc.connect(f); osc2.connect(g2); g2.connect(f);
+      f.connect(g); g.connect(this.master);
+      osc.start(); osc2.start(); lfo.start();
+      this._engSrc = osc;
+      this._engOsc = osc;
+      this._engOsc2 = osc2;
+      this._engGain = g;
+      this._engLfo = lfo;
+      this._engLfoG = lfoG;
+    } catch (e) {
+      this._engSrc = null;
+    }
+  }
+
+  /** Arranque del motor: motor de arranque (sierra que sube) + tos + ralente. */
+  engineStart() {
+    if (!this._ok()) return;
+    this._tone('square', 62, 128, 0.55, 0.3);
+    this._noise(0.5, 'bandpass', 210, 0.16, 0, 1.6);
+    setTimeout(() => this._tone('sawtooth', 84, 66, 0.4, 0.24), 480);
+    setTimeout(() => this._noise(0.22, 'lowpass', 300, 0.2), 520);
+  }
+
+  /** Vértigo del bidón al depósito: gluglú grave. */
+  fuelSlosh() {
+    this._tone('sine', 170, 70, 0.5, 0.22);
+    setTimeout(() => this._tone('sine', 150, 60, 0.4, 0.18), 210);
+    setTimeout(() => this._noise(0.3, 'lowpass', 420, 0.12), 120);
+  }
+
   /** Latido cuando la vida es crítica. Llamar cada frame. */
   heartbeat(dt, active) {
     if (!this._ok() || !active) return;

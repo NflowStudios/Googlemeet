@@ -14,6 +14,7 @@ export class Player {
     this.x = x; this.y = y;
     this.r = PLAYER_CFG.radius;
     this.prof = null;            // v0.24: profesión elegida al crear la partida (id o null)
+    this.inCar = null;           // v0.26: coche que estás CONDUCIENDO (objeto de map.cars)
     this.vx = 0; this.vy = 0;
     this.angle = 0;              // apuntado del ratón
     this.sneak = false;
@@ -212,7 +213,16 @@ export class Player {
 
     // apuntado (siempre, incluso escalando)
     const mw = game.cam.screenToWorld(inp.mouse.x, inp.mouse.y);
-    this.angle = Math.atan2(mw.y - this.y, mw.x - this.x);
+    if (!this.inCar) this.angle = Math.atan2(mw.y - this.y, mw.x - this.x);
+    // v0.26: CONDUCIENDO — la física vive en systems/vehicles.js (updateVehicle):
+    // aquí solo decaen cooldowns y el jugador va "dentro" del coche
+    if (this.inCar) {
+      this.cooldown = Math.max(0, this.cooldown - dt);
+      this.swingT = Math.max(0, this.swingT - dt);
+      this.hurtFlash = Math.max(0, this.hurtFlash - dt);
+      this.recoil = Math.max(0, (this.recoil || 0) - dt * 1.4);
+      return;
+    }
 
     // ---- escalando escaleras: movimiento bloqueado, avance del fundido ----
     if (this.climb) {

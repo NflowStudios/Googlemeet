@@ -3,11 +3,12 @@
  * estadísticas de partida y prompt de interacción.
  */
 
-import { SURV, FLASH } from '../config.js';
+import { SURV, FLASH, VEHICULOS } from '../config.js';
 import { fmtTime } from '../utils.js';
 import { gunRounds } from '../systems/inventory.js';
 import { HOTBAR_N } from '../systems/hotbar.js';
 import { flashlightItem, countBatteries } from '../systems/flashlight.js';
+import { carSpeedKmh, carOdometerKm, carSmoking } from '../systems/vehicles.js';
 
 export class HUD {
   constructor(game) {
@@ -47,6 +48,9 @@ export class HUD {
     this.clockDay = document.getElementById('clock-day');
     this.clockWeather = document.getElementById('clock-weather');  // v0.15
     this._wxSig = '';
+    // v0.26: CUADRO DE MANDO del coche (visible solo al volante)
+    this.dashEl = document.getElementById('car-dash');
+    this._dashSig = '';
   }
 
   show() { this.el.classList.remove('hidden'); }
@@ -155,6 +159,14 @@ export class HUD {
     // v0.20: modo construcción y sueño
     if (g.build) chips += '<span class="chip build">CONSTRUYENDO: ' + g.build.recipe.name.toUpperCase() + '</span>';
     if (g.sleepT > 0) chips += '<span class="chip sleep">DURMIENDO…</span>';
+    // v0.26: al volante — el cuadro de mando resume el resto
+    if (g.player.inCar) {
+      const car = g.player.inCar;
+      chips += '<span class="chip car">AL VOLANTE — ' + car.brand.toUpperCase() + ' ' + car.name.toUpperCase() +
+        (car.running ? '' : ' (APAGADO)') + '</span>';
+      if (car.lights) chips += '<span class="chip flash">FAROS</span>';
+      if (carSmoking(car)) chips += '<span class="chip bad">MOTOR HUMEANDO</span>';
+    }
     this.chips.innerHTML = chips;
 
     // equipo rápido
@@ -212,6 +224,10 @@ export class HUD {
       this.promptEl.classList.add('hidden');
     }
 
+    // v0.26: CUADRO DE MANDO del coche (velocímetro, gasolina, odómetro,
+    // temperatura, faros y piezas) — solo al volante, abajo-centro
+    this._renderCarDash(g);
+
     // pista de controles inicial
     this._hintTimer += 1 / 60;
     if (this._hintTimer > 18) this.hintEl.classList.add('fade');
@@ -223,5 +239,68 @@ export class HUD {
     const ratio = Math.max(0, Math.min(1, v / max));
     this.bars[name].style.width = (ratio * 100).toFixed(1) + '%';
     this.vals[name].textContent = Math.ceil(Math.max(0, v));
+  }
+
+  /** v0.26: pinta (por firma, solo cuando cambia algo) el cuadro de mando
+   *  del coche: velocidad, gasolina con barra, temperatura, motor, faros y
+   *  neumáticos. La velocidad y el odómetro se refrescan siempre. */
+  _renderCarDash(g) {
+    const car = g.player && g.player.inCar;
+    if (!car || !this.dashEl) {
+      if (this.dashEl && this.dashEl.getAttribute('data-car') !== '') {
+        this.dashEl.classList.add('hidden');
+        this.dashEl.setAttribute('data-car', '');
+        this._dashSig = '';
+      }
+      return;
+    }
+    const md = VEHICULOS.models[car.model];
+    this.dashEl.classList.remove('hidden');
+    // velocidad y odómetro SIEMPRE (cambian a 60 fps)
+    const spdEl = this.dashEl.querySelector('#dash-speed');
+    if (spdEl) spdEl.textContent = Math.round(carSpeedKmh(car));
+    const odoEl = this.dashEl.querySelector('#dash-odo');
+    if (odoEl) odoEl.textContent = Math.round(carOdometerKm(car)).toLocaleString('es') + ' km';
+    // el resto, solo cuando cambia (firma)
+    const fuelPct = Math.max(0, Math.round(car.fuel / md.fuelCap * 100));
+    const eng = car.engineHp <= 0 ? 'MUERTO' : carSmoking(car) ? 'HUMO' : 'OK';
+    const sig = [car.model, car.running ? 1 : 0, fuelPct, Math.round(car.heat),
+      eng, Math.round(car.engineHp), car.lights ? 1 : 0, car.parts.tires,
+      car.parts.bat ? 1 : 0, car.parts.buj ? 1 : 0, car.parts.rad ? 1 : 0].join('|');
+    if (sig === this._dashSig) return;
+    this._dashSig = sig;
+    this.dashEl.setAttribute('data-car', car.model);
+    const nameEl = this.dashEl.querySelector('#dash-name');
+    if (nameEl) nameEl.textContent = car.brand.toUpperCase() + ' ' + car.name.toUpperCase() + ' · ' + car.type.toUpperCase();
+    const fuelFill = this.dashEl.querySelector('#dash-fuel .fill');
+    if (fuelFill) fuelFill.style.width = fuelPct + '%';
+    const fuelTxt = this.dashEl.querySelector('#dash-fuel-txt');
+    if (fuelTxt) fuelTxt.textContent = Math.round(car.fuel) + ' / ' + md.fuelCap + ' L' +
+      (car.fuel <= 0 ? ' — ¡SECO!' : car.fuel < md.fuelCap * 0.2 ? ' — reserva' : '');
+    const engEl = this.dashEl.querySelector('#dash-engine');
+    if (engEl) {
+      engEl.textContent = 'MOTOR ' + eng + ' · ' + Math.round(car.engineHp) + '/100';
+      engEl.className = car.engineHp <= 0 ? 'bad' : carSmoking(car) ? 'warn' : 'ok';
+    }
+    const tempEl = this.dashEl.querySelector('#dash-temp');
+    if (tempEl) {
+      tempEl.textContent = car.heat >= 95 ? '¡SOBRECALENTADO!' :
+        car.heat >= 70 ? 'TEMP ALTA' : 'TEMP OK';
+      tempEl.className = car.heat >= 95 ? 'bad' : car.heat >= 70 ? 'warn' : 'ok';
+    }
+    const tempFill = this.dashEl.querySelector('#dash-tempbar .fill');
+    if (tempFill) tempFill.style.width = Math.round(car.heat) + '%';
+    const lightEl = this.dashEl.querySelector('#dash-lights');
+    if (lightEl) {
+      lightEl.textContent = car.lights ? 'FAROS ON (L)' : 'FAROS OFF (L)';
+      lightEl.className = car.lights ? 'ok' : '';
+    }
+    const tireEl = this.dashEl.querySelector('#dash-tires');
+    if (tireEl) {
+      tireEl.textContent = 'NEUMÁTICOS ' + car.parts.tires + '/4' +
+        (car.parts.bat ? '' : ' · SIN BATERÍA') + (car.parts.buj ? '' : ' · SIN BUJÍAS') +
+        (car.parts.rad ? '' : ' · SIN RADIADOR');
+      tireEl.className = car.parts.tires >= 3 ? 'ok' : 'warn';
+    }
   }
 }

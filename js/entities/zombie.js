@@ -252,7 +252,11 @@ export class Zombie {
         // (nadie muerde a través del techo): la franja del muro y las puertas
         // cerradas bloquean el golpe (mismo criterio que el melee del jugador;
         // el cristal de las ventanas deja golpear a través).
-        if (d < this.attackRange + p.r && this.attackCd <= 0 && (p.z || 0) === this.z &&
+        // v0.26: si vas EN COCHE, alcanzan la CHAPA (más alcance: hay que
+        // llegar hasta el cuerpo del coche, no hasta su centro).
+        const atkR = this.attackRange + p.r +
+          (p.inCar ? Math.max(p.inCar.w, p.inCar.h) * 0.42 : 0);
+        if (d < atkR && this.attackCd <= 0 && (p.z || 0) === this.z &&
             !p.climb && map.lineClearZ(this.x, this.y, p.x, p.y, this.z)) {
           this.attackCd = this.attackCdBase;
           game.combatZombieHit(this);
@@ -557,6 +561,8 @@ export function spawnZombies(map, rng, count, spawnPoint) {
   // dentro) y la TIENDA tiene presión media: zombis dentro + alrededor.
   // v0.25: HOME & TOOLS lleva la MISMA presión que la tienda (3 dentro con
   // su bruto de guarnición + 2 alrededor): la ferretería vale la pena.
+  // v0.26: las TRES GASOLINERAS suman presión LIGERA (2 dentro + 2 alrededor,
+  // sin brutos) — la gasolina del apocalipsis casi se guarda sola.
   // Cantidades FIJAS (SPECIALS.inside/around) → total determinista.
   // v0.13: los de ALREDEDOR también rehúyen la burbuja del spawn del jugador
   // (la estructura puede quedar cerca del centro del mapa).
@@ -564,7 +570,7 @@ export function spawnZombies(map, rng, count, spawnPoint) {
   // tienda 1, ferretería 1) entre su gente de dentro.
   for (const b of map.buildings) {
     if (b.kind !== 'police' && b.kind !== 'store' && b.kind !== 'military' &&
-        b.kind !== 'hospital' && b.kind !== 'tools') continue;
+        b.kind !== 'hospital' && b.kind !== 'tools' && b.kind !== 'gas') continue;
     const sp = SPECIALS[b.kind];
     const brutes = Z.bruteSpecials[b.kind] || 0;
     for (let i = 0; i < sp.inside; i++) {

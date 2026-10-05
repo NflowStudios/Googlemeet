@@ -9,11 +9,15 @@ export const TILE = 32;
 // una franja centrada en el tile (WALL_T de alto/ancho) que corre a lo largo
 // de la línea de muro; el resto del tile es suelo transitable (exterior/interior).
 export const WALL_T = 10;
-// v0.16: mapa AMPLIADO AL DOBLE de superficie (13.520 → 27.232 m²):
-// 184×148 tiles (5.888×4.736 px). La retícula pasa de 5×4 a 7×6 manzanas
-// para hacer hueco a la BASE MILITAR y a la nueva economía de armas.
-export const MAP_W = 184;   // tiles (v0.16: antes 130)
-export const MAP_H = 148;   // tiles (v0.16: antes 104)
+// v0.16: mapa ampliado al doble (13.520 → 27.232 m²) y v0.26: ¡AL TRIPLE!
+// 300×300 tiles (9.600×9.600 px · 90.000 m²): una ciudad de verdad para
+// CONDUCIR. La retícula pasa a 11×11 manzanas (calles de 4 tiles cada 30
+// verticales / 28 horizontales) y la densidad zombi se re-calibra (240 de
+// salida: menos zombis por metro cuadrado, pero el mapa triplicado suma) para
+// que los COCHES tengan carretera de sobra y las GASOLINERAS (norte, sur y
+// este) queden a un viaje de distancia de cualquier rincón.
+export const MAP_W = 300;   // tiles (v0.26: antes 184)
+export const MAP_H = 300;   // tiles (v0.26: antes 148)
 export const WORLD_W = MAP_W * TILE;
 export const WORLD_H = MAP_H * TILE;
 
@@ -83,6 +87,14 @@ export const SPECIALS = {
   // MATERIALES de construcción y de AGRICULTURA (semillas) salen aquí a
   // porrillo, y el MAZO PESADO solo vive en sus estanterías.
   tools:  { w: 16, h: 11, inside: 3, around: 2 },
+  // v0.26 — GASOLINERA "YUNQUE GAS": NO es única — hay TRES en todo el mapa
+  // (norte, sur y este, cada una en su extremo). Tienda pequeña + pista de
+  // surtidores con marquesina. Presión zombi LIGERA (2 dentro + 2 alrededor,
+  // sin brutos: la gasolina del apocalipsis casi se guarda sola) pero el
+  // BOTÍN es único en su especie: BIDONES DE GASOLINA a porrillo en los
+  // surtidores y PIEZAS DE MOTOR (batería, bujías, neumáticos, radiador)
+  // más comunes que en ningún otro rincón.
+  gas:    { w: 12, h: 9, inside: 2, around: 2 },
 };
 
 // ---------- Linterna (v0.17) ----------
@@ -211,6 +223,8 @@ export const FISTS = {
 //  · ladron:     stepNoiseMul→ pasos a la mitad de ruido (radios de paso)
 //  · carpintero: repairMul   → reparar construcciones cuesta la mitad
 //  · granjero:   cropYieldMul+growFast → cosecha ×2 y maduran 1 día antes
+//  · mecanico:   GATE de las recetas `mech` → craftea PIEZAS DE COCHE y
+//                repara motores (v0.26)
 //  · desempleado: sin efectos — la partida sin ayudas
 export const PROFESSIONS = [
   {
@@ -250,6 +264,14 @@ export const PROFESSIONS = [
     fx: { cropYieldMul: 2, growFast: 1 },
   },
   {
+    id: 'mecanico',
+    name: 'Mecánico', color: '#8a6a3a',
+    tagline: 'Todo se puede arreglar',
+    desc: 'Grasa bajo las uñas y un oído que diagnostica motores al arrancar. Con chatarra y cuatro dólares de nada fabrica BATERÍAS, BUJÍAS, NEUMÁTICOS y RADIADORES — las piezas que convierten un cascarón abandonado en un coche de verdad — y remienda motores humeantes sin taller de por medio. En una ciudad triplicada donde la gasolina es el oro nuevo, el hombre que resucita coches es el que nunca camina.',
+    perks: ['Craftea PIEZAS DE COCHE (batería, bujías, neumático, radiador) con chatarra y materiales', 'REPARA motores dañados junto al coche con 4 de chatarra'],
+    fx: {},   // el bono es el GATE de las recetas `mech` (canCraft) — no un multiplicador
+  },
+  {
     id: 'desempleado', name: 'Desempleado', color: '#6d6f64',
     tagline: 'Sin oficio ni ventaja',
     desc: 'Sin título, sin oficio, sin ventajas: no prometía nada y ahí sigue. La supervivencia en su forma pura, para quien quiera contarse la historia sin ninguna ayuda — nadie le regaló nada el día que amaneció el mundo muerto, y eso también es un motivo de orgullo.',
@@ -285,6 +307,66 @@ export const AGRICULTURA = {
   cookRange: 90,      // radio de la FOGATA para cocinar (px)
 };
 
+// ---------- VEHÍCULOS (v0.26) ----------
+// CUATRO MODELOS con marca y modelo ficticios, cada uno con su carácter:
+//  · sedan  — Aurora Cierzo 400: ligero y razonablemente rápido EN PAVIMENTO,
+//    el que menos bebe y el más silencioso. Cajuela media (6 huecos). En
+//    tierra se queda (offroad 0,42): es un coche de ciudad.
+//  · pickup — Yaguareté Sierra 4x4: algo más lento pero con la CAJUELA GRANDE
+//    (10) y tranquilo fuera del asfalto (0,75). Bebe moderado-alto.
+//  · suv    — Bóer Meridiano: pesado, bebe bastante (0,62 L/s a fondo) y
+//    guarda 8 huecos. Fuera de carretera se defiende (0,8).
+//  · van    — Carabela Mula 3000: ALMACÉN MÓVIL (16 huecos)… a cambio de la
+//    aceleración más lenta (70), el giro más torpe (1,45 rad/s) y el motor
+//    MÁS RUIDOSO del juego (430 px: los zombis lo oyen llegar de lejos).
+// stats por modelo:
+//  · top/accel/turn — px/s máximos, px/s² de aceleración y rad/s de giro
+//  · fuelCap (L) · fuelRate (L/s a fondo, escala con la velocidad)
+//  · noise — radio del ruido del motor en marcha (cada motor SUENA distinto:
+//    ver audio.setEngine)
+//  · storage — huecos de la CAJUELA (contenedor del coche)
+//  · offroad — multiplicador de velocidad sobre césped (el asfalto es 1)
+//  · crashMul — cómo de mal lo pasa el MOTOR al chocar (el pesado sufre menos)
+export const VEHICULOS = {
+  enterR: 62,          // radio para ENTRAR/inspeccionar (px, al centro del coche)
+  fuelPerBidon: 8,    // litros que aporta un bidón de gasolina
+  roadkillMin: 70,    // velocidad mínima para ATROPELLAR (px/s)
+  crashMin: 140,      // a partir de aquí un choque frontal daña el motor
+  startNoiseMul: 1.35,// el arranque cantará más que el ralente
+  smokeAt: 35,        // vida del motor por debajo de la cual ECHA HUMO
+  tireMul: [0.45, 0.62, 0.78, 0.9, 1],   // velocidad por neumáticos puestos 0-4
+  partsMissing: { bat: 0.3, buj: 0.25, rad: 0.25, tires: 0.3 },  // prob. de pieza ausente al generar (la mayoría nacen cojos)
+  models: {
+    sedan: {
+      brand: 'Aurora', name: 'Cierzo 400', type: 'Sedán',
+      w: 58, h: 26, top: 310, accel: 185, turn: 2.6,
+      fuelCap: 35, fuelRate: 0.32, noise: 240, storage: 6, offroad: 0.42,
+      crashMul: 1, mass: 1, colors: ['#7a3030', '#3a4a5a', '#6a6a3a', '#42548a', '#8a8f96'],
+    },
+    pickup: {
+      brand: 'Yaguareté', name: 'Sierra 4x4', type: 'Camioneta',
+      w: 62, h: 28, top: 265, accel: 130, turn: 2.2,
+      fuelCap: 50, fuelRate: 0.5, noise: 300, storage: 10, offroad: 0.75,
+      crashMul: 0.8, mass: 1.3, colors: ['#54423a', '#3a5a44', '#8a6a3a', '#4a4a52', '#6a3a2a'],
+    },
+    suv: {
+      brand: 'Bóer', name: 'Meridiano', type: 'SUV',
+      w: 60, h: 30, top: 285, accel: 120, turn: 2.0,
+      fuelCap: 55, fuelRate: 0.62, noise: 330, storage: 8, offroad: 0.8,
+      crashMul: 0.7, mass: 1.5, colors: ['#2e3428', '#39422f', '#4a3a2a', '#26292e', '#5a4632'],
+    },
+    van: {
+      brand: 'Carabela', name: 'Mula 3000', type: 'Furgoneta',
+      w: 66, h: 32, top: 235, accel: 70, turn: 1.45,
+      fuelCap: 60, fuelRate: 0.66, noise: 430, storage: 16, offroad: 0.6,
+      crashMul: 0.6, mass: 1.8, colors: ['#c8c8c0', '#8a98a8', '#b0a078', '#8a8f96', '#6a7a6a'],
+    },
+  },
+  // reparto de modelos entre los coches generados (pesos)
+  modelWeights: { sedan: 40, pickup: 25, suv: 20, van: 15 },
+  carCount: 34,        // coches abandonados por el mapa (v0.26: 20 → 34, mapa al triple)
+};
+
 // ---------- Supervivencia ----------
 export const SURV = {
   hungerRate: 0.16,        // por segundo
@@ -313,7 +395,7 @@ export const SURV = {
 // Los valores de la cabecera son el zombi NORMAL; las variantes los
 // sobreescriben en ZOMBIE_CFG.variants.
 export const ZOMBIE_CFG = {
-  count: 150,            // v0.16: mapa al doble → densidad intacta (antes 74)
+  count: 240,            // v0.26: mapa al triple → 240 de salida (densidad ~60% de la v0.25: hay que dejarte la carretera libre para conducir)
   hp: 100,
   radius: 10,
   wanderSpeed: 30,
@@ -330,12 +412,14 @@ export const ZOMBIE_CFG = {
   searchTime: 3.0,
   groanMin: 4,
   groanMax: 11,
-  nightBatch: 10,      // v0.16: zombis repuestos por cada hora de noche (antes 5)
-  nightCap: 240,       // v0.18: 220 → 240 (el hospital suma 30 a la horda inicial)
+  nightBatch: 14,      // v0.26: 10 → 14 (más mapa que reponer por hora de noche)
+  nightCap: 350,       // v0.26: 240 → 350 (la horda inicial del mapa triplicado
+                       // ronda 329-332 con los errantes: el tope deja aire para
+                       // que las noches REPONGAN de verdad — con 330 se bloqueaba)
   // --- v0.14: variantes ---
   runnerChance: 0.15,        // proporción de corredores en la horda callejera
   nightRunnerChance: 0.25,   // de noche los corredores presionan más
-  bruteSpecials: { police: 2, store: 1, military: 4, hospital: 2, tools: 1 },  // brutos de guarnición por estructura
+  bruteSpecials: { police: 2, store: 1, military: 4, hospital: 2, tools: 1, gas: 0 },  // brutos de guarnición por estructura (las gasolineras NO guardan brutos)
   bruteRoamChance: 0.55,     // probabilidad de que el mapa tenga brutos errantes
   // --- v0.23: GRITADOR — 4ª variante RARA, ligada a la presión local ---
   // No forma parte de la horda inicial: EMERGE cuando el jugador está en
@@ -686,6 +770,35 @@ export const ITEMS = {
     conDmgMul: 2.5, color: '#8a8f96',
     desc: 'Mazo de demolición: daño contundente 44 y el mayor EMPUJE del juego, pero cada golpe cuesta 26 de energía. A construcciones pega TRIPLE: desmonta barricadas en un momento. Exclusivo de HOME & TOOLS.',
   },
+  // ---- v0.26: PIEZAS DE COCHE (cat 'pieza') — la otra cara de los
+  // vehículos. Batería (no se gasta: solo ESTAR en el motor), bujías (juego),
+  // neumáticos (1 por rueda, hasta 4) y radiador (sin él, el motor se
+  // sobrecalienta y humea). Se INSTALAN desde el menú de inspección del
+  // coche; el MECÁNICO además las CRAFTEA con chatarra (recetas mech). ----
+  bateria_coche: {
+    name: 'Batería de coche', cat: 'pieza', color: '#384048', stack: 2, lootMin: 1, lootMax: 1,
+    desc: 'Batería de plomo de 12 V. No se gasta: solo necesita ESTAR en su hueco para que el motor arranque. Sin ella, el coche es un adorno.',
+  },
+  bujias: {
+    name: 'Juego de bujías', cat: 'pieza', color: '#c9a24f', stack: 4, lootMin: 1, lootMax: 2,
+    desc: 'Cuatro bujías de encendido con sus cables. Sin chispa no hay combustión: el motor no arranca aunque tengas batería y gasolina.',
+  },
+  neumatico: {
+    name: 'Neumático', cat: 'pieza', color: '#23262a', stack: 4, lootMin: 1, lootMax: 2,
+    desc: 'Rueda de repuesto con llanta. Cada una que montes devuelve velocidad y agarre: con 4 vas a plena marcha y sin ninguna, el coche apenas rueda (y rechina).',
+  },
+  radiador: {
+    name: 'Radiador', cat: 'pieza', color: '#7ab8a0', stack: 2, lootMin: 1, lootMax: 1,
+    desc: 'Intercambiador de refrigeración. Sin él el motor se SOBRECALIENTA al rato de conducir: la aguja sube, la vida del motor baja… y acaba echando humo.',
+  },
+  // ---- v0.26: COMBUSTIBLE (cat 'combustible') — la gasolina del juego.
+  // Cada bidón aporta VEHICULOS.fuelPerBidon litros al REPOSTAR desde la
+  // inspección. El botín concentrated en las GASOLINERAS (surtidores);
+  // algún bidón suelto en casilleros y estanterías de taller. ----
+  bidon_gasolina: {
+    name: 'Bidón de gasolina', cat: 'combustible', color: '#c8341f', stack: 3, lootMin: 1, lootMax: 2,
+    desc: 'Bidón metálico de 8 litros. La gasolina del apocalipsis: se consigue en las GASOLINERAS (norte, sur y este del mapa) y sin ella el coche es un club de campo muy caro.',
+  },
 };
 
 // Slots de ropa (orden de render del equipo) — TRES ranuras de accesorio
@@ -720,6 +833,14 @@ export const CONTAINER_DEFS = {
   // ---- v0.25: solo dentro de HOME & TOOLS (ferretería, estructura única) ----
   estanteria_ferreteria: { name: 'Estantería de ferretería', color: '#c8742a', letter: 'H', slots: 6 },
   expositor_jardin: { name: 'Expositor de jardinería', color: '#6a9a4a', letter: 'J', slots: 5 },
+  // ---- v0.26: GASOLINERAS (3 en el mapa: norte, sur y este) ----
+  // El surtidor (la bomba de la pista) escupe BIDONES; la estantería de
+  // taller (dentro de la tienda) guarda las PIEZAS DE MOTOR más comunes
+  // del juego. La cajuela de cada coche es un contenedor aparte (V huecos
+  // según el modelo) que se abre desde la INSPECCIÓN.
+  surtidor: { name: 'Surtidor de gasolina', color: '#c8341f', letter: 'B', slots: 5 },
+  estanteria_taller: { name: 'Estantería de taller', color: '#3a7a8a', letter: 'K', slots: 6 },
+  cajuela: { name: 'Cajuela', color: '#6a5a3a', letter: 'V', slots: 6 },   // slots reales = modelo.storage
 };
 
 // Tablas de botín ponderadas [idItem, peso]
@@ -734,7 +855,7 @@ export const LOOT = {
   armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3], ['linterna', 3], ['bateria', 4], ['tela', 12], ['cinta_adhesiva', 7], ['botella_vacia', 5], ['cuerda', 3]],
   // v0.16: revólver tan común como la VP-9 (peso 4 = pistola); doble Yarará
   // más común que la corredera (3.2 > 2.2); Ñandú a la par de la Yarará.
-  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['revolver_aspid', 4], ['escopeta_guardian', 2.2], ['escopeta_yarara', 3.2], ['rifle_nandu', 3.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['bala_357', 11], ['cartucho_12', 8], ['bala_556', 5], ['bala_308', 4], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6], ['linterna', 3], ['bateria', 5], ['clavos', 14], ['tablas', 10], ['chatarra', 9], ['cinta_adhesiva', 8], ['tela', 7], ['alcohol_etilico', 4], ['botella_vacia', 5], ['cuerda', 3], ['queroseno', 2.5]],
+  casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['revolver_aspid', 4], ['escopeta_guardian', 2.2], ['escopeta_yarara', 3.2], ['rifle_nandu', 3.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['bala_357', 11], ['cartucho_12', 8], ['bala_556', 5], ['bala_308', 4], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6], ['linterna', 3], ['bateria', 5], ['clavos', 14], ['tablas', 10], ['chatarra', 9], ['cinta_adhesiva', 8], ['tela', 7], ['alcohol_etilico', 4], ['botella_vacia', 5], ['cuerda', 3], ['queroseno', 2.5], ['bidon_gasolina', 2], ['bujias', 2], ['bateria_coche', 1.5], ['neumatico', 1.2], ['radiador', 1]],
   botiquin_pared: [['venda', 30], ['botiquin', 12], ['antibioticos', 9], ['agua', 6], ['alcohol_etilico', 12]],
   // ARMERÍA (comisaría): la ÚNICA fuente del Cóndor AR-56 fuera de la base
   // militar (v0.12: rifle y familia 5.56 bastante más raros). v0.16: también
@@ -826,10 +947,26 @@ export const LOOT = {
     ['semillas_tomate', 24], ['semillas_zanahoria', 22], ['semillas_maiz', 18],
     ['semillas_calabaza', 14], ['cuerda', 6], ['cinta_adhesiva', 5], ['agua', 8],
   ],
+  // ---- v0.26: GASOLINERAS — la economía del combustible. El SURTIDOR
+  // (la bomba de la pista, con su marquesina) es la fuente REINA de
+  // BIDONES; la ESTANTERÍA DE TALLER de la tienda guarda las PIEZAS DE
+  // MOTOR más comunes del juego (alguna pieza suelta también cae en
+  // casilleros y en la gasolinera misma). ----
+  surtidor: [
+    ['bidon_gasolina', 55], ['chatarra', 10], ['bujias', 8],
+    ['bateria_coche', 7], ['neumatico', 6], ['radiador', 4],
+    ['agua', 6], ['cinta_adhesiva', 4],
+  ],
+  estanteria_taller: [
+    ['bidon_gasolina', 14], ['bujias', 18], ['bateria_coche', 12],
+    ['neumatico', 14], ['radiador', 9], ['chatarra', 24],
+    ['bateria', 8], ['cuerda', 8], ['cinta_adhesiva', 12],
+    ['casco_obra', 6], ['tubo', 5],
+  ],
 };
 
 // Probabilidad de que la comida generada esté podrida, por contenedor
-export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0, armeria: 0, estanteria: 0.12, taquilla_mil: 0, caja_municion: 0, armeria_mil: 0, estanteria_mil: 0.05, armario_medico: 0, carrito_curas: 0, estanteria_ferreteria: 0, expositor_jardin: 0 };
+export const ROTTEN_CHANCE = { nevera: 0.38, alacena: 0.15, casillero: 0.2, armario: 0, botiquin_pared: 0, armeria: 0, estanteria: 0.12, taquilla_mil: 0, caja_municion: 0, armeria_mil: 0, estanteria_mil: 0.05, armario_medico: 0, carrito_curas: 0, estanteria_ferreteria: 0, expositor_jardin: 0, surtidor: 0, estanteria_taller: 0, cajuela: 0 };
 
 // ---------- Aparición de armas encontradas ----------
 // Un arma hallada SIEMPRE trae algo dentro (cargador con balas o tubo cargado):
@@ -864,6 +1001,7 @@ export const CRAFTEO = {
     barricada: 140, tapiar: 100, valla: 90, trampa: 40, caja: 60, cama: 80, mesa: 50,
     fogata: 40,       // v0.25: la fogata es frágil (unos pocos golpes)
     cultivo: 25,      // v0.25: un cultivo pisoteado a golpes no sobrevive
+    barril: 60,       // v0.26: el barril de lluvia aguanta lo suyo
   },
   // --- v0.23: el FUEGO ES UNA ALARMA ---
   // El estallido del molotov ROMPE CRISTAL (ruido fuerte y seco) y las

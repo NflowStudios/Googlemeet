@@ -85,6 +85,29 @@ export const RECIPES_OBJ = [
     mats: [['maiz', 1]],
     desc: 'Mazorca a la brasa: +26 → +44 de hambre y +6 de energía. El mejor plato cultivado.',
   },
+  // ---- v0.26: PIEZAS DE COCHE — recetas del MECÁNICO (marcadas `mech`:
+  // solo crafteables con esa profesión). Chatarra + ferretería = un coche
+  // nuevo… bueno, casi. ----
+  {
+    id: 'bateria_coche', out: 'bateria_coche', name: 'Batería de coche', icon: '#384048', mech: true,
+    mats: [['chatarra', 4], ['bateria', 1], ['cinta_adhesiva', 1]],
+    desc: 'Celdas de plomo rescatadas y ácido improvisado: 12 V que no se gastan — solo hacen falta para ARRANCAR. [Solo MECÁNICO]',
+  },
+  {
+    id: 'bujias', out: 'bujias', name: 'Juego de bujías', icon: '#c9a24f', mech: true,
+    mats: [['chatarra', 3], ['alcohol_etilico', 1]],
+    desc: 'Cuatro electrodos limpios con alcohol y paciencia: sin chispa no hay combustión. [Solo MECÁNICO]',
+  },
+  {
+    id: 'neumatico', out: 'neumatico', name: 'Neumático', icon: '#23262a', mech: true,
+    mats: [['chatarra', 6], ['tela', 2], ['cuerda', 1]],
+    desc: 'Bandaje de tela y caucho vulcanizado a lo bestia: una rueda que rueda (casi) como nueva. [Solo MECÁNICO]',
+  },
+  {
+    id: 'radiador', out: 'radiador', name: 'Radiador', icon: '#7ab8a0', mech: true,
+    mats: [['chatarra', 7], ['cuerda', 1], ['cinta_adhesiva', 2]],
+    desc: 'Serpentín de chatarra soldado a punta de soplete: sin él, el motor hierve. [Solo MECÁNICO]',
+  },
 ];
 
 export const RECIPES_CON = [
@@ -139,6 +162,15 @@ export const RECIPES_CON = [
     free: true,
     desc: 'Círculo de piedras con leña y yesca. Con ella a ≤ 90 px puedes ASAR las verduras del huerto en la pestaña CRAFTEO (casi el doble de alimento). [E] junto a ella abre la cocina directamente. Sus brasas NO disparan la alarma del molotov.',
   },
+  // ---- v0.26: EL BARRIL DE LLUVIA — el AGUA a largo plazo del refugio.
+  // Se planta al aire libre y se LLENA SOLO cuando llueve; [E] bebe o
+  // llena botellas vacías. La pareja perfecta del huerto y la fogata. ----
+  {
+    id: 'barril', name: 'Barril de lluvia', icon: '#4a6a8a',
+    mats: [['tablas', 3], ['clavos', 4], ['tela', 1]],
+    free: true, outdoor: true,
+    desc: 'Tonel recolector bajo el alero: cada frente de LLUVIA lo llena un poco (100% tope). [E] para BEBER (+35 sed) o para LLENAR una botella vacía (botella de agua). El agua a largo plazo del refugio: junto al huerto y la fogata, la despensa está completa.',
+  },
 ];
 
 // ================== VALIDACIÓN Y GASTO ==================
@@ -184,6 +216,9 @@ export function canCraft(game, recipe) {
   if (missingMaterials(game, recipe).length) return false;
   if (recipe.wb && !nearWorkbench(game)) return false;
   if (recipe.fire && !nearFogata(game)) return false;   // v0.25: cocina de fogata
+  // v0.26: las recetas del MECÁNICO son su OFICIO: sin esa profesión no hay
+  // manera (el gate es la profesión, no un multiplicador)
+  if (recipe.mech && (!game.player.prof || game.player.prof !== 'mecanico')) return false;
   return true;
 }
 
@@ -284,6 +319,56 @@ export function cropPromptLabel(game, c) {
   if (stage === 3) return 'Cosechar ' + d.name;
   const faltan = Math.max(1, Math.ceil(days - elapsed));
   return d.name + ' — creciendo (madura en ' + faltan + ' día' + (faltan > 1 ? 's' : '') + ')';
+}
+
+// ================== v0.26: EL BARRIL DE LLUVIA ==================
+
+/** Etiqueta del prompt del barril: si llevas BOTELLA VACÍA, [E] la LLENA;
+ *  si no, BEBES un trago. El nivel de agua va en el propio prompt. */
+export function barrilPromptLabel(game, c) {
+  const wl = Math.round(Math.max(0, Math.min(100, c.water || 0)));
+  const tieneBotella = countItem(game.player.inventory, 'botella_vacia') > 0;
+  if (wl < 15) return 'Barril de lluvia — casi vacío (' + wl + '%): espera la lluvia';
+  if (tieneBotella) return 'Llenar botella de agua (' + wl + '%)';
+  return 'Beber del barril (' + wl + '%)';
+}
+
+/** [E] sobre el barril: LLENA una botella vacía (si llevas) o BEBE (+35 de
+ *  sed, gasta 20% del agua). Devuelve true si hizo algo. */
+export function barrilUse(game, c) {
+  const p = game.player;
+  const wl = Math.max(0, Math.min(100, c.water || 0));
+  if (wl < 15) {
+    game.toasts.push('El barril está casi vacío — la próxima tormenta lo llenará', 'warn');
+    return false;
+  }
+  // ¿botella vacía en la mochila? → se convierte en BOTELLA DE AGUA
+  const inv = p.inventory;
+  let botella = -1;
+  for (let i = 0; i < inv.slots.length; i++) {
+    const s = inv.slots[i];
+    if (s && s.id === 'botella_vacia') { botella = i; break; }
+  }
+  if (botella >= 0) {
+    const it = inv.removeAt(botella);
+    const agua = makeItem('agua');
+    if (!inv.add(agua)) {
+      inv.slots[botella] = it;   // sin hueco: revertir
+      game.toasts.push('Mochila llena — no cabe la botella llena', 'warn');
+      return false;
+    }
+    c.water = Math.max(0, c.water - 15);
+    game.audio.drink();
+    game.toasts.push('Botella LLENA del barril (agua −15%)', 'save');
+    return true;
+  }
+  // a pelo del barril
+  c.water = Math.max(0, c.water - 20);
+  game.survival.thirst = Math.min(100, game.survival.thirst + 35);
+  game.audio.drink();
+  game.noise.emit(c.x, c.y, 30, 'beber');
+  game.toasts.push('Un trago del barril: +35 de sed (agua −20%)', 'info');
+  return true;
 }
 
 /** COSECHAR (E sobre un cultivo maduro): piezas de verdura a la mochila
@@ -429,6 +514,10 @@ export function updateBuild(game) {
         // v0.25: las semillas solo prenden en TIERRA al aire libre
         // (césped o acera): no en suelo interior, calles ni escaleras
         reason = 'Solo en tierra (césped o acera)';
+      } else if (b.recipe.outdoor && tile !== T.GRASS && tile !== T.SIDEWALK) {
+        // v0.26: el barril de lluvia caza el agua del cielo: mejor en
+        // TIERRA al aire libre (césped o acera), no dentro de una casa
+        reason = 'Mejor al aire libre (césped o acera)';
       }
     }
 
@@ -502,6 +591,8 @@ export const CON_DEFS = {
   // se destrozan a golpe limpio: protege tu huerto)
   fogata:    { solid: false, opaque: false, zAtk: false, drop: [['tablas', 1]] },
   cultivo:   { solid: false, opaque: false, zAtk: false, drop: [] },
+  // v0.26: el barril de lluvia (no sólido: se rodea a pie)
+  barril:    { solid: false, opaque: false, zAtk: false, drop: [['tablas', 1]] },
 };
 
 /** Nombres legibles (toasts/interacción). */
@@ -510,6 +601,7 @@ export const CON_NAMES = {
   trampa: 'Trampa de pinchos', caja: 'Caja de almacenamiento',
   cama: 'Cama', mesa: 'Mesa de trabajo',
   fogata: 'Fogata', cultivo: 'Cultivo',
+  barril: 'Barril de lluvia',
 };
 
 /** Crea una construcción en (tx, ty) y la registra en el mapa.
@@ -529,6 +621,10 @@ export function addConstruction(game, type, tx, ty, rot = 0, crop = null, plante
   if (type === 'cultivo') {
     c.crop = crop;                     // id del CROPS ('tomate'…)
     c.plantedDay = plantedDay !== null ? plantedDay : game.daynight.day;
+  }
+  if (type === 'barril') {
+    // v0.26: el barril nace VACÍO y se llena con la LLUVIA (water = % 0..100)
+    c.water = 0;
   }
   game.constructions.push(c);
   map.registerConstruction(c);
@@ -808,9 +904,11 @@ export function updateFire(game, dt) {
         if (zb.hp <= 0) game.killZombie(zb);
       }
     }
-    // …y al jugador si se queda dentro (silencioso: sin shake por frame)
+    // …y al jugador si se queda dentro (silencioso: sin shake por frame).
+    // v0.26: dentro del COCHE la chapa te aísla — el fuego no te toca
+    // (aunque el coche sí debería apartarse de las llamas…)
     const p = game.player;
-    if ((p.z || 0) === f.z && !p.climb &&
+    if (!p.inCar && (p.z || 0) === f.z && !p.climb &&
         Math.hypot(p.x - f.x, p.y - f.y) <= f.r) {
       game.survival.damage(C.fireDpsP * dt, 'quemadura', game, true);
       p.hurtFlash = Math.max(p.hurtFlash, 0.12);
@@ -832,6 +930,19 @@ export function updateFire(game, dt) {
 
 /** Trampas + zombis golpeando lo que les bloquea (main.update). */
 export function updateConstructions(game, dt) {
+  // ---- v0.26: BARRILES DE LLUVIA — cada frente de lluvia los llena ----
+  // (3,5%/s con intensidad plena: un frente entero (~20 min de juego)
+  // los deja casi a tope; con la LLUVIA más común de la v0.21, plantar
+  // barriles en el refugio acaba siendo un grifo gratis)
+  const raining = game.weather && game.weather.type === 'rain';
+  const rainI = raining ? game.weather.intensity : 0;
+  if (rainI > 0) {
+    for (const c of game.constructions) {
+      if (c.type !== 'barril' || c.water >= 100) continue;
+      c.water = Math.min(100, c.water + 3.5 * rainI * dt);
+    }
+  }
+
   // ---- trampas de pinchos ----
   for (let i = game.constructions.length - 1; i >= 0; i--) {
     const c = game.constructions[i];
@@ -1089,6 +1200,52 @@ export function drawConstruction(ctx, c, sx, sy) {
       }
       break;
     }
+    // ---- v0.26: BARRIL DE LLUVIA — tonel de duelas con su NIVEL DE AGUA
+    // visible (la "ventanilla" del agua sube con cada frente de lluvia). ----
+    case 'barril': {
+      ctx.fillStyle = 'rgba(0,0,0,0.30)';
+      ctx.beginPath(); ctx.ellipse(sx + 2, sy + 4, 13, 10, 0, 0, Math.PI * 2); ctx.fill();
+      // cuerpo del tonel (duelas verticales)
+      ctx.fillStyle = dmg ? '#6a4a2c' : '#8a6238';
+      ctx.beginPath(); ctx.ellipse(sx, sy, 12, 11, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 1;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(sx + i * 4, sy - 10);
+        ctx.lineTo(sx + i * 4, sy + 10);
+        ctx.stroke();
+      }
+      // aros metálicos
+      ctx.strokeStyle = '#5a5a62';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.ellipse(sx, sy - 5, 11.5, 5, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(sx, sy + 5, 11.5, 5, 0, 0, Math.PI * 2); ctx.stroke();
+      // boca con el AGUA (el nivel sube con la lluvia)
+      const wl = Math.max(0, Math.min(100, c.water || 0)) / 100;
+      ctx.fillStyle = '#26262a';
+      ctx.beginPath(); ctx.ellipse(sx, sy - 1, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+      if (wl > 0.04) {
+        ctx.fillStyle = '#4a8ab8';
+        ctx.beginPath(); ctx.ellipse(sx, sy - 1, 8.6, 3.6 * Math.max(0.35, wl), 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(160,210,240,0.5)';
+        ctx.beginPath(); ctx.ellipse(sx - 2, sy - 2, 3, 1.2, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      // gotas cayendo si está lloviendo y no lleno
+      if (wl < 0.99 && c._rain === 'rain') {
+        const t = (c._t || 0) * 3;
+        ctx.strokeStyle = 'rgba(150,190,220,0.55)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 2; i++) {
+          const ph = (t + i * 1.7) % 1;
+          ctx.beginPath();
+          ctx.moveTo(sx - 5 + i * 10, sy - 14 + ph * 10);
+          ctx.lineTo(sx - 5 + i * 10, sy - 10 + ph * 10);
+          ctx.stroke();
+        }
+      }
+      break;
+    }
   }
 
   // barra de vida si está dañada (como los zombis)
@@ -1125,6 +1282,8 @@ export function drawConstructions(ctx, cam, game) {
     // reloj de juego (cacheado en la propia construcción cada frame)
     c._t = game.time;
     if (c.type === 'cultivo') c._stage = cropStage(game, c);
+    // v0.26: el barril quiere el clima (gotas mientras llueve)
+    if (c.type === 'barril') c._rain = game.weather ? game.weather.type : 'clear';
     const sx = Math.round(c.x - cam.x + cam.offX);
     const sy = Math.round(c.y - cam.y + cam.offY);
     if (sx < -40 || sy < -40 || sx > cam.w + 40 || sy > cam.h + 40) continue;
