@@ -11,20 +11,32 @@
  * y el arte comparten esta geometría (ver _runsFor / _inRuns / _drawStructStrips).
  */
 
-import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T, ROOF, FLOORS, SPECIALS, VEHICULOS } from '../config.js';
+import { TILE, MAP_W, MAP_H, WORLD_W, WORLD_H, T, SOLID, OPAQUE, AI_OPAQUE, VISION, WALL_T, ROOF, FLOORS, SPECIALS, VEHICULOS, ESCOBA } from '../config.js';
 import { Rng } from '../rng.js';
 import { hash2, angDiff } from '../utils.js';
 import { makeItem, setupLootItem } from '../systems/inventory.js';
 
-// v0.26: mapa AL TRIPLE → 11 columnas × 11 filas de manzanas útiles
-// (300×300 tiles · 90.000 m² · 9.600×9.600 px). Calles de 4 tiles cada 30
-// verticales / 28 horizontales (márgenes de hierba/acera de 1 a cada lado,
-// huecos de 26 entre manzanas) — carretera de sobra para los VEHÍCULOS y
-// hueco para las TRES GASOLINERAS (norte, sur y este).
-const V_ROADS = [[16, 19], [46, 49], [76, 79], [106, 109], [136, 139], [166, 169], [196, 199], [226, 229], [256, 259], [286, 289]]; // bandas verticales [ini, fin] inclusive
+// v0.26: mapa AL TRIPLE → manzanas útiles en retícula. v0.29: LA AVENIDA —
+// en el CENTRO EXACTO del mapa (x 146..153, 8 tiles de calzada) cruza una
+// avenida de NORTE a SUR que atraviesa TODO el mapa, con doble línea central
+// continua, farolas en sus aceras y árboles en sus márgenes; el resto de la
+// retícula se re-centra simétricamente a su alrededor (calles de 4 cada 30,
+// márgenes de 10 a cada borde). A su paso por el centro, las dos manzanas que
+// la flanquean se convierten en las PLAZAS GEMELAS: al oeste la plaza de la
+// fuente (paseos, bancos, jardineras) y al este el parque (árboles, flores,
+// parterre) — el pueblo pequeño de verdad, con su calle mayor.
+export const AVENIDA = { x0: 146, x1: 153 };   // tiles (calzada completa)
+const V_ROADS = [[10, 13], [40, 43], [70, 73], [100, 103], [130, 133], [146, 153], [166, 169], [196, 199], [226, 229], [256, 259], [286, 289]]; // bandas verticales [ini, fin] inclusive (la central = AVENIDA, 8 de ancho)
 const H_ROADS = [[14, 17], [42, 45], [70, 73], [98, 101], [126, 129], [154, 157], [182, 185], [210, 213], [238, 241], [266, 269]];  // bandas horizontales
-const X_BLOCKS = [[1, 14], [21, 44], [51, 74], [81, 104], [111, 134], [141, 164], [171, 194], [201, 224], [231, 254], [261, 284], [291, 298]];
+const X_BLOCKS = [[1, 8], [15, 38], [45, 68], [75, 98], [105, 128], [135, 144], [155, 164], [171, 194], [201, 224], [231, 254], [261, 284], [291, 298]];
 const Y_BLOCKS = [[1, 12], [19, 40], [47, 68], [75, 96], [103, 124], [131, 152], [159, 180], [187, 208], [215, 236], [243, 264], [271, 298]];
+// v0.29: las DOS PLAZAS gemelas — manzanas 10×22 flanqueando la avenida en la
+// fila central. No llevan edificios: son el corazón cívico del pueblo (fuente
+// al oeste, parque al este) y el punto de aparición vive entre ambas.
+export const PLAZAS = [
+  { x0: 135, x1: 144, y0: 131, y1: 152, kind: 'fuente' },   // Plaza de la Fuente (oeste)
+  { x0: 155, x1: 164, y0: 131, y1: 152, kind: 'parque' },   // Parque del Este
+];
 
 function shuffle(arr, rng) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -33,6 +45,38 @@ function shuffle(arr, rng) {
   }
   return arr;
 }
+
+// ================== v0.29: FACHADAS de colores ==================
+// El pueblo deja de ser un monocromo de adobe: cada CASA elige una fachada
+// de esta paleta (colores apagados pero VARIADOS — sobrevivió al apocalipsis,
+// no a una noria de pintura) y las ESTRUCTURAS conservan su identidad
+// institucional. Cada trio es { wall, light, dark }: base + luz arriba/izq
+// + sombra abajo/der de la franja de muro.
+const HOUSE_FACADES = [
+  { wall: '#8a6a52', light: '#9d7c62', dark: '#6e5540' },   // terracota pálido
+  { wall: '#a89070', light: '#bba17c', dark: '#8a7458' },   // ocre lavado
+  { wall: '#7e8a92', light: '#909ca4', dark: '#65707a' },   // azul grisáceo
+  { wall: '#8a8578', light: '#9d978a', dark: '#6f6b60' },   // crema gastada
+  { wall: '#7f8a6e', light: '#919d7e', dark: '#657058' },   // verde salvia
+  { wall: '#9a7568', light: '#ad8880', dark: '#7c5e56' },   // salmón apagado
+  { wall: '#6f7a82', light: '#808c95', dark: '#59636b' },   // pizarra clara
+  { wall: '#9c8a5e', light: '#af9d70', dark: '#7e7050' },   // mostaza suave
+  { wall: '#8a7a88', light: '#9c8c9a', dark: '#6f6270' },   // malva gris
+  { wall: '#a0785e', light: '#b28b70', dark: '#826250' },   // adobe rosado
+  { wall: '#76837b', light: '#87948c', dark: '#5f6a63' },   // verde ceniza
+  { wall: '#96826a', light: '#a89480', dark: '#786855' },   // arena del pueblo
+];
+const SPECIAL_FACADES = {
+  police:   { wall: '#5d6a7e', light: '#6d7a8e', dark: '#4a5566' },   // azul institucional
+  store:    { wall: '#8f7f6a', light: '#a18f78', dark: '#736556' },   // comercial cálido
+  military: { wall: '#5f6a4f', light: '#6e7a5c', dark: '#4b5540' },   // verde oliva
+  hospital: { wall: '#9aa8a0', light: '#aab8b0', dark: '#7b8780' },   // blanco clínico
+  tools:    { wall: '#9c7a4e', light: '#ad8a5e', dark: '#7d6240' },   // naranja ferretería
+  gas:      { wall: '#aeb1ac', light: '#bec1bc', dark: '#8c8f8a' },   // blanco de estación
+};
+// Fachada de respaldo (muros de estructura fuera de todo edificio — raro, pero
+// el render nunca debe quedarse sin color): los tonos clásicos de siempre.
+const DEF_FACADE = { wall: '#4e4639', light: '#5d5344', dark: '#3c372f' };
 
 export class GameMap {
   /** @param {Rng} rng */
@@ -60,6 +104,12 @@ export class GameMap {
     // el asfalto al mover la cámara.
     this.roadPaint = [];    // rects de pintura vial
     this.manholes = [];     // tapas de alcantarilla {x, y}
+    // v0.29: PROPS decorativos del pueblo (farolas, bancos, hidrantes,
+    // jardineras, arbustos, flores, papeles, señales, papeleras, fuentes).
+    // NINGUNO colisiona (son decoración plana a nivel de suelo, como las
+    // tapas de alcantarilla) salvo las FUENTES, cuya base sólida son tiles
+    // T.CAR de 2×2 bajo el arte (ver _buildPlazas).
+    this.props = [];        // {k, x, y, s?, c?} — k = tipo de prop
     this.outdoorTiles = []; // índices de tiles exteriores caminables
     this.indoorTiles = [];  // índices de tiles de interior
     this.spawn = { x: 0, y: 0 };
@@ -560,11 +610,17 @@ export class GameMap {
       for (const [by0, by1] of Y_BLOCKS)
         allBlocks.push({ bx0, bx1, by0, by1, bw: bx1 - bx0 + 1, bh: by1 - by0 + 1 });
     const cTx = Math.floor(MAP_W / 2), cTy = Math.floor(MAP_H / 2);
-    const isCenter = (b) => cTx >= b.bx0 && cTx <= b.bx1 && cTy >= b.by0 && cTy <= b.by1;
+    // v0.29: el spawn vive SOBRE LA AVENIDA, en el centro exacto — ninguna
+    // manzana contiene ya ese punto, así que la vieja exclusión de «la
+    // manzana central» se convierte en un radio: ninguna estructura especial
+    // (ni base ni hospital) en las manzanas a <26 tiles del centro. El barrio
+    // de la avenida queda para las plazas y las casas.
+    const isCenter = (b) => distC(b) < 26;
+    const isPlazaBlock = (b) => PLAZAS.some((p) => p.x0 === b.bx0 && p.y0 === b.by0);
     const bigEnough = (b, w, h) => b.bw >= w + 2 && b.bh >= h + 2;
     const distC = (b) => Math.hypot((b.bx0 + b.bx1) / 2 - cTx, (b.by0 + b.by1) / 2 - cTy);
     const farBig = allBlocks
-      .filter((b) => !isCenter(b) && bigEnough(b, SPECIALS.military.w, SPECIALS.military.h))
+      .filter((b) => !isCenter(b) && !isPlazaBlock(b) && bigEnough(b, SPECIALS.military.w, SPECIALS.military.h))
       .sort((a, b) => distC(b) - distC(a));
     const farPool = farBig.slice(0, Math.min(3, farBig.length));
     const militaryBlock = farPool.length ? farPool[rng.index(farPool.length)] : null;
@@ -572,7 +628,7 @@ export class GameMap {
     // la base, que son las 3 primeras)
     const hospPool = farBig.slice(3, Math.min(6, farBig.length));
     const hospitalBlock = hospPool.length ? hospPool[rng.index(hospPool.length)] : null;
-    const pool = shuffle(allBlocks.filter((b) => !isCenter(b) && b !== militaryBlock && b !== hospitalBlock), rng);
+    const pool = shuffle(allBlocks.filter((b) => !isCenter(b) && !isPlazaBlock(b) && b !== militaryBlock && b !== hospitalBlock), rng);
     // v0.26: LAS TRES GASOLINERAS — norte, sur y este, cada una en su
     // extremo del mapa (nunca las de las demás estructuras: se eligen
     // ANTES de comisaría/tienda/ferretería para quedarse con la periferia).
@@ -598,6 +654,15 @@ export class GameMap {
       for (const [by0, by1] of Y_BLOCKS) {
         const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
         const placed = [];
+
+        // v0.29: PLAZAS GEMELAS — las dos manzanas que flanquean la avenida
+        // en el centro NO llevan edificios: son el corazón del pueblo
+        // (fuente, paseos, bancos / parque, árboles, parterre).
+        const plaza = PLAZAS.find((p) => p.x0 === bx0 && p.y0 === by0);
+        if (plaza) {
+          this._buildPlaza(plaza);
+          continue;
+        }
 
         // manzana dedicada a una estructura especial → edificio único + salir
         const isPolice = policeBlock && policeBlock.bx0 === bx0 && policeBlock.by0 === by0;
@@ -644,6 +709,19 @@ export class GameMap {
         }
       }
     }
+
+    // --- v0.29: FACHADAS — cada edificio estrena su color de exterior ---
+    // Las casas eligen de la paleta variada; las estructuras conservan su
+    // identidad institucional (comisaría azul, hospital clínico…). El render
+    // de muros/ventanas consulta buildings[i].facade vía _bIdx.
+    for (const b of this.buildings) {
+      b.facade = b.kind ? SPECIAL_FACADES[b.kind] || HOUSE_FACADES[0]
+        : HOUSE_FACADES[rng.index(HOUSE_FACADES.length)];
+    }
+
+    // --- v0.29: árboles de la AVENIDA (antes del pase aleatorio, que respeta
+    // su espaciado) ---
+    this._buildAvenueTrees();
 
     // --- Spawn del jugador (v0.13): calle ABIERTA cerca del centro ---
     // Antes se usaba el tile central tal cual (solo se esquivaba un coche) y
@@ -796,6 +874,11 @@ export class GameMap {
       }
     }
 
+    // --- v0.29: PROPS del pueblo (farolas de la avenida, árboles de avenida,
+    // hidrantes, arbustos, flores, papeles, señales…) — tras coches/árboles
+    // para leer el estado FINAL de los tiles y no pisar a nadie ---
+    this._buildProps();
+
     // --- Pintura vial (tras coches/árboles para respetar sus tiles) ---
     this._buildRoadPaint();
 
@@ -805,6 +888,451 @@ export class GameMap {
       for (let y = b.y0; y <= b.y1; y++)
         for (let x = b.x0; x <= b.x1; x++) this._bIdx[this.idx(x, y)] = i;
     }
+  }
+
+  // ================== v0.29: PLAZAS, AVENIDA y PROPS ==================
+
+  /** Árbol deliberado (plazas/avenida): como el pase aleatorio pero con
+   *  espaciado propio; ANTES del pase aleatorio para que este lo respete. */
+  _placeTree(tx, ty, rMin = 15, rMax = 23) {
+    if (tx < 1 || ty < 1 || tx >= MAP_W - 1 || ty >= MAP_H - 1) return false;
+    if (this.tileAtIdx(tx, ty) !== T.GRASS) return false;
+    const px = tx * TILE + TILE / 2, py = ty * TILE + TILE / 2;
+    for (const t of this.trees) {
+      if (Math.hypot(t.x - px, t.y - py) < TILE * 1.7) return false;
+    }
+    this.setTile(tx, ty, T.TREE);
+    const tr = { x: px, y: py, r: this.rng.range(rMin, rMax) };
+    this.trees.push(tr);
+    this.treeByTile.set(this.idx(tx, ty), tr);
+    return true;
+  }
+
+  /**
+   * v0.29 — LAS PLAZAS GEMELAS. La del OESTE (fuente): paseos en cruz de
+   * acera, FUENTE de piedra en el centro (base sólida de 2×2 tiles T.CAR
+   * bajo el arte: choca como un coche, da cobertura y no se puede atravesar),
+   * bancos mirándola, jardineras en los extremos, farolas en las esquinas,
+   * flores en los cuadrantes de hierba y árboles en el perímetro. La del
+   * ESTE (parque): pradera con parterre de flores central, bancos, árboles
+   * dispersos y arbustos — el pulmón verde del pueblo.
+   */
+  _buildPlaza(plaza) {
+    const rng = this.rng;
+    const tc = (t) => t * TILE + TILE / 2;   // centro px del tile t
+
+    if (plaza.kind === 'fuente') {
+      // paseos en CRUZ: fila central (y 149-150, alineada con el centro del
+      // mapa — el spawn queda justo enfrente) y columnas 138-139 al norte
+      for (let x = plaza.x0 + 1; x <= plaza.x1; x++) {
+        this.setTile(x, 149, T.SIDEWALK);
+        this.setTile(x, 150, T.SIDEWALK);
+      }
+      for (let y = plaza.y0 + 2; y <= 148; y++) {
+        this.setTile(138, y, T.SIDEWALK);
+        this.setTile(139, y, T.SIDEWALK);
+      }
+      this.setTile(138, 151, T.SIDEWALK);
+      this.setTile(139, 151, T.SIDEWALK);
+      // FUENTE: base sólida 2×2 (T.CAR sin coche asociado: colisión plena,
+      // cobertura de IA y arte encima) + prop con la piedra y el agua
+      this.setTile(138, 149, T.CAR);
+      this.setTile(139, 149, T.CAR);
+      this.setTile(138, 150, T.CAR);
+      this.setTile(139, 150, T.CAR);
+      this.props.push({ k: 'fuente', x: 139 * TILE, y: 150 * TILE });
+      // bancos alrededor de la fuente (a 60 px, sobre los paseos)
+      this.props.push({ k: 'banco', x: 139 * TILE, y: 150 * TILE - 62 });
+      this.props.push({ k: 'banco', x: 139 * TILE, y: 150 * TILE + 62 });
+      this.props.push({ k: 'banco', x: 139 * TILE - 66, y: 150 * TILE - 10 });
+      // jardineras en los extremos del paseo central
+      this.props.push({ k: 'jardinera', x: tc(plaza.x0 + 1), y: 150 * TILE - 24 });
+      this.props.push({ k: 'jardinera', x: tc(plaza.x0 + 1), y: 150 * TILE + 24 });
+      this.props.push({ k: 'jardinera', x: tc(plaza.x1), y: 150 * TILE - 24 });
+      this.props.push({ k: 'jardinera', x: tc(plaza.x1), y: 150 * TILE + 24 });
+      // farolas en las cuatro esquinas
+      this.props.push({ k: 'farol', x: tc(plaza.x0 + 1) - 8, y: tc(plaza.y0 + 2) });
+      this.props.push({ k: 'farol', x: tc(plaza.x1) + 8, y: tc(plaza.y0 + 2) });
+      this.props.push({ k: 'farol', x: tc(plaza.x0 + 1) - 8, y: tc(plaza.y1) });
+      this.props.push({ k: 'farol', x: tc(plaza.x1) + 8, y: tc(plaza.y1) });
+      // papeleras junto a los bancos del paseo
+      this.props.push({ k: 'cajon', x: 139 * TILE + 40, y: 150 * TILE - 62 });
+      this.props.push({ k: 'cajon', x: 139 * TILE - 46, y: 150 * TILE + 62 });
+      // árboles del perímetro (esquinas y medios de las orillas)
+      for (const [tx, ty] of [
+        [plaza.x0 + 1, plaza.y0 + 2], [plaza.x1, plaza.y0 + 2],
+        [plaza.x0 + 1, plaza.y0 + 7], [plaza.x1, plaza.y0 + 7],
+        [plaza.x0 + 1, plaza.y1 - 1], [plaza.x1, plaza.y1 - 1],
+        [plaza.x1, plaza.y0 + 12], [plaza.x0 + 1, plaza.y0 + 12],
+      ]) this._placeTree(tx, ty);
+      // flores y arbustos en los cuadrantes de hierba
+      this._scatterPlants(plaza, 22, 9);
+      // un periódico olvidado junto a un banco
+      this.props.push({ k: 'papel', x: 139 * TILE + 22, y: 150 * TILE - 44 });
+      this.props.push({ k: 'papel', x: 139 * TILE - 30, y: 150 * TILE + 40 });
+    } else {
+      // PARQUE del este: parterre central (anillo de flores + jardinera),
+      // bancos, pradera con árboles dispersos y arbustos
+      const px0 = plaza.x0, px1 = plaza.x1;
+      const cX = ((px0 + px1 + 1) / 2) * TILE, cY = 150 * TILE;
+      this.props.push({ k: 'jardinera', x: cX, y: cY });
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + 0.3;
+        this.props.push({ k: 'flores', x: cX + Math.cos(a) * 78, y: cY + Math.sin(a) * 52, s: 1.4 });
+      }
+      this.props.push({ k: 'banco', x: cX, y: cY - 96 });
+      this.props.push({ k: 'banco', x: cX, y: cY + 96 });
+      this.props.push({ k: 'banco', x: cX - 108, y: cY });
+      // farolas hacia la avenida (borde oeste del parque)
+      this.props.push({ k: 'farol', x: tc(px0) - 6, y: tc(plaza.y0 + 3) });
+      this.props.push({ k: 'farol', x: tc(px0) - 6, y: tc(plaza.y1 - 1) });
+      // árboles dispersos por la pradera (determinista)
+      let placedT = 0;
+      for (let i = 0; i < 60 && placedT < 8; i++) {
+        if (this._placeTree(rng.int(px0 + 1, px1 - 1), rng.int(plaza.y0 + 2, plaza.y1 - 1))) placedT++;
+      }
+      this._scatterPlants(plaza, 30, 12);
+      // papeles del paseante distraído
+      this.props.push({ k: 'papel', x: cX + 60, y: cY - 30 });
+      this.props.push({ k: 'papel', x: cX - 70, y: cY + 40 });
+      this.props.push({ k: 'papel', x: cX + 20, y: cY + 70 });
+    }
+  }
+
+  /** Flores y arbustos deterministas sobre la hierba de una manzana. */
+  _scatterPlants(plaza, nFlores, nArbustos) {
+    const rng = this.rng;
+    const used = new Set();
+    const spot = () => {
+      for (let k = 0; k < 24; k++) {
+        const tx = rng.int(plaza.x0 + 1, plaza.x1 - 1);
+        const ty = rng.int(plaza.y0 + 1, plaza.y1 - 1);
+        const key = tx + ',' + ty;
+        if (used.has(key)) continue;
+        if (this.tileAtIdx(tx, ty) !== T.GRASS) continue;
+        used.add(key);
+        return { x: tx * TILE + rng.range(7, 25), y: ty * TILE + rng.range(7, 25) };
+      }
+      return null;
+    };
+    for (let i = 0; i < nFlores; i++) {
+      const s = spot();
+      if (s) this.props.push({ k: 'flores', x: s.x, y: s.y, s: rng.range(0.8, 1.3) });
+    }
+    for (let i = 0; i < nArbustos; i++) {
+      const s = spot();
+      if (s) this.props.push({ k: 'arbusto', x: s.x, y: s.y, s: rng.range(0.8, 1.25) });
+    }
+  }
+
+  /** v0.29 — árboles de la AVENIDA: en las dos bandas de hierba que flanquean
+   *  sus aceras (columnas 144 y 155), a intervalos irregulares, saltando
+   *  cruces y lo que no sea hierba. Se llaman ANTES del pase aleatorio. */
+  _buildAvenueTrees() {
+    const rng = this.rng;
+    for (const col of [AVENIDA.x0 - 2, AVENIDA.x1 + 2]) {
+      let y = 5;
+      while (y < MAP_H - 5) {
+        this._placeTree(col, y, 16, 22);
+        y += rng.int(6, 9);
+      }
+    }
+  }
+
+  /**
+   * v0.29 — PROPS del pueblo (llamado al FINAL de _generate, con los tiles
+   * ya resueltos: solo LEE tiles y apila props — nunca toca el mapa).
+   *  · FAROLAS flanqueando la avenida entera (sus dos aceras, cada 176 px,
+   *    saltando cruces) + bancos y papeleras de paseo.
+   *  · SEÑALES de tráfico en cada cruce de la avenida.
+   *  · HIDRANTES en aceras, ARBUSTOS y FLORES en la hierba, PAPELES
+   *    arrastrados por el viento del apocalipsis.
+   */
+  _buildProps() {
+    const rng = this.rng;
+
+    // --- farolas de la avenida (ambas aceras) ---
+    for (const side of [AVENIDA.x0 - 1, AVENIDA.x1 + 1]) {
+      for (let y = 150; y < WORLD_H - 96; y += 176) {
+        const x = side * TILE + TILE / 2;
+        if (this.tileAt(x, y) !== T.SIDEWALK) continue;
+        this.props.push({ k: 'farol', x: x + (side === AVENIDA.x0 - 1 ? -7 : 7), y });
+      }
+    }
+    // --- bancos + papeleras de la avenida (menos densos que las farolas) ---
+    for (let y = 420; y < WORLD_H - 200; y += 640) {
+      const west = rng.chance(0.5);
+      const side = west ? AVENIDA.x0 - 1 : AVENIDA.x1 + 1;
+      const x = side * TILE + TILE / 2 + (west ? 11 : -11);
+      if (this.tileAt(x, y) !== T.SIDEWALK) continue;
+      this.props.push({ k: 'banco', x, y });
+      this.props.push({ k: 'cajon', x: x + (west ? -30 : 30), y: y + rng.int(-10, 10) });
+    }
+    // --- señales en los cruces de la avenida (dos esquinas por cruce) ---
+    for (const [c, d] of H_ROADS) {
+      for (const [col, row] of [[AVENIDA.x0 - 1, c - 1], [AVENIDA.x1 + 1, d + 1]]) {
+        const x = col * TILE + TILE / 2, y = row * TILE + 18;
+        if (this.tileAt(x, y) !== T.SIDEWALK) continue;
+        this.props.push({ k: 'senal', x: x + (col === AVENIDA.x0 - 1 ? -6 : 6), y, c: rng.index(3) });
+      }
+    }
+    // --- hidrantes en aceras de todo el pueblo ---
+    let hid = 0;
+    for (let i = 0; i < 400 && hid < 30; i++) {
+      const tx = rng.int(1, MAP_W - 2), ty = rng.int(1, MAP_H - 2);
+      if (this.tileAtIdx(tx, ty) !== T.SIDEWALK) continue;
+      // pegado al bordillo del lado que da a la calle
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]].filter(([dx, dy]) =>
+        this.tileAtIdx(tx + dx, ty + dy) === T.ROAD);
+      if (!dirs.length) continue;
+      const [dx, dy] = dirs[rng.index(dirs.length)];
+      this.props.push({
+        k: 'hidrante',
+        x: tx * TILE + TILE / 2 + dx * 11, y: ty * TILE + TILE / 2 + dy * 11,
+      });
+      hid++;
+    }
+    // --- arbustos y flores por toda la hierba del pueblo ---
+    const bushTiles = new Set(), flowerTiles = new Set();
+    for (let i = 0; i < 5200; i++) {
+      const tx = rng.int(1, MAP_W - 2), ty = rng.int(1, MAP_H - 2);
+      if (this.tileAtIdx(tx, ty) !== T.GRASS) continue;
+      const key = tx + ',' + ty;
+      if (rng.chance(0.45)) {
+        if (bushTiles.has(key) || bushTiles.size >= 300) continue;
+        bushTiles.add(key);
+        this.props.push({ k: 'arbusto', x: tx * TILE + rng.range(8, 24), y: ty * TILE + rng.range(8, 24), s: rng.range(0.75, 1.3) });
+      } else {
+        if (flowerTiles.has(key) || flowerTiles.size >= 380) continue;
+        flowerTiles.add(key);
+        this.props.push({ k: 'flores', x: tx * TILE + rng.range(6, 26), y: ty * TILE + rng.range(6, 26), s: rng.range(0.8, 1.35) });
+      }
+    }
+    // --- papeles arrastrados por el viento (aceras y calzadas) ---
+    let pap = 0;
+    for (let i = 0; i < 900 && pap < 130; i++) {
+      const tx = rng.int(1, MAP_W - 2), ty = rng.int(1, MAP_H - 2);
+      const t = this.tileAtIdx(tx, ty);
+      if (t !== T.SIDEWALK && t !== T.ROAD) continue;
+      this.props.push({ k: 'papel', x: tx * TILE + rng.range(4, 28), y: ty * TILE + rng.range(4, 28) });
+      pap++;
+    }
+  }
+
+  /**
+   * v0.29 — dibuja los PROPS del pueblo (capa de suelo, bajo la niebla y
+   * bajo coches/decals/contenedores). Recorte por cámara como el resto de
+   * capas: los props viven en coordenadas de mundo.
+   */
+  _drawProps(ctx, cam) {
+    for (const pr of this.props) {
+      const sx = pr.x - cam.x + cam.offX;
+      const sy = pr.y - cam.y + cam.offY;
+      if (sx < -40 || sy < -40 || sx > cam.w + 40 || sy > cam.h + 40) continue;
+      switch (pr.k) {
+        case 'farol': {
+          // sombra, poste, brazo y lámpara con halo cálido
+          ctx.fillStyle = 'rgba(0,0,0,0.30)';
+          ctx.beginPath(); ctx.ellipse(sx + 2, sy + 3, 5, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#2c3034';
+          ctx.fillRect(sx - 1.5, sy - 17, 3, 17);       // poste
+          ctx.fillRect(sx - 1.5, sy - 17, 8, 2);        // brazo
+          ctx.fillStyle = '#3a3f44';
+          ctx.fillRect(sx - 3, sy - 2, 6, 2);            // base
+          ctx.fillStyle = 'rgba(240,210,120,0.16)';
+          ctx.beginPath(); ctx.arc(sx + 5, sy - 15, 11, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#e8d9a0';
+          ctx.fillRect(sx + 2, sy - 17.5, 6, 3.5);       // lámpara
+          break;
+        }
+        case 'banco': {
+          const w = 26, h = 9;
+          ctx.fillStyle = 'rgba(0,0,0,0.28)';
+          ctx.fillRect(sx - w / 2 + 2, sy - h / 2 + 3, w, h);
+          ctx.fillStyle = '#6e5233';                     // respaldo
+          ctx.fillRect(sx - w / 2, sy - h / 2 - 3, w, 4);
+          ctx.fillStyle = '#7d5e3c';                     // asiento
+          ctx.fillRect(sx - w / 2, sy - h / 2 + 1, w, 5);
+          ctx.fillStyle = 'rgba(0,0,0,0.25)';            // listones
+          for (let i = 1; i < 4; i++) ctx.fillRect(sx - w / 2 + i * (w / 4), sy - h / 2 + 1, 1.5, 5);
+          ctx.fillStyle = '#3a3430';                     // patas
+          ctx.fillRect(sx - w / 2 + 2, sy + h / 2 - 1, 3, 3);
+          ctx.fillRect(sx + w / 2 - 5, sy + h / 2 - 1, 3, 3);
+          break;
+        }
+        case 'hidrante': {
+          ctx.fillStyle = 'rgba(0,0,0,0.30)';
+          ctx.beginPath(); ctx.ellipse(sx + 1, sy + 3, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#a23a2c';
+          ctx.fillRect(sx - 3, sy - 5, 6, 8);            // cuerpo
+          ctx.beginPath(); ctx.arc(sx, sy - 5, 3, Math.PI, 0); ctx.fill();  // casquete
+          ctx.fillRect(sx - 5, sy - 1, 10, 2);           // lóbulos laterales
+          ctx.fillStyle = 'rgba(255,255,255,0.18)';
+          ctx.fillRect(sx - 2, sy - 4, 1.5, 5);
+          break;
+        }
+        case 'jardinera': {
+          const w = 22, h = 10;
+          ctx.fillStyle = 'rgba(0,0,0,0.26)';
+          ctx.fillRect(sx - w / 2 + 2, sy - h / 2 + 3, w, h);
+          ctx.fillStyle = '#767265';                     // murete de piedra
+          ctx.fillRect(sx - w / 2, sy - h / 2, w, h);
+          ctx.fillStyle = 'rgba(0,0,0,0.20)';
+          ctx.fillRect(sx - w / 2 + 1, sy + h / 2 - 2, w - 2, 2);
+          ctx.fillStyle = '#3d3327';                     // tierra
+          ctx.fillRect(sx - w / 2 + 2, sy - h / 2 + 2, w - 4, 3);
+          const cols = ['#c85a3a', '#d9a520', '#c97ab0', '#d9d0a0'];
+          for (let i = 0; i < 4; i++) {                  // florecitas
+            ctx.fillStyle = cols[i];
+            ctx.fillRect(sx - w / 2 + 3 + i * (w - 7) / 3, sy - h / 2 - 2, 2.5, 2.5);
+          }
+          ctx.fillStyle = '#5a7a3a';                     // verdín
+          ctx.fillRect(sx - w / 2 + 3, sy - h / 2 + 1, 3, 1.5);
+          ctx.fillRect(sx + w / 2 - 6, sy - h / 2 + 1, 3, 1.5);
+          break;
+        }
+        case 'arbusto': {
+          const s = pr.s || 1;
+          ctx.fillStyle = 'rgba(0,0,0,0.22)';
+          ctx.beginPath(); ctx.ellipse(sx + 2, sy + 3 * s, 8 * s, 3.5 * s, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#41502f';
+          ctx.beginPath(); ctx.arc(sx - 3 * s, sy, 5.5 * s, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(sx + 3 * s, sy + 1 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#4d5c38';
+          ctx.beginPath(); ctx.arc(sx, sy - 2 * s, 4.5 * s, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.06)';
+          ctx.beginPath(); ctx.arc(sx - 1 * s, sy - 3 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
+          break;
+        }
+        case 'flores': {
+          const s = pr.s || 1;
+          const h = hash2(Math.floor(pr.x), Math.floor(pr.y));
+          const cols = h < 0.3 ? ['#c85a3a', '#d9773a'] : h < 0.55 ? ['#d9d0a0', '#c9b060'] :
+            h < 0.8 ? ['#c97ab0', '#b05a92'] : ['#d9a520', '#c98a10'];
+          for (let i = 0; i < 4; i++) {
+            const fx = sx + (i - 1.5) * 4.5 * s;
+            const fy = sy + (h * 7 + i * 2.3) % 5 - 2.5;
+            ctx.fillStyle = '#4d5c38';
+            ctx.fillRect(fx - 0.5, fy, 1, 3 * s);        // tallito
+            ctx.fillStyle = cols[i % 2];
+            ctx.fillRect(fx - 1.2, fy - 2.5 * s, 2.4, 2.4);
+          }
+          break;
+        }
+        case 'papel': {
+          ctx.fillStyle = 'rgba(200,196,180,0.55)';
+          ctx.fillRect(sx - 3, sy - 2, 6, 4);
+          ctx.fillStyle = 'rgba(160,156,140,0.5)';
+          ctx.fillRect(sx + 1, sy + 1, 4, 3);
+          ctx.fillStyle = 'rgba(0,0,0,0.18)';
+          ctx.fillRect(sx - 1, sy - 1, 4, 1);
+          break;
+        }
+        case 'cajon': {
+          ctx.fillStyle = 'rgba(0,0,0,0.26)';
+          ctx.fillRect(sx - 5, sy - 4, 12, 11);
+          ctx.fillStyle = '#3f4a42';
+          ctx.fillRect(sx - 6, sy - 6, 12, 12);          // cubo
+          ctx.fillStyle = '#4c5850';
+          ctx.fillRect(sx - 7, sy - 6, 14, 3);           // tapa
+          ctx.fillStyle = 'rgba(0,0,0,0.3)';
+          ctx.fillRect(sx - 6, sy + 4, 12, 2);
+          break;
+        }
+        case 'senal': {
+          ctx.fillStyle = 'rgba(0,0,0,0.28)';
+          ctx.beginPath(); ctx.ellipse(sx + 2, sy + 3, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#33383c';
+          ctx.fillRect(sx - 1.5, sy - 14, 3, 14);        // poste
+          if (pr.c === 0) {                              // ceda el paso (rombo rojo)
+            ctx.fillStyle = '#a23a2c';
+            ctx.save(); ctx.translate(sx, sy - 16); ctx.rotate(Math.PI / 4);
+            ctx.fillRect(-5, -5, 10, 10); ctx.restore();
+            ctx.fillStyle = '#e0dcd0';
+            ctx.fillRect(sx - 3.5, sy - 19.5, 7, 7);
+          } else if (pr.c === 1) {                       // direccional (azul)
+            ctx.fillStyle = '#2e5a7a';
+            ctx.fillRect(sx - 7, sy - 21, 14, 10);
+            ctx.fillStyle = '#cfe0ea';
+            ctx.fillRect(sx - 4, sy - 18, 7, 2);
+            ctx.fillRect(sx - 1, sy - 20, 2, 6);
+          } else {                                       // advertencia (amarillo)
+            ctx.fillStyle = '#d9a520';
+            ctx.save(); ctx.translate(sx, sy - 16); ctx.rotate(Math.PI / 4);
+            ctx.fillRect(-6, -6, 12, 12); ctx.restore();
+            ctx.fillStyle = '#2a2620';
+            ctx.fillRect(sx - 1, sy - 20, 2, 8);
+          }
+          break;
+        }
+        case 'fuente': {
+          // LA FUENTE de la plaza: plataforma de piedra 64×64 (sobre la base
+          // sólida de tiles), vaso circular, agua y surtidor central
+          ctx.fillStyle = '#6f6a60';                     // plataforma
+          ctx.fillRect(sx - 32, sy - 32, 64, 64);
+          ctx.fillStyle = 'rgba(0,0,0,0.16)';            // juntas de losas
+          ctx.fillRect(sx - 32, sy - 1, 64, 2);
+          ctx.fillRect(sx - 1, sy - 32, 2, 64);
+          ctx.fillStyle = 'rgba(255,255,255,0.05)';
+          ctx.fillRect(sx - 31, sy - 31, 62, 2);
+          ctx.fillStyle = '#8a8578';                     // borde del vaso
+          ctx.beginPath(); ctx.arc(sx, sy, 24, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#7b766b';
+          ctx.beginPath(); ctx.arc(sx, sy, 21, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#3f6a7a';                     // agua
+          ctx.beginPath(); ctx.arc(sx, sy, 18.5, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#4d7a8c';                     // reflejos
+          ctx.beginPath(); ctx.ellipse(sx - 5, sy - 4, 8, 3, 0.4, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.ellipse(sx + 6, sy + 6, 6, 2.2, -0.4, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#8a8578';                     // pilar central
+          ctx.beginPath(); ctx.arc(sx, sy, 4.5, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#6d8a96';                     // chorros
+          ctx.fillRect(sx - 1, sy - 13, 2, 8);
+          ctx.fillRect(sx - 6, sy - 9, 1.5, 4);
+          ctx.fillRect(sx + 4.5, sy - 9, 1.5, 4);
+          ctx.fillStyle = 'rgba(190,220,230,0.5)';       // bruma del chorro
+          ctx.beginPath(); ctx.arc(sx, sy - 13, 2.5, 0, Math.PI * 2); ctx.fill();
+          break;
+        }
+      }
+    }
+  }
+
+  // ================== v0.29: LIMPIEZA (la escoba) ==================
+
+  /** Decal (cadáver o mancha) más cercano a (x, y) dentro de maxR px.
+   *  Devuelve { op, d } o null. */
+  nearestDecal(x, y, maxR) {
+    let best = null, bd = maxR;
+    for (const op of this.decalOps) {
+      const d = Math.hypot(op.x - x, op.y - y);
+      if (d < bd) { bd = d; best = { op, d }; }
+    }
+    return best;
+  }
+
+  /**
+   * BORRA los decals en un radio (v0.29: la ESCOBA). Sobre el canvas usa
+   * destination-out con triple pasada concéntrica (borde suave, centro
+   * limpio del todo) y retira del REGISTRO las operaciones dentro del radio
+   * para que lo limpio NO reaparezca al cargar la partida — el gesto viaja
+   * con el guardado. Devuelve cuántas operaciones se retiraron.
+   */
+  cleanDecalAt(x, y, r = ESCOBA.cleanR) {
+    const c = this.dctx;
+    const k = this.decScale;
+    c.save();
+    c.globalCompositeOperation = 'destination-out';
+    for (const [rr, a] of [[r, 0.35], [r * 0.8, 0.6], [r * 0.6, 1]]) {
+      c.fillStyle = 'rgba(0,0,0,' + a + ')';
+      c.beginPath();
+      c.arc(x / k, y / k, rr / k, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+    const before = this.decalOps.length;
+    this.decalOps = this.decalOps.filter((op) => Math.hypot(op.x - x, op.y - y) > r * 0.8);
+    return before - this.decalOps.length;
   }
 
   /**
@@ -819,6 +1347,7 @@ export class GameMap {
   _buildRoadPaint() {
     const P = this.roadPaint;
     const YEL = 'rgba(206,172,64,0.55)';   // línea central discontinua
+    const YEL2 = 'rgba(206,172,64,0.78)';  // v0.29: doble línea central de la AVENIDA (continua)
     const WHT = 'rgba(214,214,204,0.22)';  // líneas de borde
     const ZEB = 'rgba(214,214,204,0.30)';  // pasos de cebra
     const GAP = 52;                         // margen sin pintura alrededor de cruces
@@ -843,8 +1372,21 @@ export class GameMap {
     for (const [a, b] of V_ROADS) {
       const cx = (a + b + 1) / 2 * TILE;            // centro REAL de la calzada
       const exL = a * TILE + 7, exR = (b + 1) * TILE - 10;
+      const wide = b - a + 1 >= 6;                 // v0.29: LA AVENIDA
       for (const [y0, y1] of freeSegs(0, WORLD_H, hCross)) {
-        for (let y = y0; y + 12 <= y1; y += 28) P.push({ x: cx - 2, y, w: 4, h: 12, c: YEL });
+        if (wide) {
+          // v0.29: AVENIDA — doble línea central CONTINUA (el boulevard) +
+          // separadores de carril discontinuos a ±64 px (dos carriles por
+          // sentido): la calzada ancha se lee como calle mayor del pueblo
+          P.push({ x: cx - 8, y: y0, w: 3, h: y1 - y0, c: YEL2 });
+          P.push({ x: cx + 5, y: y0, w: 3, h: y1 - y0, c: YEL2 });
+          for (let y = y0; y + 14 <= y1; y += 34) {
+            P.push({ x: cx - 66, y, w: 3, h: 14, c: WHT });
+            P.push({ x: cx + 63, y, w: 3, h: 14, c: WHT });
+          }
+        } else {
+          for (let y = y0; y + 12 <= y1; y += 28) P.push({ x: cx - 2, y, w: 4, h: 12, c: YEL });
+        }
         P.push({ x: exL, y: y0, w: 3, h: y1 - y0, c: WHT });
         P.push({ x: exR, y: y0, w: 3, h: y1 - y0, c: WHT });
       }
@@ -2114,13 +2656,20 @@ export class GameMap {
     rc.width = w; rc.height = h;
     const c = rc.getContext('2d');
 
-    // paleta por edificio (base / sombra / luz)
+    // paleta por edificio (base / sombra / luz) — v0.29: el pueblo se atreve
+    // con MÁS colores de tejado (teja rústica, azul pizarra, brick, mostaza,
+    // vino apagado): junto a las fachadas, la retícula deja de ser un monocromo
     const palettes = [
       ['#46413a', '#39352f', '#524c43'],   // madera oscura
       ['#3f4448', '#33373b', '#4b5055'],   // pizarra
       ['#4a3a33', '#3b2e29', '#57453c'],   // teja de barro
       ['#3a4238', '#2e352d', '#465043'],   // verde musgo
       ['#43413c', '#35332f', '#4f4d47'],   // grava gris
+      ['#6a4f3e', '#553e30', '#7d5f4a'],   // v0.29: teja rústica cálida
+      ['#54636e', '#424e58', '#63737f'],   // v0.29: azul pizarra
+      ['#6e5140', '#584032', '#82604c'],   // v0.29: brick rojizo
+      ['#665c42', '#524a35', '#786d4e'],   // v0.29: mostaza
+      ['#5c4e52', '#483d40', '#6e5e62'],   // v0.29: vino apagado
     ];
     const pal = palettes[rng.index(palettes.length)];
 
@@ -2920,6 +3469,10 @@ export class GameMap {
       ctx.fillRect(sx - 4, sy - 1, 8, 2);
     }
 
+    // v0.29: PROPS del pueblo (farolas, bancos, fuente, jardineras…) — bajo
+    // coches, decals y contenedores, y bajo la niebla: lo que no ves, no cuenta
+    this._drawProps(ctx, cam);
+
     // coches (arte compartido: base bajo la niebla; versión nítida encima).
     // v0.26: el coche EN MARCHA lo dibuja vehicles.js con rotación libre.
     for (const car of this.cars) {
@@ -3016,16 +3569,20 @@ export class GameMap {
   _drawStripArt(ctx, t, x, y, w, h, horiz, tx, ty) {
     switch (t) {
       case T.WALL: {
-        ctx.fillStyle = '#4e4639';
+        // v0.29: FACHADA del edificio al que pertenece el muro — cada casa
+        // pinta su color (paleta de 12) y las especiales su identidad
+        const f = this._facadeAt(tx, ty);
+        ctx.fillStyle = f.wall;
         ctx.fillRect(x, y, w, h);
-        ctx.fillStyle = '#5d5344';                     // luz superior/izquierda
+        ctx.fillStyle = f.light;                      // luz superior/izquierda
         if (horiz) ctx.fillRect(x, y, w, 3); else ctx.fillRect(x, y, 3, h);
         ctx.fillStyle = 'rgba(0,0,0,0.28)';            // sombra inferior/derecha
         if (horiz) ctx.fillRect(x, y + h - 3, w, 3); else ctx.fillRect(x + w - 3, y, 3, h);
         break;
       }
       case T.WINDOW: {
-        ctx.fillStyle = '#4e4639';                     // marco
+        const f = this._facadeAt(tx, ty);             // v0.29: marco de la fachada
+        ctx.fillStyle = f.wall;                       // marco
         ctx.fillRect(x, y, w, h);
         ctx.fillStyle = '#8fa3ad';                     // cristal
         if (horiz) ctx.fillRect(x + 1, y + 2, w - 2, h - 4);
@@ -3074,6 +3631,14 @@ export class GameMap {
         break;
       }
     }
+  }
+
+  /** v0.29: fachada del edificio que ocupa el tile (tx, ty) o la de respaldo. */
+  _facadeAt(tx, ty) {
+    if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) return DEF_FACADE;
+    const bi = this._bIdx[this.idx(tx, ty)];
+    const b = bi >= 0 ? this.buildings[bi] : null;
+    return (b && b.facade) || DEF_FACADE;
   }
 
   /** Dibuja las franjas (h y/o v) de un tile de estructura en pantalla. */

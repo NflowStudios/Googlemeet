@@ -6,7 +6,7 @@
  * contenedores) y cableado de todos los sistemas modulares.
  */
 
-import { TILE, T, ZOMBIE_CFG, FLOORS, DAYNIGHT, VEHICULOS, NET } from './config.js';
+import { TILE, T, ZOMBIE_CFG, FLOORS, DAYNIGHT, VEHICULOS, NET, ESCOBA } from './config.js';
 import { Rng } from './rng.js';
 import { Input } from './core/input.js';
 import { Camera } from './core/camera.js';
@@ -1161,6 +1161,16 @@ export class Game {
     const indoor = this.map.nearestIndoorFree(s.x, s.y);
     if (indoor) this.groundItems.push({ x: indoor.x, y: indoor.y, item: makeItem('bate'), visibleNow: true });
 
+    // v0.29: ESCOBA de arranque junto al spawn — la nueva arma de doble
+    // utilidad se estrena en el primer minuto (y el pueblo necesita un
+    // barrendero: hay sangre por todas partes)
+    {
+      let ex = s.x - 3 * TILE, ey = s.y + 2 * TILE;
+      if (this.map.circleHitsSolid(ex, ey, 8)) { ex = s.x - 3 * TILE; ey = s.y - 2 * TILE; }
+      if (this.map.circleHitsSolid(ex, ey, 8)) { ex = s.x + 2 * TILE; ey = s.y - 3 * TILE; }
+      this.groundItems.push({ x: ex, y: ey, item: makeItem('escoba'), visibleNow: true });
+    }
+
     // pistola de arranque cerca del spawn (con cargador puesto) para estrenar
     // el sistema de armas de fuego desde el primer minuto
     const gun = makeItem('pistola_vibora');
@@ -1574,6 +1584,22 @@ export class Game {
         best = { kind: 'container', obj: b, d, label: 'Registrar el cuerpo de ' + b.name };
       }
     }
+
+    // v0.29: ESCOBA EQUIPADA — [E] LIMPIA cadáveres de zombi y manchas de
+    // sangre a los pies (la doble vida del arma doméstica). Solo en planta
+    // baja y a pie (no se barre desde el coche ni desde el 2º piso).
+    if (pz === 0 && !p.inCar) {
+      const wep = p.equipment.arma;
+      if (wep && wep.def.broom) {
+        const near = this.map.nearestDecal(p.x, p.y, ESCOBA.cleanRange);
+        if (near && (!best || near.d < best.d)) {
+          best = {
+            kind: 'clean', obj: near.op, d: near.d,
+            label: 'Limpiar ' + (near.op.t === 'corpse' ? 'cadáver' : 'mancha de sangre') + ' (escoba)',
+          };
+        }
+      }
+    }
     return best;
   }
 
@@ -1735,6 +1761,26 @@ export class Game {
       case 'door':
         this._toggleDoor(target.obj.tx, target.obj.ty, target.obj.open);
         break;
+
+      // v0.29: LIMPIAR con la ESCOBA — borra cadáver/mancha (canvas y
+      // registro: no reaparecen al cargar), con su barrido, su susurro de
+      // ruido y su difusión al multijugador (la sala ve el gesto)
+      case 'clean': {
+        const op = target.obj;
+        const n = this.map.cleanDecalAt(op.x, op.y);
+        if (n > 0) {
+          const pl = this.player;
+          pl.swingT = pl.swingDur;                      // animación de barrido
+          pl.cooldown = Math.max(pl.cooldown, ESCOBA.cleanCd);
+          this.survival.stamina = Math.max(0, this.survival.stamina - ESCOBA.cleanStamina);
+          this.audio.sweep();
+          this.noise.emit(pl.x, pl.y, ESCOBA.cleanNoise, 'limpieza');
+          this.toasts.push('Escobazo: ' + (op.t === 'corpse' ? 'cadáver' : 'mancha') +
+            (n > 1 ? ' y alrededores' : '') + ' limpio' + (op.t === 'corpse' ? '' : 'a'), 'save');
+          if (this.net) this.net.sendEv('clean', { x: Math.round(op.x), y: Math.round(op.y) });
+        }
+        break;
+      }
     }
   }
 

@@ -1406,6 +1406,14 @@ export class NetSession {
         g.map.setTile(m.tx, m.ty, m.open ? T.DOOR_OPEN : T.DOOR_CLOSED);
         break;
       }
+      // v0.29: la ESCOBA de OTRO jugador barre el mundo — cada máquina borra
+      // su copia local de los decals (canvas + registro, igual que el autor)
+      case 'clean': {
+        if (g.map && typeof m.x === 'number' && typeof m.y === 'number') {
+          g.map.cleanDecalAt(m.x, m.y);
+        }
+        break;
+      }
       case 'zkill': {
         // la muerte la dicta el anfitrión: cadáver, sonido y cuenta
         const z = this._zByNid.get(m.n) || g.zombies.find((zz) => zz.nid === m.n);

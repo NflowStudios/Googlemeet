@@ -84,6 +84,12 @@ export class AudioFX {
 
   swing() { this._noise(0.14, 'bandpass', 500, 0.22, 0, 2); }
 
+  /** v0.29 — barrido de la ESCOBA: doble roce de cerdas contra el suelo. */
+  sweep() {
+    this._noise(0.16, 'bandpass', 720, 0.14, 0, 2);
+    setTimeout(() => this._noise(0.2, 'bandpass', 560, 0.11, 0, 2), 110);
+  }
+
   hitFlesh() {
     this._tone('sine', 95, 55, 0.13, 0.5);
     this._noise(0.09, 'lowpass', 400, 0.3);

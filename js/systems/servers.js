@@ -39,8 +39,13 @@ import {
   buildSaveData, restorePlayerData, buildItems,
 } from './save.js';
 
-export const SRV_VERSION = 1;
-const LIST_KEY = 'zonacero.servers.v1';
+// v0.29: bump a 2 — la geografía del mundo cambió con LA AVENIDA (v0.29):
+// un snapshot v1 describiría puertas/contenedores/zombis sobre manzanas que
+// ya no están donde estaban. Los mundos v1 se rechazan limpiamente (el
+// registro local los olvida al no poder cargar su snapshot) y los nuevos
+// mundos nacen con la avenida, las plazas y la escoba.
+export const SRV_VERSION = 2;
+const LIST_KEY = 'zonacero.servers.v2';
 const snapKey = (code) => 'zonacero.srvsnap.' + code;
 
 // ================== códigos / contraseñas / ids ==================

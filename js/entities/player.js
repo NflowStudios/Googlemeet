@@ -372,6 +372,48 @@ export class Player {
     if (wDef !== FISTS || swinging) {
       if (wDef.ranged) {
         this._drawGun(ctx, s, a, wDef, R);
+      } else if (wDef.broom) {
+        // v0.29 — LA ESCOBA: palo de madera largo con cepillo de cerdas al
+        // extremo (trapecio pajizo con trazos). La sostiene a dos manos como
+        // una lanza de patio: poca pegada, mucho carácter.
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(wAng);
+        const len = R + (wDef.range || 44) * 0.55;
+        // palo
+        ctx.strokeStyle = '#8a6a42';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(R * 0.35, 0);
+        ctx.lineTo(len - 5, 0);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(R * 0.5, -0.8);
+        ctx.lineTo(len - 7, -0.8);
+        ctx.stroke();
+        // cepillo: bloque de conexion + cerdas
+        ctx.fillStyle = '#9c7a48';
+        ctx.fillRect(len - 7, -2, 7, 4);
+        ctx.fillStyle = '#c2a04a';
+        ctx.beginPath();
+        ctx.moveTo(len, -2);
+        ctx.lineTo(len + 11, -6);
+        ctx.lineTo(len + 11, 6);
+        ctx.lineTo(len, 2);
+        ctx.closePath();
+        ctx.fill();
+        // trazos de cerdas
+        ctx.strokeStyle = 'rgba(120,90,40,0.55)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.moveTo(len + 1 + i * 3.5, -1.5);
+          ctx.lineTo(len + 10 + i * 0.5, -4.5 + i * 4.5);
+          ctx.stroke();
+        }
+        ctx.restore();
       } else {
         ctx.save();
         ctx.translate(s.x, s.y);

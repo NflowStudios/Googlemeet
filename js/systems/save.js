@@ -50,7 +50,13 @@ import { vehiclesToData, applyVehicles, enterCar } from './vehicles.js';
 // combustible, piezas, motor, cajuela) y `player.pc` (índice del coche que
 // estabas CONDUCIENDO al guardar); las construcciones suman `wt` (agua del
 // barril de lluvia).
-export const SAVE_VERSION = 5;
+// v0.29: bump a 6 — LA AVENIDA cambió la geografía otra vez (retícula
+// re-centrada con la avenida de 8 tiles en el medio, plazas gemelas en el
+// centro): las coordenadas de un guardado v5 apuntan a manzanas que ya no
+// están donde estaban. Rechazo limpio + partida nueva, como siempre.
+// NUEVO en el formato: nada — los decals LIMPIADOS con la escoba simplemente
+// dejan de estar en la lista `decals` (el gesto viaja con el guardado).
+export const SAVE_VERSION = 6;
 export const AUTOSAVE_SEC = 300;        // autoguardado cada 5 min DE PARTIDA
 export const SAVE_SLOTS = 3;            // v0.22: 3 partidas independientes
 const KEY = 'zonacero.save.v' + SAVE_VERSION;
@@ -98,9 +104,13 @@ export function clearRecords() {
  * módulo) y no toca nada más: las ranuras 2 y 3 nacen vacías.
  * v0.26: RETIRADA — con el salto a la v5 (mapa 300×300) la migración ya
  * no tiene sentido: un v4 jamás cargaría. Las claves viejas se limpian.
+ * v0.29: la v5 se suma a la limpieza (la avenida movió las manzanas).
  */
 function migrateLegacySave() {
-  try { localStorage.removeItem('zonacero.save.v4'); } catch (e) { /* nada */ }
+  try {
+    localStorage.removeItem('zonacero.save.v4');
+    localStorage.removeItem('zonacero.save.v5');
+  } catch (e) { /* nada */ }
 }
 migrateLegacySave();
 

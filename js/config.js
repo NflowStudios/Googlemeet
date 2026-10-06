@@ -16,6 +16,13 @@ export const WALL_T = 10;
 // salida: menos zombis por metro cuadrado, pero el mapa triplicado suma) para
 // que los COCHES tengan carretera de sobra y las GASOLINERAS (norte, sur y
 // este) queden a un viaje de distancia de cualquier rincón.
+// v0.29 — EL PUEBLO REVIVE: en el CENTRO EXACTO del mapa cruza ahora una
+// AVENIDA de norte a sur (8 tiles de calzada con doble línea central),
+// flanqueada por aceras con FAROLAS y árboles, y a su paso por el centro se
+// abren las DOS PLAZAS gemelas (fuente de piedra al oeste, parque al este).
+// El pueblo gana PROPS decorativos (bancos, hidrantes, jardineras, arbustos,
+// flores, papeleras, señales) y las casas estrenan FACHADAS de colores: el
+// mundo sigue muerto, pero ya no lo parece.
 export const MAP_W = 300;   // tiles (v0.26: antes 184)
 export const MAP_H = 300;   // tiles (v0.26: antes 148)
 export const WORLD_W = MAP_W * TILE;
@@ -367,6 +374,20 @@ export const VEHICULOS = {
   carCount: 34,        // coches abandonados por el mapa (v0.26: 20 → 34, mapa al triple)
 };
 
+// ---------- LIMPIEZA (v0.29): la segunda vida de la ESCOBA ----------
+// Equipada como arma y junto a un cadáver de zombi o una mancha de sangre,
+// [E] BARRÉ: borra el decal del canvas, lo quita del registro (para que no
+// reaparezca al cargar una partida) y difunde el gesto en multijugador.
+// Barrer es de lo más sigiloso que se puede hacer (menos ruido que caminar)
+// y apenas cansa: el orden y la higiene del apocalipsis son baratos.
+export const ESCOBA = {
+  cleanRange: 52,     // px — a esta distancia del decal aparece el prompt
+  cleanR: 36,         // radio de borrado (px de mundo) — cubre cadáver+charco
+  cleanNoise: 42,     // ruido del barrido (un susurro)
+  cleanStamina: 4,    // energía por barrido
+  cleanCd: 0.35,      // s — pequeño cooldown tras cada barrido
+};
+
 // ---------- MULTIJUGADOR (v0.27) ----------
 // Co-op P2P de 2 a 4 SOBREVIVIENTES sobre PeerJS (señalización por el
 // servidor público de PeerJS; el juego viaja DIRECTO entre navegadores
@@ -396,7 +417,7 @@ export const NET = {
   maxPlayers: 4,          // anfitrión + 3 invitados
   codeLen: 5,             // caracteres del código de sala
   codeChars: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789',   // sin I/L/O/0/1 (confusos)
-  peerPrefix: 'zc28-',    // id de PeerJS: «zc28-CODIGO» (versionado)
+  peerPrefix: 'zc29-',    // id de PeerJS: «zc29-CODIGO» (versionado; v0.29: el mundo cambió con la avenida — un v0.28 jamás debe entrar)
   snapHz: 15,             // instantáneas por segundo (anfitrión → clientes)
   stateHz: 15,            // estado del propio jugador (cliente → anfitrión)
   lerpK: 14,              // suavidad de interpolación (1-e^(-k·dt))
@@ -420,7 +441,7 @@ export const NET = {
   // ---- v0.28: SERVIDORES persistentes ----
   srvCodeLen: 6,           // caracteres del código de servidor (distinto de sala)
   srvPassLen: 4,           // dígitos de la contraseña del servidor
-  srvPeerPrefix: 'zc28s-', // id de PeerJS del mundo: «zc28s-CODIGO»
+  srvPeerPrefix: 'zc29s-', // id de PeerJS del mundo: «zc29s-CODIGO» (v0.29: geografía nueva)
   srvSaveEvery: 60,        // s entre sincronizaciones del mundo (anfitrión → miembros)
   srvStateEvery: 20,       // s entre estados de jugador (miembro → anfitrión)
   srvSaveNote: 'El mundo se guarda en el navegador de CADA MIEMBRO: quien lo abra continúa desde la última sincronización.',
@@ -635,6 +656,17 @@ export const ITEMS = {
   tubo: { name: 'Tubo de acero', cat: 'arma', dmg: 28, range: 44, stamina: 14, cd: 0.55, noise: 130, kb: 26, color: '#9aa0a6', desc: 'Contundente y confiable. Daño 28.' },
   bate: { name: 'Bate de béisbol', cat: 'arma', dmg: 34, range: 50, stamina: 16, cd: 0.6, noise: 135, kb: 34, color: '#b98a5a', desc: 'Madera dura, buen alcance. Daño 34.' },
   hacha: { name: 'Hacha de bombero', cat: 'arma', dmg: 48, range: 46, stamina: 22, cd: 0.7, noise: 140, kb: 30, color: '#c0392b', desc: 'Devastadora pero agotadora. Daño 48.' },
+  // v0.29 — LA ESCOBA: arma melee de DOBLE UTILIDAD. Floja como arma (menos
+  // pegada que un tubo) pero BARATÍSIMA de agitar (la que menos energía
+  // cuesta, con más alcance que los puños) y con su segunda vida: equipada,
+  // con [E] junto a CADÁVERES de zombi y MANCHAS DE SANGRE los LIMPIA
+  // (desaparecen del suelo y del guardado; el barrido casi no hace ruido).
+  escoba: {
+    name: 'Escoba', cat: 'arma', broom: true,
+    dmg: 11, range: 44, stamina: 7, cd: 0.42, noise: 85, kb: 12,
+    color: '#b8935a',
+    desc: 'Palo y cerdas. Poca pegada, pero cuesta tan poco agitarla… y equipada, con [E] LIMPIA cadáveres y manchas de sangre.',
+  },
   // Armas de fuego (ver RANGED arriba para los parámetros de disparo)
   pistola_vibora: {
     name: 'Víbora VP-9', cat: 'arma', ranged: true, gunClass: 'pistola',
@@ -911,7 +943,7 @@ export const CONTAINER_DEFS = {
 export const LOOT = {
   nevera: [['agua', 24], ['refresco', 14], ['manzana', 12], ['lata_frijoles', 9], ['lata_atun', 7], ['venda', 4]],
   alacena: [['lata_frijoles', 20], ['lata_atun', 16], ['papas', 16], ['chocolate', 12], ['refresco', 8], ['agua', 6], ['botella_vacia', 7], ['alcohol_etilico', 4], ['semillas_tomate', 3], ['semillas_zanahoria', 3]],
-  armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3], ['linterna', 3], ['bateria', 4], ['tela', 12], ['cinta_adhesiva', 7], ['botella_vacia', 5], ['cuerda', 3]],
+  armario: [['playera', 12], ['jeans', 12], ['chaqueta', 10], ['cargo', 10], ['gorra', 10], ['pasamontanas', 7], ['lentes', 6], ['shorts', 6], ['venda', 5], ['mascara_gas', 3], ['funda_cadera', 4], ['funda_hombro', 2], ['bala_9mm', 3], ['linterna', 3], ['bateria', 4], ['tela', 12], ['cinta_adhesiva', 7], ['botella_vacia', 5], ['cuerda', 3], ['escoba', 9]],
   // v0.16: revólver tan común como la VP-9 (peso 4 = pistola); doble Yarará
   // más común que la corredera (3.2 > 2.2); Ñandú a la par de la Yarará.
   casillero: [['tubo', 10], ['bate', 7], ['hacha', 3], ['chaleco', 5], ['casco_obra', 7], ['casco_tactico', 3], ['venda', 8], ['botiquin', 4], ['antibioticos', 3], ['papas', 6], ['refresco', 6], ['agua', 6], ['chocolate', 5], ['mascara_gas', 2], ['pistola_vibora', 4], ['revolver_aspid', 4], ['escopeta_guardian', 2.2], ['escopeta_yarara', 3.2], ['rifle_nandu', 3.2], ['cargador_9mm', 5], ['cargador_556', 2.2], ['bala_9mm', 11], ['bala_357', 11], ['cartucho_12', 8], ['bala_556', 5], ['bala_308', 4], ['funda_cadera', 4], ['funda_hombro', 2.4], ['funda_tactica', 1.6], ['linterna', 3], ['bateria', 5], ['clavos', 14], ['tablas', 10], ['chatarra', 9], ['cinta_adhesiva', 8], ['tela', 7], ['alcohol_etilico', 4], ['botella_vacia', 5], ['cuerda', 3], ['queroseno', 2.5], ['bidon_gasolina', 2], ['bujias', 2], ['bateria_coche', 1.5], ['neumatico', 1.2], ['radiador', 1]],
@@ -941,6 +973,8 @@ export const LOOT = {
     // v0.25: la tienda tiene su rinconcito de jardinería (semillas raras:
     // lo abundante vive en el expositor de HOME & TOOLS)
     ['semillas_tomate', 6], ['semillas_zanahoria', 5], ['semillas_maiz', 4], ['semillas_calabaza', 3],
+    // v0.29: escobas de la sección de hogar
+    ['escoba', 4],
   ],
   // ---- v0.16: BASE MILITAR — el mejor botín del juego, más abundante que
   // la comisaría. El Subfusil Cuervo y el equipo militar viven SOLO aquí. ----
@@ -1001,6 +1035,7 @@ export const LOOT = {
     ['chatarra', 14], ['queroseno', 9], ['tela', 8], ['alcohol_etilico', 4],
     ['botella_vacia', 6], ['bateria', 5], ['linterna', 3],
     ['mazo', 5], ['hacha', 3], ['casco_obra', 6],
+    ['escoba', 7],
   ],
   expositor_jardin: [
     ['semillas_tomate', 24], ['semillas_zanahoria', 22], ['semillas_maiz', 18],
@@ -1020,7 +1055,7 @@ export const LOOT = {
     ['bidon_gasolina', 14], ['bujias', 18], ['bateria_coche', 12],
     ['neumatico', 14], ['radiador', 9], ['chatarra', 24],
     ['bateria', 8], ['cuerda', 8], ['cinta_adhesiva', 12],
-    ['casco_obra', 6], ['tubo', 5],
+    ['casco_obra', 6], ['tubo', 5], ['escoba', 3],
   ],
 };
 
