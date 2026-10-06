@@ -23,8 +23,14 @@ import { makeItem, setupLootItem } from '../systems/inventory.js';
 // retícula se re-centra simétricamente a su alrededor (calles de 4 cada 30,
 // márgenes de 10 a cada borde). A su paso por el centro, las dos manzanas que
 // la flanquean se convierten en las PLAZAS GEMELAS: al oeste la plaza de la
-// fuente (paseos, bancos, jardineras) y al este el parque (árboles, flores,
-// parterre) — el pueblo pequeño de verdad, con su calle mayor.
+// fuente (paseos y fuente de piedra) y al este el parque (árboles) — el
+// pueblo pequeño de verdad, con su calle mayor.
+// v0.30: EL DESPOJO — el usuario retiró lo ALEGRE (bancos, hidrantes,
+// jardineras, arbustos y flores): el generador v0.29 se ejecuta INTACTO
+// (misma secuencia de rng → mismos tiles/árboles/coches/contenedores, los
+// guardados v0.29 siguen siendo válidos) y las capas alegres se PODAN al
+// terminar (_despojarPueblo). En su lugar, ESCOMBROS: hierba, aceras y
+// plazas se leen en ruinas — el pueblo está muerto y se nota.
 export const AVENIDA = { x0: 146, x1: 153 };   // tiles (calzada completa)
 const V_ROADS = [[10, 13], [40, 43], [70, 73], [100, 103], [130, 133], [146, 153], [166, 169], [196, 199], [226, 229], [256, 259], [286, 289]]; // bandas verticales [ini, fin] inclusive (la central = AVENIDA, 8 de ancho)
 const H_ROADS = [[14, 17], [42, 45], [70, 73], [98, 101], [126, 129], [154, 157], [182, 185], [210, 213], [238, 241], [266, 269]];  // bandas horizontales
@@ -45,6 +51,14 @@ function shuffle(arr, rng) {
   }
   return arr;
 }
+
+// v0.30 — PROPS RETIRADOS del pueblo (banco, hidrante, jardinera, arbusto y
+// flores): se SIGUEN generando con el patrón exacto de la v0.29 (cada tirada
+// de rng mantiene la secuencia del generador alineada con los guardados
+// viejos) y se podan al terminar, en GameMap._despojarPueblo(). El render
+// ya no sabe dibujarlos: si un día vuelven, recuperar los casos de _drawProps
+// del historial de la v0.29.
+const PROPS_RETIRADOS = new Set(['banco', 'hidrante', 'jardinera', 'arbusto', 'flores']);
 
 // ================== v0.29: FACHADAS de colores ==================
 // El pueblo deja de ser un monocromo de adobe: cada CASA elige una fachada
@@ -104,8 +118,9 @@ export class GameMap {
     // el asfalto al mover la cámara.
     this.roadPaint = [];    // rects de pintura vial
     this.manholes = [];     // tapas de alcantarilla {x, y}
-    // v0.29: PROPS decorativos del pueblo (farolas, bancos, hidrantes,
-    // jardineras, arbustos, flores, papeles, señales, papeleras, fuentes).
+    // v0.29: PROPS decorativos del pueblo. v0.30: solo quedan LOS MÍNIMOS —
+    // farolas, señales, papeleras, papeles, fuentes y escombros (los alegres
+    // se generan igual y se PODAN en _despojarPueblo, ver cabecera).
     // NINGUNO colisiona (son decoración plana a nivel de suelo, como las
     // tapas de alcantarilla) salvo las FUENTES, cuya base sólida son tiles
     // T.CAR de 2×2 bajo el arte (ver _buildPlazas).
@@ -657,7 +672,9 @@ export class GameMap {
 
         // v0.29: PLAZAS GEMELAS — las dos manzanas que flanquean la avenida
         // en el centro NO llevan edificios: son el corazón del pueblo
-        // (fuente, paseos, bancos / parque, árboles, parterre).
+        // (fuente y paseos / parque y árboles). v0.30: bancos, jardineras,
+        // parterre y flores se generan igual (misma secuencia rng) pero se
+        // PODAN después — ver _despojarPueblo.
         const plaza = PLAZAS.find((p) => p.x0 === bx0 && p.y0 === by0);
         if (plaza) {
           this._buildPlaza(plaza);
@@ -879,6 +896,13 @@ export class GameMap {
     // para leer el estado FINAL de los tiles y no pisar a nadie ---
     this._buildProps();
 
+    // --- v0.30: EL DESPOJO — tras generar TODO igual que la v0.29 (misma
+    // secuencia de rng: los guardados y mundos v0.29 siguen siendo válidos),
+    // se retiran los props ALEGRES y se espolvorean ESCOMBROS: el pueblo se
+    // lee muerto. Solo toca this.props — jamás los tiles. ---
+    this._despojarPueblo();
+    this._buildDebris();
+
     // --- Pintura vial (tras coches/árboles para respetar sus tiles) ---
     this._buildRoadPaint();
 
@@ -912,10 +936,11 @@ export class GameMap {
    * v0.29 — LAS PLAZAS GEMELAS. La del OESTE (fuente): paseos en cruz de
    * acera, FUENTE de piedra en el centro (base sólida de 2×2 tiles T.CAR
    * bajo el arte: choca como un coche, da cobertura y no se puede atravesar),
-   * bancos mirándola, jardineras en los extremos, farolas en las esquinas,
-   * flores en los cuadrantes de hierba y árboles en el perímetro. La del
-   * ESTE (parque): pradera con parterre de flores central, bancos, árboles
-   * dispersos y arbustos — el pulmón verde del pueblo.
+   * farolas en las esquinas, papeleras junto a los paseos y árboles en el
+   * perímetro. La del ESTE (parque): pradera con árboles dispersos.
+   * v0.30: los props ALEGRES (bancos, jardineras, parterre, flores) se
+   * generan AQUÍ igual que en la v0.29 — cada tirada de rng cuenta para
+   * conservar la secuencia del generador — y se retiran en _despojarPueblo.
    */
   _buildPlaza(plaza) {
     const rng = this.rng;
@@ -1043,10 +1068,13 @@ export class GameMap {
    * v0.29 — PROPS del pueblo (llamado al FINAL de _generate, con los tiles
    * ya resueltos: solo LEE tiles y apila props — nunca toca el mapa).
    *  · FAROLAS flanqueando la avenida entera (sus dos aceras, cada 176 px,
-   *    saltando cruces) + bancos y papeleras de paseo.
+   *    saltando cruces) + papeleras de paseo.
    *  · SEÑALES de tráfico en cada cruce de la avenida.
-   *  · HIDRANTES en aceras, ARBUSTOS y FLORES en la hierba, PAPELES
-   *    arrastrados por el viento del apocalipsis.
+   *  · PAPELES arrastrados por el viento del apocalipsis.
+   * v0.30: hidrantes, arbustos, flores y bancos se siguen GENERANDO con el
+   * patrón exacto de la v0.29 (las tiradas de rng mantienen la secuencia del
+   * generador alineada con los guardados viejos) y se PODAN justo después
+   * en _despojarPueblo; en su lugar _buildDebris espolvorea ESCOMBROS.
    */
   _buildProps() {
     const rng = this.rng;
@@ -1119,10 +1147,50 @@ export class GameMap {
     }
   }
 
+  /** v0.30 — EL DESPOJO DEL PUEBLO. Retira de this.props (SOLO de la capa
+   *  decorativa: jamás toca tiles, árboles, coches ni contenedores) los
+   *  elementos ALEGRES que el usuario pidió eliminar para que el mundo se
+   *  sienta más apocalíptico y menos «alegre». La generación v0.29 se ha
+   *  ejecutado COMPLETA antes de llegar aquí — misma secuencia de tiradas
+   *  rng — así que el mundo subyacente es IDÉNTICO al de la v0.29 y los
+   *  guardados y mundos persistentes de esa versión siguen siendo válidos:
+   *  solo cambia la decoración. */
+  _despojarPueblo() {
+    this.props = this.props.filter((p) => !PROPS_RETIRADOS.has(p.k));
+  }
+
+  /** v0.30 — ESCOMBROS: los restos del colapso. Montones grises de piedra,
+   *  polvo y teja rota desparramados con parquimonia por hierba y aceras
+   *  (nada alegre) + algunos cascotes en las DOS plazas. Se generan TRAS el
+   *  despojo: sus tiradas de rng solo desplazan las tapas de alcantarilla
+   *  (decoración pura, nunca guardada), así que el mundo salvado no cambia. */
+  _buildDebris() {
+    const rng = this.rng;
+    let n = 0;
+    for (let i = 0; i < 800 && n < 92; i++) {
+      const tx = rng.int(1, MAP_W - 2), ty = rng.int(1, MAP_H - 2);
+      const t = this.tileAtIdx(tx, ty);
+      if (t !== T.GRASS && t !== T.SIDEWALK) continue;
+      this.props.push({ k: 'escombro', x: tx * TILE + rng.range(6, 26), y: ty * TILE + rng.range(6, 26), s: rng.range(0.7, 1.35) });
+      n++;
+    }
+    // las plazas también sufrieron: cascotes junto a la fuente y en el parque
+    const tc = (v) => v * TILE + TILE / 2;
+    const pl = PLAZAS[0], pk = PLAZAS[1];
+    this.props.push({ k: 'escombro', x: tc(pl.x0 + 3), y: tc(pl.y0 + 4), s: 1.2 });
+    this.props.push({ k: 'escombro', x: tc(pl.x1 - 2), y: tc(pl.y1 - 3), s: 1.1 });
+    this.props.push({ k: 'escombro', x: 139 * TILE + 58, y: 150 * TILE - 58, s: 0.9 });
+    this.props.push({ k: 'escombro', x: tc(pk.x0 + 2), y: tc(pk.y1 - 2), s: 1.25 });
+    this.props.push({ k: 'escombro', x: tc(pk.x1 - 1), y: tc(pk.y0 + 5), s: 1.0 });
+  }
+
   /**
    * v0.29 — dibuja los PROPS del pueblo (capa de suelo, bajo la niebla y
    * bajo coches/decals/contenedores). Recorte por cámara como el resto de
    * capas: los props viven en coordenadas de mundo.
+   * v0.30 — LOS MÍNIMOS: farolas, papeles, papeleras, señales, fuente y
+   * escombros. Los casos de banco/hidrante/jardinera/arbusto/flores se
+   * retiraron (esos props se podan en _despojarPueblo y jamás llegan aquí).
    */
   _drawProps(ctx, cam) {
     for (const pr of this.props) {
@@ -1145,78 +1213,27 @@ export class GameMap {
           ctx.fillRect(sx + 2, sy - 17.5, 6, 3.5);       // lámpara
           break;
         }
-        case 'banco': {
-          const w = 26, h = 9;
-          ctx.fillStyle = 'rgba(0,0,0,0.28)';
-          ctx.fillRect(sx - w / 2 + 2, sy - h / 2 + 3, w, h);
-          ctx.fillStyle = '#6e5233';                     // respaldo
-          ctx.fillRect(sx - w / 2, sy - h / 2 - 3, w, 4);
-          ctx.fillStyle = '#7d5e3c';                     // asiento
-          ctx.fillRect(sx - w / 2, sy - h / 2 + 1, w, 5);
-          ctx.fillStyle = 'rgba(0,0,0,0.25)';            // listones
-          for (let i = 1; i < 4; i++) ctx.fillRect(sx - w / 2 + i * (w / 4), sy - h / 2 + 1, 1.5, 5);
-          ctx.fillStyle = '#3a3430';                     // patas
-          ctx.fillRect(sx - w / 2 + 2, sy + h / 2 - 1, 3, 3);
-          ctx.fillRect(sx + w / 2 - 5, sy + h / 2 - 1, 3, 3);
-          break;
-        }
-        case 'hidrante': {
-          ctx.fillStyle = 'rgba(0,0,0,0.30)';
-          ctx.beginPath(); ctx.ellipse(sx + 1, sy + 3, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#a23a2c';
-          ctx.fillRect(sx - 3, sy - 5, 6, 8);            // cuerpo
-          ctx.beginPath(); ctx.arc(sx, sy - 5, 3, Math.PI, 0); ctx.fill();  // casquete
-          ctx.fillRect(sx - 5, sy - 1, 10, 2);           // lóbulos laterales
-          ctx.fillStyle = 'rgba(255,255,255,0.18)';
-          ctx.fillRect(sx - 2, sy - 4, 1.5, 5);
-          break;
-        }
-        case 'jardinera': {
-          const w = 22, h = 10;
-          ctx.fillStyle = 'rgba(0,0,0,0.26)';
-          ctx.fillRect(sx - w / 2 + 2, sy - h / 2 + 3, w, h);
-          ctx.fillStyle = '#767265';                     // murete de piedra
-          ctx.fillRect(sx - w / 2, sy - h / 2, w, h);
-          ctx.fillStyle = 'rgba(0,0,0,0.20)';
-          ctx.fillRect(sx - w / 2 + 1, sy + h / 2 - 2, w - 2, 2);
-          ctx.fillStyle = '#3d3327';                     // tierra
-          ctx.fillRect(sx - w / 2 + 2, sy - h / 2 + 2, w - 4, 3);
-          const cols = ['#c85a3a', '#d9a520', '#c97ab0', '#d9d0a0'];
-          for (let i = 0; i < 4; i++) {                  // florecitas
-            ctx.fillStyle = cols[i];
-            ctx.fillRect(sx - w / 2 + 3 + i * (w - 7) / 3, sy - h / 2 - 2, 2.5, 2.5);
-          }
-          ctx.fillStyle = '#5a7a3a';                     // verdín
-          ctx.fillRect(sx - w / 2 + 3, sy - h / 2 + 1, 3, 1.5);
-          ctx.fillRect(sx + w / 2 - 6, sy - h / 2 + 1, 3, 1.5);
-          break;
-        }
-        case 'arbusto': {
+        case 'escombro': {
+          // v0.30 — cascotes del colapso: piedra, polvo y UNA teja rota.
+          // Nada alegre: gris, polvo y rotos.
           const s = pr.s || 1;
-          ctx.fillStyle = 'rgba(0,0,0,0.22)';
-          ctx.beginPath(); ctx.ellipse(sx + 2, sy + 3 * s, 8 * s, 3.5 * s, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#41502f';
-          ctx.beginPath(); ctx.arc(sx - 3 * s, sy, 5.5 * s, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(sx + 3 * s, sy + 1 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#4d5c38';
-          ctx.beginPath(); ctx.arc(sx, sy - 2 * s, 4.5 * s, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = 'rgba(255,255,255,0.06)';
-          ctx.beginPath(); ctx.arc(sx - 1 * s, sy - 3 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
-          break;
-        }
-        case 'flores': {
-          const s = pr.s || 1;
-          const h = hash2(Math.floor(pr.x), Math.floor(pr.y));
-          const cols = h < 0.3 ? ['#c85a3a', '#d9773a'] : h < 0.55 ? ['#d9d0a0', '#c9b060'] :
-            h < 0.8 ? ['#c97ab0', '#b05a92'] : ['#d9a520', '#c98a10'];
-          for (let i = 0; i < 4; i++) {
-            const fx = sx + (i - 1.5) * 4.5 * s;
-            const fy = sy + (h * 7 + i * 2.3) % 5 - 2.5;
-            ctx.fillStyle = '#4d5c38';
-            ctx.fillRect(fx - 0.5, fy, 1, 3 * s);        // tallito
-            ctx.fillStyle = cols[i % 2];
-            ctx.fillRect(fx - 1.2, fy - 2.5 * s, 2.4, 2.4);
-          }
+          ctx.fillStyle = 'rgba(18,17,14,0.24)';                // polvo del montón
+          ctx.beginPath(); ctx.ellipse(sx + 2, sy + 2, 11 * s, 5 * s, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#4c4740';                            // piedra grande
+          ctx.save(); ctx.translate(sx - 3 * s, sy); ctx.rotate(0.35);
+          ctx.fillRect(-4 * s, -3 * s, 8 * s, 6 * s); ctx.restore();
+          ctx.fillStyle = '#57514a';                            // piedra media
+          ctx.save(); ctx.translate(sx + 4 * s, sy + 2 * s); ctx.rotate(-0.5);
+          ctx.fillRect(-3 * s, -2.5 * s, 6 * s, 5 * s); ctx.restore();
+          ctx.fillStyle = '#3b3733';                            // cascote pequeño
+          ctx.fillRect(sx - 1 * s, sy + 4 * s, 3.5 * s, 2.5 * s);
+          ctx.fillStyle = '#6b4a35';                            // teja rota (único color)
+          ctx.save(); ctx.translate(sx + 6 * s, sy - 3 * s); ctx.rotate(0.9);
+          ctx.fillRect(-2.5 * s, -2 * s, 5 * s, 4 * s); ctx.restore();
+          ctx.fillStyle = 'rgba(90,84,72,0.55)';                 // gravilla suelta
+          ctx.fillRect(sx - 8 * s, sy - 1 * s, 2, 2);
+          ctx.fillRect(sx + 1 * s, sy + 6 * s, 2, 2);
+          ctx.fillRect(sx + 9 * s, sy + 3 * s, 2, 2);
           break;
         }
         case 'papel': {

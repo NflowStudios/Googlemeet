@@ -23,6 +23,10 @@ export const WALL_T = 10;
 // El pueblo gana PROPS decorativos (bancos, hidrantes, jardineras, arbustos,
 // flores, papeleras, señales) y las casas estrenan FACHADAS de colores: el
 // mundo sigue muerto, pero ya no lo parece.
+// v0.30 — EL DESPOJO: adiós a lo alegre (bancos, hidrantes, jardineras,
+// arbustos y flores). Quedan SOLO los mínimos (farolas, señales, papeleras,
+// papeles, fuente) y unos ESCOMBROS: el pueblo debe sentirse apocalíptico,
+// no de postal. La geografía NO cambia (guardados v0.29 válidos).
 export const MAP_W = 300;   // tiles (v0.26: antes 184)
 export const MAP_H = 300;   // tiles (v0.26: antes 148)
 export const WORLD_W = MAP_W * TILE;
@@ -417,7 +421,7 @@ export const NET = {
   maxPlayers: 4,          // anfitrión + 3 invitados
   codeLen: 5,             // caracteres del código de sala
   codeChars: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789',   // sin I/L/O/0/1 (confusos)
-  peerPrefix: 'zc29-',    // id de PeerJS: «zc29-CODIGO» (versionado; v0.29: el mundo cambió con la avenida — un v0.28 jamás debe entrar)
+  peerPrefix: 'zc30-',    // id de PeerJS: «zc30-CODIGO» (versionado por higiene; v0.30: solo cambian decoraciones — el mundo es compatible, pero las salas se versionan para no mezclar clientes)
   snapHz: 15,             // instantáneas por segundo (anfitrión → clientes)
   stateHz: 15,            // estado del propio jugador (cliente → anfitrión)
   lerpK: 14,              // suavidad de interpolación (1-e^(-k·dt))
@@ -441,7 +445,7 @@ export const NET = {
   // ---- v0.28: SERVIDORES persistentes ----
   srvCodeLen: 6,           // caracteres del código de servidor (distinto de sala)
   srvPassLen: 4,           // dígitos de la contraseña del servidor
-  srvPeerPrefix: 'zc29s-', // id de PeerJS del mundo: «zc29s-CODIGO» (v0.29: geografía nueva)
+  srvPeerPrefix: 'zc30s-', // id de PeerJS del mundo: «zc30s-CODIGO» (v0.30: los mundos v0.29 siguen siendo válidos — tiles idénticos — pero el prefijo se versiona)
   srvSaveEvery: 60,        // s entre sincronizaciones del mundo (anfitrión → miembros)
   srvStateEvery: 20,       // s entre estados de jugador (miembro → anfitrión)
   srvSaveNote: 'El mundo se guarda en el navegador de CADA MIEMBRO: quien lo abra continúa desde la última sincronización.',
