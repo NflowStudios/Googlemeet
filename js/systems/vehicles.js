@@ -144,14 +144,57 @@ function stampCar(map, car) {
 
 // ================== Entrar / salir ==================
 
-/** Entra al coche y arranca (si puede). true si ok. */
-export function enterCar(game, car, silent = false, who = null) {
+/** v0.28: ¿`p` es el CONDUCTOR de su coche? (occupants[0]). */
+export function isDriver(p) {
+  return !!(p && p.inCar && p.inCar.occupants && p.inCar.occupants[0] === p);
+}
+
+/** v0.28: plazas libres del coche (model.seats: conductor + pasajeros). */
+export function carFreeSeats(car) {
+  if (!car) return 0;
+  const md = VEHICULOS.models[car.model];
+  const occ = (car.occupants || []).filter(Boolean);
+  return Math.max(0, (md.seats || 1) - occ.length);
+}
+
+/**
+ * Entra al coche: como CONDUCTOR (arranca si puede) o, si ya alguien
+ * conduce, como PASAJERO en un asiento libre (v0.28). true si ok.
+ */
+export function enterCar(game, car, silent = false, who = null, asPassenger = false) {
   const p = who || game.player;   // v0.27: `who` permite entrar a un JUGADOR REMOTO (multijugador)
   if (!p || p.inCar || (p.z || 0) !== 0 || p.climb) return false;
+  if (!car.occupants) car.occupants = [];
+  else car.occupants = car.occupants.filter(Boolean);   // sanea huecos vacíos
+  const md = VEHICULOS.models[car.model];
+  const seats = md.seats || 1;
+
+  // ---- PASAJERO: sube a un asiento libre sin tocar el motor ----
+  if (asPassenger || car.occupants.length > 0) {
+    if (car.occupants.length >= seats) {
+      if (!silent && !asPassenger) game.toasts.push('El ' + car.brand + ' ' + car.name + ' va COMPLETO (' + seats + ' plazas)', 'warn');
+      return false;
+    }
+    car.occupants.push(p);
+    p.inCar = car;
+    p.sneak = false;
+    if (!silent) {
+      game.audio.door();
+      game.noise.emit(car.x, car.y, 55, 'puerta');
+      const driver = car.occupants[0];
+      game.toasts.push('De PASAJERO del ' + car.brand + ' ' + car.name +
+        (driver && driver.mpName ? ' — conduce ' + driver.mpName : '') +
+        ' · [E] para bajarte', 'info');
+    }
+    return true;
+  }
+
+  // ---- CONDUCTOR: el coche pasa a cuerpo dinámico ----
   unstampCar(game.map, car);
   car.driven = true;
   car.speed = 0;
   car.running = false;
+  car.occupants.push(p);
   p.inCar = car;
   p.sneak = false;
   if (!silent) {
@@ -161,8 +204,9 @@ export function enterCar(game, car, silent = false, who = null) {
     } else {
       car.running = true;
       game.audio.engineStart();
-      game.noise.emit(car.x, car.y, VEHICULOS.models[car.model].noise * VEHICULOS.startNoiseMul, 'motor');
+      game.noise.emit(car.x, car.y, md.noise * VEHICULOS.startNoiseMul, 'motor');
       game.toasts.push('Al volante del ' + car.brand + ' ' + car.name +
+        (seats > 1 ? ' (' + seats + ' plazas — tus compañeros pueden SUBIR contigo)' : '') +
         (carSmoking(car) ? ' — el motor ECHA HUMO' : ''), 'info');
     }
     game.toasts.push('W/S acelera y frena · A/D gira · L faros · [E] bajarse', 'info');
@@ -172,16 +216,22 @@ export function enterCar(game, car, silent = false, who = null) {
   return true;
 }
 
-/** Se baja del coche (lo aparca donde esté y suena la puerta). */
+/**
+ * Se baja del coche (solo SU asiento). Si salía el CONDUCTOR:
+ *  · quedan pasajeros → el coche se DETIENE y el siguiente TOMA EL VOLANTE
+ *    (en su máquina: con W vuelve a arrancar);
+ *  · no queda nadie → se aparca donde esté (tiles estampados).
+ * Si salía un pasajero, el coche sigue como esté.
+ */
 export function exitCar(game, silent = false, who = null) {
   const p = who || game.player;   // v0.27: `who` permite bajarse un JUGADOR REMOTO (multijugador)
   const car = p && p.inCar;
   if (!car) return false;
-  car.speed = 0;
-  car.running = false;
-  game.audio.setEngine(null);
-  stampCar(game.map, car);
-  car.driven = false;
+  const wasDriver = !!(car.occupants && car.occupants[0] === p);
+  if (car.occupants) {
+    const i = car.occupants.indexOf(p);
+    if (i >= 0) car.occupants.splice(i, 1);
+  }
   // el jugador aparece al lado (lado izquierdo primero, luego derecho)
   const perp = car.dir + Math.PI / 2;
   const off = (car.horiz === false ? car.w : car.h) / 2 + p.r + 6;
@@ -196,6 +246,32 @@ export function exitCar(game, silent = false, who = null) {
   }
   p.x = px2; p.y = py2;
   p.inCar = null;
+
+  if (car.occupants && car.occupants.length > 0) {
+    if (wasDriver) {
+      // el coche se detiene en seco… y el siguiente pasajero HEREDA el volante
+      car.speed = 0;
+      car.running = false;
+      game.audio.setEngine(null);
+      const heir = car.occupants[0];
+      if (heir === game.player) {
+        game.toasts.push('¡TOMAS EL VOLANTE! W para arrancar de nuevo · [E] bajarte', 'info');
+      }
+    }
+    if (!silent) {
+      game.audio.door();
+      game.noise.emit(car.x, car.y, 70, 'puerta');
+      game.toasts.push(wasDriver ? 'Bajado del coche — queda en mano de la tripulación' : 'Bajado del coche');
+    }
+    return true;
+  }
+
+  // no queda nadie: el coche queda aparcado donde esté
+  car.speed = 0;
+  car.running = false;
+  game.audio.setEngine(null);
+  stampCar(game.map, car);
+  car.driven = false;
   if (!silent) {
     game.audio.door();
     game.noise.emit(car.x, car.y, 70, 'puerta');
@@ -508,11 +584,16 @@ export function headlightRangeMul(game) {
 
 // ================== Bajarse a la fuerza (muerte / menú) ==================
 
-/** Saca al jugador del coche sin ruido (menú, muerte, guardado a medias). */
+/** Saca al jugador del coche sin ruido (menú, muerte, guardado a medias).
+ *  v0.28: si llevaba PASAJEROS remotos también se les baja (la sesión
+ *  se acaba: nadie se queda durmiendo al volante). */
 export function forceExit(game) {
   const p = game.player;
   if (!p || !p.inCar) return;
+  const car = p.inCar;
+  const rest = (car.occupants || []).filter((o) => o && o !== p);
   exitCar(game, true);
+  for (const o of rest) exitCar(game, true, o);
 }
 
 // ================== Dibujo ==================
@@ -570,14 +651,22 @@ export function drawVehicles(ctx, cam, game) {
   game.map._drawCarArt(ctx, -car.w / 2, -car.h / 2, car);
   ctx.restore();
 
-  // conductor asomando (cabeza + manos al volante)
-  ctx.fillStyle = '#c9a27a';
-  ctx.beginPath();
-  ctx.arc(sx + Math.cos(car.dir) * 4, sy + Math.sin(car.dir) * 4, 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  // v0.28: tripulación asomando — el conductor al volante y los PASAJEROS
+  // detrás (cabecitas con el color de camiseta de cada uno en multijugador)
+  const crew = (car.occupants || []).filter(Boolean);
+  for (let ci = 0; ci < crew.length; ci++) {
+    const o = crew[ci];
+    const back = ci * 9;                       // cada pasajero, un poco más atrás
+    const hx = sx - Math.cos(car.dir) * back;
+    const hy = sy - Math.sin(car.dir) * back;
+    ctx.fillStyle = ci === 0 ? '#c9a27a' : (o.mpColor || '#b9a68a');
+    ctx.beginPath();
+    ctx.arc(hx + Math.cos(car.dir) * 4, hy + Math.sin(car.dir) * 4, ci === 0 ? 5 : 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
   // velocímetro sutil junto al coche cuando corre
   if (Math.abs(car.speed) > 30) {
@@ -650,6 +739,7 @@ export function applyVehicles(game, data, get) {
     } else {
       stampCar(game.map, car);
     }
+    car.occupants = [];   // v0.28: la tripulación se repone al restaurar (servers.js)
   }
 }
 

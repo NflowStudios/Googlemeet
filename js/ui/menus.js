@@ -22,6 +22,10 @@ import { fmtTime } from '../utils.js';
 import { listSlots, clearSave, SAVE_SLOTS, getRecords } from '../systems/save.js';
 import { PROFESSIONS, PROF_BY_ID, NET } from '../config.js';
 import { NetSession, normCode } from '../systems/net.js';
+import {
+  createServer, joinServerEntry, getServer, listServers, forgetServer,
+  loadSnapshot, normServerCode, serverSummary,
+} from '../systems/servers.js';
 
 const DEATH_TEXT = {
   zombi: 'Los zombis te destrozaron en la calle.',
@@ -40,6 +44,17 @@ function fmtDist(px) {
   return m >= 1000
     ? (m / 1000).toFixed(1).replace('.', ',') + ' km'
     : Math.round(m) + ' m';
+}
+
+/** v0.28: «hace 5 min / 3 h / 2 días» — antigüedad de la última
+ *  sincronización de un mundo de servidor (lista MIS MUNDOS). */
+function fmtAgo(ts) {
+  if (!ts) return '';
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 90) return 'hace un momento';
+  if (s < 3600) return 'hace ' + Math.round(s / 60) + ' min';
+  if (s < 86400) return 'hace ' + Math.round(s / 3600) + ' h';
+  return 'hace ' + Math.round(s / 86400) + (s < 172800 ? ' día' : ' días');
 }
 
 export class Menus {
@@ -110,6 +125,9 @@ export class Menus {
     if (codeIn) {
       codeIn.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') this._mpJoin();
+        // v0.28: ESC cierra aunque el foco esté DENTRO del campo (antes el
+        // stopPropagation se lo quedaba y el menú no se cerraba)
+        else if (e.key === 'Escape') { e.preventDefault(); this._mpEscape(); }
         e.stopPropagation();
       });
       codeIn.addEventListener('input', () => {
@@ -118,11 +136,70 @@ export class Menus {
     }
     const nameIn = document.getElementById('mp-name');
     if (nameIn) {
-      nameIn.addEventListener('keydown', (e) => e.stopPropagation());
+      nameIn.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); this._mpEscape(); }
+        e.stopPropagation();
+      });
       nameIn.addEventListener('input', () => {
         nameIn.value = nameIn.value.toUpperCase().slice(0, 12);
       });
     }
+    // ---- v0.28: SERVIDORES persistentes ----
+    on('btn-mp-tab-salas', () => this._mpTab('salas'));
+    on('btn-mp-tab-srv', () => this._mpTab('srv'));
+    on('btn-srv-create', () => this._srvCreate());
+    on('btn-srv-join', () => this._srvJoin());
+    on('btn-srv-refresh', () => this._srvRenderList());
+    const srvCodeIn = document.getElementById('srv-code');
+    if (srvCodeIn) {
+      srvCodeIn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this._srvJoin();
+        else if (e.key === 'Escape') { e.preventDefault(); this._mpEscape(); }
+        e.stopPropagation();
+      });
+      srvCodeIn.addEventListener('input', () => {
+        srvCodeIn.value = srvCodeIn.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, NET.srvCodeLen);
+      });
+    }
+    const srvPassIn = document.getElementById('srv-pass');
+    if (srvPassIn) {
+      srvPassIn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this._srvJoin();
+        else if (e.key === 'Escape') { e.preventDefault(); this._mpEscape(); }
+        e.stopPropagation();
+      });
+      srvPassIn.addEventListener('input', () => {
+        srvPassIn.value = srvPassIn.value.replace(/[^0-9]/g, '').slice(0, NET.srvPassLen);
+      });
+    }
+    const srvNameIn = document.getElementById('srv-newname');
+    if (srvNameIn) {
+      srvNameIn.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); this._mpEscape(); }
+        e.stopPropagation();
+      });
+    }
+  }
+
+  /** v0.28: ESC en los paneles de multijugador — un único camino para
+   *  todo: aviso → lobby (sale de la sala) → panel → menú principal. */
+  _mpEscape() {
+    const noteEl = document.getElementById('mp-notice');
+    if (noteEl && !noteEl.classList.contains('hidden')) {
+      noteEl.classList.add('hidden');
+      this.showMenu();
+      return;
+    }
+    if (this.profOpen) { this.hideProfSelect(); return; }   // vuelve al lobby
+    if (this.mpLobbyEl && !this.mpLobbyEl.classList.contains('hidden')) {
+      this._mpLeave();
+      return;
+    }
+    if (this.mpEl && !this.mpEl.classList.contains('hidden')) {
+      this.showMenu();
+      return;
+    }
+    this.showMenu();
   }
 
   /** Panel de entrada del multijugador (nombre, crear sala, unirse). */
@@ -135,11 +212,27 @@ export class Menus {
       }
       const hint = document.getElementById('mp-hint');
       if (hint) {
-        hint.textContent = 'El anfitrión crea la sala y comparte su CÓDIGO — hasta ' +
-          NET.maxPlayers + ' sobrevivientes. Conexión directa entre navegadores (P2P).';
+        hint.textContent = 'SALA: el anfitrión crea y comparte su CÓDIGO — hasta ' +
+          NET.maxPlayers + ' sobrevivientes, conexión DIRECTA entre navegadores (P2P). SERVIDOR: un MUNDO con contraseña que NO se apaga cuando su creador se va.';
       }
       this.mpEl.classList.remove('hidden');
+      this._mpTab('salas');
+      this._srvRenderList();
     }
+  }
+
+  /** v0.28: pestaña del panel MP: 'salas' (efímeras) | 'srv' (mundos). */
+  _mpTab(which) {
+    const tabSalas = document.getElementById('btn-mp-tab-salas');
+    const tabSrv = document.getElementById('btn-mp-tab-srv');
+    const boxSalas = document.getElementById('mp-tab-salas');
+    const boxSrv = document.getElementById('mp-tab-srv');
+    const isSrv = which === 'srv';
+    if (tabSalas) tabSalas.classList.toggle('sel', !isSrv);
+    if (tabSrv) tabSrv.classList.toggle('sel', isSrv);
+    if (boxSalas) boxSalas.classList.toggle('hidden', isSrv);
+    if (boxSrv) boxSrv.classList.toggle('hidden', !isSrv);
+    if (isSrv) this._srvRenderList();
   }
 
   /** Anfitrión: crea la sala (peer con id «zc27-CÓDIGO»). */
@@ -191,6 +284,143 @@ export class Menus {
     });
   }
 
+  /** v0.28: SERVIDOR — CREA un mundo nuevo: código de 6 + contraseña de
+   *  4 dígitos (que se muestran GRANDE para compartirlas) y directo al
+   *  lobby como anfitrión del mundo. */
+  _srvCreate() {
+    const g = this.game;
+    if (g.net) return;
+    const nameIn = document.getElementById('srv-newname');
+    const worldName = (nameIn && nameIn.value.trim()) || 'MUNDO ' + Math.floor(Math.random() * 900 + 100);
+    const entry = createServer(worldName);
+    const hint = document.getElementById('srv-hint');
+    if (hint) {
+      hint.innerHTML = 'MUNDO CREADO — CÓDIGO: <b>' + entry.code + '</b> · CONTRASEÑA: <b>' +
+        entry.pass + '</b> — compártelas con hasta 3 personas. Abriendo el mundo…';
+    }
+    this._srvOpen(entry);
+  }
+
+  /** v0.28: SERVIDOR — ABRE un mundo de MIS MUNDOS (te conviertes en su
+   *  anfitrión de sesión: el mundo se restaura desde la última copia
+   *  sincronizada de ESTE navegador). */
+  _srvOpen(entry) {
+    const g = this.game;
+    if (g.net) return;
+    const hint = document.getElementById('srv-hint');
+    const btn = document.getElementById('btn-srv-create');
+    const name = (document.getElementById('mp-name') || {}).value || 'ANFITRIÓN';
+    const snapshot = loadSnapshot(entry.code);
+    g.net = new NetSession(g, 'host', 'server');
+    g.net.onLobby = () => this._mpRenderLobby();
+    g.net.hostServerOpen(entry, snapshot, name).then(() => {
+      this._mpShowLobby(true);
+      if (hint) {
+        hint.innerHTML = 'MUNDO <b>' + entry.code + '</b> ABIERTO — contraseña: <b>' + entry.pass +
+          '</b>' + (snapshot ? ' · restaurado de tu última sincronización' : ' · mundo nuevo');
+      }
+    }).catch((err) => {
+      g.net = null;
+      if (btn) { btn.disabled = false; btn.textContent = 'CREAR MUNDO'; }
+      if (hint) hint.textContent = '✗ ' + (err && err.message ? err.message : 'Error de red');
+    });
+  }
+
+  /** v0.28: SERVIDOR — ENTRA a un mundo abierto por otro miembro (con
+   *  código + contraseña). Guarda tu identidad de miembro al entrar. */
+  _srvJoin() {
+    const g = this.game;
+    if (g.net) return;
+    const code = normServerCode((document.getElementById('srv-code') || {}).value || '');
+    const pass = (document.getElementById('srv-pass') || {}).value || '';
+    const hint = document.getElementById('srv-hint');
+    if (!code || String(pass).length !== NET.srvPassLen) {
+      if (hint) hint.textContent = '✗ El mundo pide CÓDIGO de ' + NET.srvCodeLen +
+        ' caracteres y CONTRASEÑA de ' + NET.srvPassLen + ' dígitos';
+      return;
+    }
+    const btn = document.getElementById('btn-srv-join');
+    if (btn) { btn.disabled = true; btn.textContent = 'CONECTANDO…'; }
+    if (hint) hint.textContent = 'Buscando el mundo ' + code + '…';
+    const name = (document.getElementById('mp-name') || {}).value || 'SOBREVIVIENTE';
+    const entry = joinServerEntry(code, pass);
+    g.net = new NetSession(g, 'client', 'server');
+    g.net.onLocalStart = (init) => g.mpStartClient(init);
+    g.net.onWelcome = () => this._mpShowLobby(false);
+    g.net.onLobby = () => this._mpRenderLobby();
+    g.net.onDenied = (err) => {
+      if (hint) hint.textContent = '✗ ' + err;
+      if (btn) { btn.disabled = false; btn.textContent = 'ENTRAR AL MUNDO'; }
+      g.net.leave(false);
+      g.net = null;
+    };
+    g.net.onSessionEnd = () => {
+      if (hint) hint.textContent = '✗ El mundo se cerró antes de entrar — si tienes una copia, puedes ABRIRLO tú';
+      if (btn) { btn.disabled = false; btn.textContent = 'ENTRAR AL MUNDO'; }
+    };
+    g.net.joinServer(code, pass, entry.memberId, name).catch((err) => {
+      g.net = null;
+      if (btn) { btn.disabled = false; btn.textContent = 'ENTRAR AL MUNDO'; }
+      if (hint) hint.textContent = '✗ ' + (err && err.message ? err.message : 'Error de red');
+    });
+  }
+
+  /** v0.28: lista de MIS MUNDOS (abrir / entrar / olvidar). */
+  _srvRenderList() {
+    const listEl = document.getElementById('srv-list');
+    if (!listEl) return;
+    const entries = listServers();
+    if (!entries.length) {
+      listEl.innerHTML = '<p class="srv-empty">Aún no tienes mundos — CREA uno o entra con el código y la contraseña de un amigo.</p>';
+      return;
+    }
+    let html = '';
+    for (const e of entries) {
+      const s = serverSummary(e);
+      const when = s.lastSync ? 'sincronizado ' + fmtAgo(s.lastSync) : 'sin sincronizar aún';
+      html += '<div class="srv-row" data-code="' + e.code + '">' +
+        '<div class="srv-main">' +
+          '<span class="srv-name">' + e.name + ' · ' + e.code + '</span>' +
+          '<span class="srv-sum">' + (s.hasSnapshot ? 'DÍA ' + s.day + ' · ' + s.members +
+            ' miembro' + (s.members === 1 ? '' : 'S') + ' · ' + when : 'mundo aún sin abrir') + '</span>' +
+        '</div>' +
+        '<div class="srv-actions">' +
+          '<button class="slot-btn play" data-open="' + e.code + '">ABRIR</button>' +
+          (getServer(e.code) ? '<button class="slot-btn del" data-forget="' + e.code + '">OLVIDAR</button>' : '') +
+        '</div>' +
+      '</div>';
+    }
+    listEl.innerHTML = html;
+    for (const b of listEl.querySelectorAll('[data-open]')) {
+      b.addEventListener('click', () => {
+        const entry = getServer(b.dataset.open);
+        if (entry) this._srvOpen(entry);
+      });
+    }
+    for (const b of listEl.querySelectorAll('[data-forget]')) {
+      b.addEventListener('click', () => this._srvForget(b));
+    }
+  }
+
+  /** Olvidar un mundo (confirmación en dos pasos como las ranuras). */
+  _srvForget(btn) {
+    if (!btn.classList.contains('armed')) {
+      this._disarmSrvForget();
+      btn.classList.add('armed');
+      btn.textContent = '¿SEGURO?';
+      this._srvForgetT = setTimeout(() => this._disarmSrvForget(), 4000);
+      return;
+    }
+    forgetServer(btn.dataset.forget);
+    this._disarmSrvForget();
+    this._srvRenderList();
+  }
+  _disarmSrvForget() {
+    if (this._srvForgetT) { clearTimeout(this._srvForgetT); this._srvForgetT = 0; }
+    const el = document.querySelector('#srv-list [data-forget].armed');
+    if (el) { el.classList.remove('armed'); el.textContent = 'OLVIDAR'; }
+  }
+
   /** Lobby de la sala: código grande + plantel + botones por rol. */
   _mpShowLobby(isHost) {
     if (this.mpEl) this.mpEl.classList.add('hidden');
@@ -198,12 +428,20 @@ export class Menus {
     this.mpLobbyEl.classList.remove('hidden');
     this.mpLobbyEl.dataset.host = isHost ? '1' : '0';
     const codeEl = document.getElementById('mplobby-code');
-    if (codeEl && this.game.net) codeEl.textContent = 'SALA ' + this.game.net.code;
+    if (codeEl && this.game.net) {
+      codeEl.textContent = (this.game.net.mode === 'server' ? 'MUNDO ' : 'SALA ') + this.game.net.code;
+    }
     const sub = document.getElementById('mplobby-sub');
     if (sub) {
-      sub.textContent = isHost
-        ? 'Comparte este código — entran hasta ' + (NET.maxPlayers - 1) + ' supervivientes más'
-        : 'Esperando a que el ANFITRIÓN arranque la partida…';
+      const n = this.game.net;
+      sub.textContent = n && n.mode === 'server'
+        ? (isHost
+            ? 'Comparte CÓDIGO + CONTRASEÑA · hasta ' + (NET.maxPlayers - 1) +
+              ' miembros más · el mundo SIGUE sin ti: cualquiera puede abrirlo'
+            : 'Esperando a que el ANFITRIÓN arranque el mundo…')
+        : (isHost
+            ? 'Comparte este código — entran hasta ' + (NET.maxPlayers - 1) + ' supervivientes más'
+            : 'Esperando a que el ANFITRIÓN arranque la partida…');
     }
     this._mpRenderLobby();
   }
@@ -247,14 +485,16 @@ export class Menus {
     }
   }
 
-  /** El anfitrión suelta el botón de EMPEZAR: arranca la partida co-op. */
+  /** El anfitrión suelta el botón de EMPEZAR: arranca la partida co-op
+   *  (v0.28: en SERVIDOR, la apertura restaurable del mundo). */
   _mpHostStart() {
     const g = this.game;
     if (!g.net || !g.net.isHost) return;
-    const me = g.net.roster.find((r) => r.id === 'H');
+    const me = g.net.roster.find((r) => r.id === g.net.myId);
     if (!me || !me.prof) return;
     this.hideAll();
-    g.mpHostRun();
+    if (g.net.mode === 'server') g.mpServerRun();
+    else g.mpHostRun();
   }
 
   /** Sale del lobby (cierra su sala o se desconecta de la ajena). */
@@ -480,6 +720,12 @@ export class Menus {
   }
 
   showMenu() {
+    // v0.28 (bug v0.27): al VOLVER al menú se recogen TODOS los paneles de
+    //  multijugador — antes quedaban encendidos ENCIMA del menú y parecía
+    //  que ESC «no cerraba» el panel (reportado por el usuario)
+    if (this.mpEl) this.mpEl.classList.add('hidden');
+    if (this.mpLobbyEl) this.mpLobbyEl.classList.add('hidden');
+    this.hideProfSelect();
     this.renderSlots();
     this.renderRecords();
     this.menuEl.classList.remove('hidden');

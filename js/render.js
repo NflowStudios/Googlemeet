@@ -12,6 +12,39 @@ import {
 } from './systems/crafting.js';
 import { drawVehicles } from './systems/vehicles.js';
 
+/** v0.28: un jugador CAÍDO (inconsciente, reanimable) — se dibuja
+ *  TUMBADO con un anillo rojo pulsante, la cruz de vida y la cuenta
+ *  atrás de la ventana de reanimación. */
+function drawDownedPlayer(ctx, cam, p, secs) {
+  const s = cam.worldToScreen(p.x, p.y);
+  // cuerpo tumbado (rotado sobre su posición, con leve respiración)
+  const t = performance.now() / 1000;
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(Math.PI / 2 + Math.sin(t * 1.4) * 0.03);
+  ctx.translate(-s.x, -s.y);
+  ctx.globalAlpha = 0.92;
+  try { p.draw(ctx, cam); } catch (e) {}
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  // anillo pulsante
+  const pulse = 0.5 + 0.5 * Math.sin(t * 6);
+  ctx.strokeStyle = 'rgba(230,72,60,' + (0.3 + 0.45 * pulse).toFixed(3) + ')';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, 15 + 5 * pulse, 0, Math.PI * 2);
+  ctx.stroke();
+  // cruz de vida + cuenta atrás
+  ctx.fillStyle = 'rgba(230,72,60,0.95)';
+  ctx.fillRect(s.x - 1.5, s.y - 30, 3, 10);
+  ctx.fillRect(s.x - 5.5, s.y - 26.5, 11, 3);
+  ctx.font = 'bold 13px Rajdhani, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#e8c35a';
+  ctx.fillText((Math.max(0, secs)) + ' s', s.x, s.y - 38);
+}
+
 export function renderGame(ctx, game) {
   const cam = game.cam;
   const w = cam.w, h = cam.h;
@@ -66,8 +99,15 @@ export function renderGame(ctx, game) {
 
   // jugador (v0.26: DENTRO del coche no se dibuja — va dentro de la
   // carrocería que pinta drawVehicles con el conductor asomando)
-  // v0.27: caído en multijugador tampoco (su cadáver ya está en el suelo)
-  if (game.player && !game.player.inCar && !game.player.mpDead) game.player.draw(ctx, cam);
+  // v0.27: muerto en multijugador tampoco (su cadáver ya está en el suelo)
+  // v0.28: el CAÍDO se dibuja TUMBADO en el suelo (aún reanimable)
+  if (game.player && !game.player.inCar && !game.player.mpDead) {
+    if (game.player.mpDown) {
+      drawDownedPlayer(ctx, cam, game.player, Math.ceil(game.player.mpDownT));
+    } else {
+      game.player.draw(ctx, cam);
+    }
+  }
 
   // v0.27: COMPAÑEROS de sala — se dibujan como el jugador (marionetas
   // interpoladas) con su camiseta de color, nombre y barra de vida
@@ -75,7 +115,12 @@ export function renderGame(ctx, game) {
     for (const r of game.net.remotes.values()) {
       const p = r.p;
       if (!p || p.mpDead) continue;   // su cadáver lo estampa el evento 'pdead'
-      if (!p.inCar) p.draw(ctx, cam);
+      if (p.mpDown) {
+        // v0.28: caído y reanimable — tumbado con su cuenta atrás
+        drawDownedPlayer(ctx, cam, p, Math.ceil(p.mpDownT));
+      } else if (!p.inCar) {
+        p.draw(ctx, cam);
+      }
       const s = cam.worldToScreen(p.x, p.y);
       if (s.x < -60 || s.y < -60 || s.x > cam.w + 60 || s.y > cam.h + 60) continue;
       // nombre y vida sobre la cabeza
@@ -87,12 +132,19 @@ export function renderGame(ctx, game) {
       ctx.fillRect(s.x - nw / 2, s.y - 30, nw, 13);
       ctx.fillStyle = r.color;
       ctx.fillText(r.name, s.x, s.y - 23.5);
-      // barra de vida (roja al hundirse)
-      const hp = Math.max(0, Math.min(100, r.hp));
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(s.x - 16, s.y - 17, 32, 4);
-      ctx.fillStyle = hp > 50 ? '#5fae5f' : hp > 25 ? '#d0a03a' : '#c94a3a';
-      ctx.fillRect(s.x - 16, s.y - 17, 32 * (hp / 100), 4);
+      if (p.mpDown) {
+        // en vez de barra de vida: REANIMABLE con sus segundos
+        ctx.fillStyle = '#e8c35a';
+        ctx.font = 'bold 10px Rajdhani, sans-serif';
+        ctx.fillText('CAÍDO · REVÍVELE', s.x, s.y - 15);
+      } else {
+        // barra de vida (roja al hundirse)
+        const hp = Math.max(0, Math.min(100, r.hp));
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(s.x - 16, s.y - 17, 32, 4);
+        ctx.fillStyle = hp > 50 ? '#5fae5f' : hp > 25 ? '#d0a03a' : '#c94a3a';
+        ctx.fillRect(s.x - 16, s.y - 17, 32 * (hp / 100), 4);
+      }
     }
     // banner de ESPECTADOR mientras sigues a un compañero
     if (game.player.mpDead) {
@@ -102,6 +154,34 @@ export function renderGame(ctx, game) {
       ctx.fillRect(cam.w / 2 - 130, 10, 260, 26);
       ctx.fillStyle = '#e8c35a';
       ctx.fillText('HAS CAÍDO · ESPECTANDO — [E] cambiar', cam.w / 2, 23);
+    } else if (game.player.mpDown) {
+      // v0.28: banner del caído — la ventana de reanimación en pantalla
+      const secs = Math.max(0, Math.ceil(game.player.mpDownT));
+      ctx.font = 'bold 15px Rajdhani, sans-serif';
+      ctx.textAlign = 'center';
+      const txt = 'ESTÁS CAÍDO — REANÍVAME (' + secs + ' s)';
+      const tw = ctx.measureText(txt).width + 30;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(cam.w / 2 - tw / 2, 8, tw, 28);
+      ctx.fillStyle = '#e06a5a';
+      ctx.fillText(txt, cam.w / 2, 22);
+      ctx.font = 'bold 12px Rajdhani, sans-serif';
+      ctx.fillStyle = '#d8dbd0';
+      ctx.fillText('un compañero con [E] junto a ti puede reanimarte (2 vendas o 1 botiquín)', cam.w / 2, 44);
+    }
+    // v0.28: CUERPOS saqueables — marca tenue punteada (para volver por el equipo)
+    const _pz2 = game.player.climb ? game.player.climb.to : (game.player.z || 0);
+    for (const b of game.mpBodies || []) {
+      if ((b.z || 0) !== _pz2) continue;
+      const s = cam.worldToScreen(b.x, b.y);
+      if (s.x < -30 || s.y < -30 || s.x > cam.w + 30 || s.y > cam.h + 30) continue;
+      ctx.strokeStyle = (b.color || '#c8cbc0') + 'aa';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 11, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
   }
 

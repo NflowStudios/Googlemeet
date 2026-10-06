@@ -168,6 +168,21 @@ export function countItem(inv, id) {
   return n;
 }
 
+/** v0.28: consume `n` unidades de un id de objeto (REVIVIR consume vendas
+ *  o botiquín). Devuelve las unidades retiradas de verdad (≤ n). */
+export function takeItems(inv, id, n) {
+  let left = n;
+  for (let i = 0; i < inv.slots.length && left > 0; i++) {
+    const s = inv.slots[i];
+    if (!s || s.id !== id) continue;
+    const take = Math.min(left, s.count);
+    s.count -= take;
+    left -= take;
+    if (s.count <= 0) inv.slots[i] = null;
+  }
+  return n - left;
+}
+
 /** Etiqueta legible de un objeto (con estado de descomposición y munición). */
 export function itemLabel(item) {
   const d = item.def;

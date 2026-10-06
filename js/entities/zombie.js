@@ -672,6 +672,7 @@ export function zombieToData(z) {
   return {
     va: z.variant, x: +z.x.toFixed(1), y: +z.y.toFixed(1), hp: z.hp,
     zz: z.z || 0,                       // v0.16: planta (guardianes del sótano)
+    n: z.nid || undefined,              // v0.28: id de red (snapshots de SERVIDOR)
     st: z.state, tm: +z.timer.toFixed(2),
     dx: +z.dirX.toFixed(2), dy: +z.dirY.toFixed(2),
     tx: +z.targetX.toFixed(1), ty: +z.targetY.toFixed(1),
@@ -688,6 +689,7 @@ export function zombieFromData(d) {
   z.x = d.x; z.y = d.y;
   z.hp = d.hp;
   z.z = d.zz || 0;                // v0.16: planta (guardianes del sótano)
+  z.nid = d.n || undefined;        // v0.28: id de red (snapshots de SERVIDOR)
   z.state = d.st || ST.IDLE;
   z.timer = d.tm ?? 1;
   z.dirX = d.dx || 0; z.dirY = d.dy || 0;

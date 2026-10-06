@@ -29,8 +29,13 @@
   <!-- v0.27: lista de jugadores de la sala (TAB mantenido en multijugador) -->
   <div id="mp-list" class="hidden"></div>
 
-  <!-- v0.27: lista de jugadores de la sala (TAB mantenido en multijugador) -->
-  <div id="mp-list" class="hidden"></div>
+  <!-- v0.28: CHAT de sala — registro de líneas (abajo-izquierda) y el
+       campo que despliega [T] mientras el mundo SIGUE corriendo -->
+  <div id="mp-chat" class="hidden"></div>
+  <form id="mp-chat-form" class="hidden" autocomplete="off">
+    <span class="chat-tag">[T]</span>
+    <input id="mp-chat-input" type="text" maxlength="90" placeholder="escribe y pulsa ENTER — ESC cierra sin enviar" autocomplete="off">
+  </form>
 
   <div id="hud-left">
     <div class="statbar" data-bar="health"><div class="fill"></div><span class="bl">VIDA</span><span class="bv">100</span></div>
@@ -94,7 +99,7 @@
     <div class="hb-slot" data-hb="4"><span class="hb-key">5</span><span class="hb-tag">OBJETO</span><div class="hb-item"></div></div>
   </div>
 
-  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar/rotar · 1-5 barra rápida · L linterna · E interactuar · Q inspeccionar coche · TAB inventario/crafteo · P pausa · M audio · CLIC DER. colocar construcción</div>
+  <div id="controls-hint">WASD mover · SHIFT correr · C sigilo · CLIC / F atacar · R recargar/rotar · 1-5 barra rápida · L linterna · E interactuar · Q inspeccionar coche · TAB inventario/crafteo · T chat de sala · P pausa · M audio · CLIC DER. colocar construcción</div>
   <div id="toasts"></div>
 </div>
 
@@ -181,7 +186,7 @@
 <div id="menu">
   <div class="menu-inner">
     <h1>ZONA<em>CERO</em></h1>
-    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.27</span></p>
+    <p class="tagline">SOBREVIVE · CADA RUIDO CUENTA · <span>prototipo v0.28</span></p>
     <div class="menu-controls">
       <div><kbd>W A S D</kbd><span>Moverse</span></div>
       <div><kbd>SHIFT</kbd><span>Correr (gasta energía, hace ruido)</span></div>
@@ -212,7 +217,7 @@
       <button id="btn-mp" class="btn-mp">MULTIJUGADOR</button>
       <button id="btn-encyc" class="btn-ency">ENCICLOPEDIA</button>
     </div>
-    <p class="menu-tip">Consejo: LLEGÓ EL MULTIJUGADOR — desde el menú, pulsa MULTIJUGADOR: CREA UNA SALA y comparte su CÓDIGO de 5 caracteres (o únete con el del anfitrión) para sobrevivir HASTA 4 en la misma ciudad, por conexión DIRECTA entre navegadores (P2P): tu personaje responde EN LOCAL (cero retardo) y ves a los compañeros con su NOMBRE y color de camiseta (TAB mantenido muestra la sala: latencia y vida de cada uno). El ANFITRIÓN simula el mundo — zombis, clima y hora — y responde el botín de los contenedores (se pide al abrir: nada de duplicar entre jugadores); las PUERTAS, el botín ya sacado, las CONSTRUCCIONES (barricadas, trampas, huertos) y los COCHES se comparten, y quien conduce manda sobre su coche. EL RUIDO DE UNO ATRAE PARA TODOS: los zombis oyen a toda la sala — y el GRITADOR chillando por la pistola de tu amigo te trae la horda a TI. Si caes, ESPECTAS a los compañeros ([E] cambia) y la partida sigue; la sala vive mientras el anfitrión siga conectado y el multijugador NO SE GUARDA. LLEGARON LOS COCHES — acércate a cualquiera del mapa y púlsalo: [E] para ENTRAR (W/S acelera y frena · A/D gira · L enciende los FAROS de noche · [E] de nuevo para bajarte) y [Q] para INSPECCIONARLO: piezas montadas y faltantes, GASOLINA, motor y odómetro. La mayoría de coches nacen cojos (BATERÍA, BUJÍAS, NEUMÁTICOS o RADIADOR): instala lo que encuentres en las GASOLINERAS (hay TRES: al norte, al sur y al este del mapa, con surtidores de gasolina y taller de piezas) o craftea las piezas con chatarra siendo MECÁNICO. Cuatro modelos con su genio: el sedán AURORA CIERZO 400 (ligero, rápido en pavimento, el que menos bebe), la pickup YAGUARETE SIERRA 4x4 (cajuela grande), el SUV BÓER MERIDIANO (pesado y bebedor) y la furgoneta CARABELA MULA 3000 (ALMACÉN con ruedas… lentísima, torpe y que se oye desde LEJOS: cada motor suena distinto). CUIDADO con los CHOQUES frontales: el motor recibe el golpe, el coche se PARA… y si queda tocado, ECHA HUMO (el MECÁNICO lo remienda con 4 de chatarra). Con velocidad ATROPELLAS a los zombis — una horda entera puede frenarte en seco. El mapa se ha triplicado (300×300): la ciudad entera para conducir. NUEVO EN EL REFUGIO: el BARRIL DE LLUVIA (3 tablas + 4 clavos + 1 tela, en CONSTRUCCIONES) se LLENA SOLO cada vez que llueve: [E] para BEBER o para LLENAR botellas vacías — el agua a largo plazo junto al huerto de la AGRICULTURA. Consigue SEMILLAS (el expositor de jardinería de HOME & TOOLS, la FERRETERÍA) y PLÁNTALAS sobre césped o acera: crecen SOLO CON LOS DÍAS y maduras se cosechan con [E]; con la FOGATA (2 tablas + 1 tela) las asas al doble de alimento. El GRANJERO madura antes y cosecha doble; el MAZO PESADO (contundente, DEMUELE construcciones) solo vive en HOME & TOOLS. NUEVA PROFESIÓN: MECÁNICO — craftea PIEZAS DE COCHE con chatarra y remienda motores. Al crear la partida eliges QUIÉN ERAS (policía, médico, ladrón, carpintero, granjero, mecánico o desempleado) y su bono pasivo te acompaña TODA la partida: el policía pega un 5% más con las armas de fuego, el médico cura un 5% más, el ladrón pisa a la mitad de ruido y el carpintero repara con la mitad de materiales. TRES PARTIDAS A LA VEZ (ENTER continúa la más reciente). LLEGÓ EL CRAFTEO — con tela y alcohol haces VENDAS; junto a una MESA DE TRABAJO, el bate con clavos o la lanza; barricadas para sellar puertas, tablones para tapiar ventanas, trampas, cajas, la CAMA (REFUGIO + dormir) y las REPARAN con [E]. El FUEGO es una ALARMA — LLAMAS SE VEN de lejos y atraen a los zombis. Cuidado con el GRITADOR: al verte CHILLA y convoca a toda la zona. La BASE MILITAR guarda el mejor botín (subfusil Cuervo) y el HOSPITAL SAN RAFAEL, en APAGÓN, sus exclusivos. De noche, LINTERNA y pilas (tecla L). La LLUVIA enmascara tu ruido (y llena los barriles); la NEBLINA reduce la visibilidad a la mitad. Cuidado con los CORREDORES y los BRUTOS (la comisaría, la tienda y la ferretería guardan los suyos). Consulta la ENCICLOPEDIA del menú o de la pausa: mecánicas, profesiones, combate, crafteos y objetos, con los datos reales del juego.</p>
+    <p class="menu-tip">Consejo: MUNDOS QUE NO SE APAGAN — en MULTIJUGADOR, pestaña SERVIDORES: CREA UN MUNDO y recibe CÓDIGO de 6 + CONTRASEÑA de 4 dígitos para compartirlas con hasta 3 personas (4 sobrevivientes). No hace falta que su creador esté conectado: cualquier MIEMBRO puede ABRIRLO desde MIS MUNDOS y el progreso de TODOS (mochilas, posiciones, el mundo entero) viaja y se guarda en el navegador de cada uno — sales y el mundo SIGUE. También hay SALAS co-op con código de 5 (viven mientras su anfitrión siga conectado y no se guardan). REANIMA A TUS COMPAÑEROS: al caer quedan inconscientes 30 segundos — acércate y pulsa [E] con 2 VENDAS o 1 BOTIQUÍN y vuelven con media vida y TODO su equipo; si nadie llega a tiempo, su CUERPO queda registrado para lootearlo. COCHES COMPARTIDOS: cada coche tiene 3-4 plazas — entra de PASAJERO con [E] mientras otro conduce (y si el conductor se baja, TOMAS EL VOLANTE). CHAT DE SALA: pulsa [T] en plena partida (ENTER envía, ESC cierra) — el mundo no se detiene mientras escribes. Tu personaje responde EN LOCAL (cero retardo) y el ANFITRIÓN simula el mundo — zombis, clima y hora — y responde el botín (se pide al abrir: nada de duplicar); las PUERTAS, el botín ya sacado, las CONSTRUCCIONES y los COCHES se comparten, y quien conduce manda sobre su coche. EL RUIDO DE UNO ATRAE PARA TODOS: los zombis oyen a toda la sala — y el GRITADOR chillando por la pistola de tu amigo te trae la horda a TI. LLEGARON LOS COCHES — acércate a cualquiera del mapa y púlsalo: [E] para ENTRAR (W/S acelera y frena · A/D gira · L enciende los FAROS de noche · [E] de nuevo para bajarte) y [Q] para INSPECCIONARLO: piezas montadas y faltantes, GASOLINA, motor y odómetro. La mayoría de coches nacen cojos (BATERÍA, BUJÍAS, NEUMÁTICOS o RADIADOR): instala lo que encuentres en las GASOLINERAS (hay TRES: al norte, al sur y al este del mapa, con surtidores de gasolina y taller de piezas) o craftea las piezas con chatarra siendo MECÁNICO. Cuatro modelos con su genio: el sedán AURORA CIERZO 400 (ligero, rápido en pavimento, el que menos bebe), la pickup YAGUARETE SIERRA 4x4 (cajuela grande), el SUV BÓER MERIDIANO (pesado y bebedor) y la furgoneta CARABELA MULA 3000 (ALMACÉN con ruedas… lentísima, torpe y que se oye desde LEJOS: cada motor suena distinto). CUIDADO con los CHOQUES frontales: el motor recibe el golpe, el coche se PARA… y si queda tocado, ECHA HUMO (el MECÁNICO lo remienda con 4 de chatarra). Con velocidad ATROPELLAS a los zombis — una horda entera puede frenarte en seco. El mapa se ha triplicado (300×300): la ciudad entera para conducir. NUEVO EN EL REFUGIO: el BARRIL DE LLUVIA (3 tablas + 4 clavos + 1 tela, en CONSTRUCCIONES) se LLENA SOLO cada vez que llueve: [E] para BEBER o para LLENAR botellas vacías — el agua a largo plazo junto al huerto de la AGRICULTURA. Consigue SEMILLAS (el expositor de jardinería de HOME & TOOLS, la FERRETERÍA) y PLÁNTALAS sobre césped o acera: crecen SOLO CON LOS DÍAS y maduras se cosechan con [E]; con la FOGATA (2 tablas + 1 tela) las asas al doble de alimento. El GRANJERO madura antes y cosecha doble; el MAZO PESADO (contundente, DEMUELE construcciones) solo vive en HOME & TOOLS. NUEVA PROFESIÓN: MECÁNICO — craftea PIEZAS DE COCHE con chatarra y remienda motores. Al crear la partida eliges QUIÉN ERAS (policía, médico, ladrón, carpintero, granjero, mecánico o desempleado) y su bono pasivo te acompaña TODA la partida: el policía pega un 5% más con las armas de fuego, el médico cura un 5% más, el ladrón pisa a la mitad de ruido y el carpintero repara con la mitad de materiales. TRES PARTIDAS A LA VEZ (ENTER continúa la más reciente). LLEGÓ EL CRAFTEO — con tela y alcohol haces VENDAS; junto a una MESA DE TRABAJO, el bate con clavos o la lanza; barricadas para sellar puertas, tablones para tapiar ventanas, trampas, cajas, la CAMA (REFUGIO + dormir) y las REPARAN con [E]. El FUEGO es una ALARMA — LLAMAS SE VEN de lejos y atraen a los zombis. Cuidado con el GRITADOR: al verte CHILLA y convoca a toda la zona. La BASE MILITAR guarda el mejor botín (subfusil Cuervo) y el HOSPITAL SAN RAFAEL, en APAGÓN, sus exclusivos. De noche, LINTERNA y pilas (tecla L). La LLUVIA enmascara tu ruido (y llena los barriles); la NEBLINA reduce la visibilidad a la mitad. Cuidado con los CORREDORES y los BRUTOS (la comisaría, la tienda y la ferretería guardan los suyos). Consulta la ENCICLOPEDIA del menú o de la pausa: mecánicas, profesiones, combate, crafteos y objetos, con los datos reales del juego.</p>
   </div>
 </div>
 
@@ -224,7 +229,7 @@
     <header>
       <div class="mp-head-txt">
         <h2>MULTIJUGADOR</h2>
-        <span>cooperación P2P · salas con código · hasta 4 sobrevivientes</span>
+        <span>cooperación P2P · salas y MUNDOS persistentes · hasta 4 sobrevivientes</span>
       </div>
       <button id="btn-mp-back">VOLVER (ESC)</button>
     </header>
@@ -233,16 +238,42 @@
         <span>TU NOMBRE</span>
         <input id="mp-name" type="text" maxlength="12" placeholder="SOBREVIVIENTE" autocomplete="off">
       </label>
-      <div class="mp-actions-row">
-        <button id="btn-mp-create" class="mp-big">CREAR SALA</button>
-        <div class="mp-join">
-          <input id="mp-code" type="text" maxlength="5" placeholder="CÓDIGO" autocomplete="off">
-          <button id="btn-mp-join">UNIRSE CON CÓDIGO</button>
+      <!-- v0.28: pestañas SALAS (efímeras) / SERVIDORES (mundos persistentes) -->
+      <div class="mp-tabs">
+        <button id="btn-mp-tab-salas" class="sel">SALAS</button>
+        <button id="btn-mp-tab-srv">SERVIDORES</button>
+      </div>
+      <div id="mp-tab-salas">
+        <div class="mp-actions-row">
+          <button id="btn-mp-create" class="mp-big">CREAR SALA</button>
+          <div class="mp-join">
+            <input id="mp-code" type="text" maxlength="5" placeholder="CÓDIGO" autocomplete="off">
+            <button id="btn-mp-join">UNIRSE CON CÓDIGO</button>
+          </div>
+        </div>
+      </div>
+      <div id="mp-tab-srv" class="hidden">
+        <div class="mp-actions-row">
+          <button id="btn-srv-create" class="mp-big">CREAR MUNDO</button>
+          <input id="srv-newname" type="text" maxlength="18" placeholder="NOMBRE DEL MUNDO (opcional)" autocomplete="off">
+        </div>
+        <div class="mp-actions-row srv-join">
+          <input id="srv-code" type="text" maxlength="6" placeholder="CÓDIGO" autocomplete="off">
+          <input id="srv-pass" type="text" maxlength="4" placeholder="CLAVE" autocomplete="off" inputmode="numeric">
+          <button id="btn-srv-join">ENTRAR AL MUNDO</button>
+        </div>
+        <div class="srv-mine">
+          <div class="srv-mine-head">
+            <span>MIS MUNDOS — cada navegador guarda su copia</span>
+            <button id="btn-srv-refresh" title="Actualizar la lista">↻</button>
+          </div>
+          <div id="srv-list"></div>
         </div>
       </div>
     </div>
-    <p id="mp-hint">El anfitrión crea la sala y comparte su CÓDIGO de 5 caracteres — hasta 4 sobrevivientes en la misma ciudad. Conexión directa entre navegadores (P2P): tu personaje responde EN LOCAL, sin retardo.</p>
-    <p class="mp-note">El anfitrión simula el mundo (zombis, clima, hora) · la sala vive mientras él siga conectado · el multijugador no se guarda</p>
+    <p id="srv-hint" class="srv-hint"></p>
+    <p id="mp-hint">SALA: el anfitrión crea y comparte su CÓDIGO — hasta 4 sobrevivientes, conexión DIRECTA entre navegadores (P2P). SERVIDOR: un MUNDO con contraseña que NO se apaga cuando su creador se va.</p>
+    <p class="mp-note">Las salas viven mientras su anfitrión siga conectado · los SERVIDORES guardan el progreso de TODOS en cada navegador miembro · el multijugador de SALA no se guarda</p>
   </div>
 </div>
 

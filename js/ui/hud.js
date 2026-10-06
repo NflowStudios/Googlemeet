@@ -68,24 +68,31 @@ export class HUD {
     if (on) this._renderMpList(this.game, true);
   }
 
-  /** v0.27: pinta la lista de jugadores (nombre, color, vida, ping). */
+  /** v0.27: pinta la lista de jugadores (nombre, color, vida, ping).
+   *  v0.28: los CAÍDOS muestran su cuenta atrás de reanimación. */
   _renderMpList(g, force) {
     if (!this.mpList || !g || !g.net) return;
     const rows = g.net.hudRows();
-    const sig = rows.map((r) => r.name + r.hp + (r.dead ? 1 : 0) + (r.rtt || 0)).join('|');
+    const sig = rows.map((r) => r.name + r.hp + (r.dead ? 1 : 0) + (r.down || 0) + (r.rtt || 0)).join('|');
     if (!force && sig === this._mpSig) return;
     this._mpSig = sig;
-    let html = '<h3>SALA ' + g.net.code + ' · ' + rows.length + '/' + 4 + '</h3>';
+    let html = '<h3>' + (g.net.mode === 'server' ? 'MUNDO ' : 'SALA ') + g.net.code + ' · ' + rows.length + '/' + 4 + '</h3>';
     for (const r of rows) {
-      html += '<div class="mp-row' + (r.dead ? ' dead' : '') + (r.me ? ' me' : '') + '">' +
+      const state = r.dead
+        ? 'CAÍDO'
+        : r.down
+          ? 'CAÍDO · ' + r.down + ' s (reanimable)'
+          : r.hp + '%';
+      html += '<div class="mp-row' + (r.dead ? ' dead' : '') + (r.down ? ' down' : '') + (r.me ? ' me' : '') + '">' +
         '<span class="mp-dot" style="background:' + r.color + '"></span>' +
         '<span class="mp-name">' + r.name + (r.host ? ' <i>(anfitrión)</i>' : '') +
           (r.me ? ' <i>(tú)</i>' : '') + '</span>' +
-        '<span class="mp-hp">' + (r.dead ? 'CAÍDO' : r.hp + '%') + '</span>' +
+        '<span class="mp-hp">' + state + '</span>' +
         '<span class="mp-rtt">' + (r.rtt ? r.rtt + ' ms' : '—') + '</span>' +
         '</div>';
     }
-    html += '<p class="mp-note">TAB mantenido · la sala vive mientras el anfitrión siga conectado</p>';
+    html += '<p class="mp-note">TAB mantenido · [T] chat' +
+      (g.net.mode === 'server' ? ' · el mundo se guarda en cada navegador' : ' · la sala vive mientras el anfitrión siga conectado') + '</p>';
     this.mpList.innerHTML = html;
   }
 

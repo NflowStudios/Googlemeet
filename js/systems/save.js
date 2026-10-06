@@ -110,8 +110,11 @@ migrateLegacySave();
  * Registro de instancias → datos planos con ids para conservar la
  * IDENTIDAD de las referencias (mochila ↔ equipo ↔ barra rápida ↔ cargador
  * insertado en un arma). Cada instancia se guarda UNA sola vez.
+ * v0.28: se EXPORTA — servers.js lo usa para serializar a CADA jugador de
+ * un mundo persistente con su propio registro (identidad de referencias
+ * incluida: barra rápida ↔ mochila).
  */
-function makeRegistry() {
+export function makeRegistry() {
   const items = [];            // [{ id, iid, c, r, ro, tb, mg }]
   const ids = new Map();       // instancia → id
   const reg = (it) => {
@@ -132,8 +135,9 @@ function makeRegistry() {
   return { items, reg };
 }
 
-/** Crea las instancias a partir del registro y reconecta los cargadores. */
-function buildItems(data) {
+/** Crea las instancias a partir del registro y reconecta los cargadores.
+ *  v0.28: se EXPORTA para servers.js (restaurar jugadores de un mundo). */
+export function buildItems(data) {
   const byId = new Map();
   for (const o of data.items) {
     if (!o || !ITEMS[o.iid]) continue;
@@ -233,6 +237,15 @@ export function buildSaveData(game) {
   // semilla y encima se aplican estas diferencias (como puertas y decals)
   const veh = vehiclesToData(game, reg);
 
+  // v0.28: CADÁVERES SAQUEABLES de multijugador (cuerpos de jugadores
+  // caídos con su equipo encima) — vacío en solitario (no hay cuerpos)
+  const bodies = (game.mpBodies || []).map((b) => ({
+    n: b.nid, nm: b.name, cl: b.color || null,
+    x: +b.x.toFixed(1), y: +b.y.toFixed(1), z: b.z || 0,
+    s: b.searched ? 1 : 0,
+    it: (b.items || []).map((it) => reg(it)),
+  }));
+
   // v0.23: estadísticas del obituario (disparos, molotovs, crafteos,
   // construcciones y odómetro)
   const st = game.stats || {};
@@ -256,7 +269,7 @@ export function buildSaveData(game) {
     wx: game.weather ? game.weather.toData() : null,   // v0.15: clima
     player, surv,
     zombies: game.zombies.map(zombieToData),
-    containers, ground, cons, doors, veh,
+    containers, ground, cons, doors, veh, bodies,
     decals: game.map.decalOps.slice(-500),
     items,
   };
@@ -297,6 +310,112 @@ export function itemFromData(d) {
   if (!d || !Array.isArray(d.items)) return null;
   const byId = buildItems(d);
   return byId.get(d.root) || null;
+}
+
+// ================== v0.28: serialización de UN jugador (servidores) ==================
+
+/**
+ * Un jugador COMPLETO → datos planos autocontenidos con su propio registro
+ * de objetos (identidad mochila ↔ equipo ↔ barra rápida preservada).
+ * Para los estados de los MIEMBROS de un SERVIDOR persistente: cada
+ * máquina serializa a su jugador y el anfitrión lo cose al snapshot del
+ * mundo. `extra` viaja tal cual (name, prof, color, kills, dead…).
+ */
+export function serializePlayerData(p, surv, extra = {}, carIdx = null) {
+  const { items, reg } = makeRegistry();
+  const player = {
+    x: +p.x.toFixed(1), y: +p.y.toFixed(1),
+    a: +p.angle.toFixed(3),
+    sk: p.sneak ? 1 : 0,
+    fl: p.flashOn ? 1 : 0,
+    pf: p.prof || null,
+    pc: p.inCar ? carIdx : null,   // coche ocupado (índice en map.cars; lo pasa el llamador)
+    z: p.z || 0,
+    zc: p.climb ? p.climb.to : null,
+    slots: p.inventory.slots.map((s) => reg(s)),
+    eq: {
+      cabeza: reg(p.equipment.cabeza),
+      accesorios: reg(p.equipment.accesorios),
+      accesorios2: reg(p.equipment.accesorios2),
+      accesorios3: reg(p.equipment.accesorios3),
+      torso: reg(p.equipment.torso),
+      pantalones: reg(p.equipment.pantalones),
+      arma: reg(p.equipment.arma),
+    },
+    hb: p.hotbar.map((h) => reg(h)),
+  };
+  const s = surv || { health: 100, stamina: 100, hunger: 100, thirst: 100 };
+  const survS = {
+    hp: +s.health.toFixed(1), st: +s.stamina.toFixed(1),
+    hu: +s.hunger.toFixed(1), th: +s.thirst.toFixed(1),
+    inf: s.infected ? 1 : 0, in: +(s.infection || 0).toFixed(1),
+    irm: +(s.infectionRateMult || 1).toFixed(2),
+    tox: +(s.intoxicated || 0).toFixed(1),
+    adr: +(s.adrenaline || 0).toFixed(1),
+    mor: +(s.morphine || 0).toFixed(1),
+    heal: (s.healEffects || []).map((e) => ({ am: e.amount, du: e.dur, re: +e.remaining.toFixed(1) })),
+  };
+  return { ...extra, p: player, surv: survS, items };
+}
+
+/**
+ * Reconstruye {p, surv} a partir de un bloque de serializePlayerData.
+ * Devuelve null si el bloque está roto. No toca el mundo: eso es cosa
+ * del llamador (restoreServerGame).
+ */
+export function restorePlayerData(game, d) {
+  try {
+    if (!d || !d.p || !Array.isArray(d.items)) return null;
+    const byId = buildItems(d);
+    const pd = d.p;
+    const p = new Player(pd.x, pd.y);
+    p.angle = pd.a || 0;
+    p.sneak = !!pd.sk;
+    p.prof = (pd.pf && PROF_BY_ID[pd.pf]) ? pd.pf : null;
+    p.z = pd.z || 0;
+    p.climb = null;
+    if (pd.zc !== null && pd.zc !== undefined) p.z = pd.zc;
+    p.reloading = null;
+    p.recoil = 0;
+    p.swingT = 0; p.cooldown = 0; p.hurtFlash = 0;
+    const get = (id) => (id ? byId.get(id) : null) || null;
+    p.inventory = new Inventory(BASE_SLOTS);
+    p.inventory.slots = (pd.slots || []).map(get);
+    p.inventory.capacity = Math.max(BASE_SLOTS, p.inventory.slots.length);
+    p.equipment = {
+      cabeza: get(pd.eq.cabeza),
+      accesorios: get(pd.eq.accesorios),
+      accesorios2: get(pd.eq.accesorios2),
+      accesorios3: get(pd.eq.accesorios3),
+      torso: get(pd.eq.torso),
+      pantalones: get(pd.eq.pantalones),
+      arma: get(pd.eq.arma),
+    };
+    p.hotbar = (pd.hb || []).slice(0, HOTBAR_N).map(get);
+    while (p.hotbar.length < HOTBAR_N) p.hotbar.push(null);
+    p.flashOn = !!pd.fl && !!flashlightItem(p);
+
+    const sd = d.surv || {};
+    const surv = new Survival();
+    surv.health = sd.hp ?? 100;
+    surv.stamina = sd.st ?? 100;
+    surv.hunger = sd.hu ?? 100;
+    surv.thirst = sd.th ?? 100;
+    surv.infected = !!sd.inf;
+    surv.infection = sd.in || 0;
+    surv.infectionRateMult = sd.irm || 1;
+    surv.intoxicated = sd.tox || 0;
+    surv.adrenaline = sd.adr || 0;
+    surv.morphine = sd.mor || 0;
+    surv.healEffects = (sd.heal || []).map((e) => ({
+      amount: e.am, dur: e.du, remaining: e.re,
+    }));
+    surv.deathCause = null;
+    return { p, surv };
+  } catch (e) {
+    console.warn('restorePlayerData:', e);
+    return null;
+  }
 }
 
 // ================== Cargar ==================

@@ -341,25 +341,25 @@ export const VEHICULOS = {
       brand: 'Aurora', name: 'Cierzo 400', type: 'Sedán',
       w: 58, h: 26, top: 310, accel: 185, turn: 2.6,
       fuelCap: 35, fuelRate: 0.32, noise: 240, storage: 6, offroad: 0.42,
-      crashMul: 1, mass: 1, colors: ['#7a3030', '#3a4a5a', '#6a6a3a', '#42548a', '#8a8f96'],
+      crashMul: 1, mass: 1, seats: 4, colors: ['#7a3030', '#3a4a5a', '#6a6a3a', '#42548a', '#8a8f96'],
     },
     pickup: {
       brand: 'Yaguareté', name: 'Sierra 4x4', type: 'Camioneta',
       w: 62, h: 28, top: 265, accel: 130, turn: 2.2,
       fuelCap: 50, fuelRate: 0.5, noise: 300, storage: 10, offroad: 0.75,
-      crashMul: 0.8, mass: 1.3, colors: ['#54423a', '#3a5a44', '#8a6a3a', '#4a4a52', '#6a3a2a'],
+      crashMul: 0.8, mass: 1.3, seats: 3, colors: ['#54423a', '#3a5a44', '#8a6a3a', '#4a4a52', '#6a3a2a'],
     },
     suv: {
       brand: 'Bóer', name: 'Meridiano', type: 'SUV',
       w: 60, h: 30, top: 285, accel: 120, turn: 2.0,
       fuelCap: 55, fuelRate: 0.62, noise: 330, storage: 8, offroad: 0.8,
-      crashMul: 0.7, mass: 1.5, colors: ['#2e3428', '#39422f', '#4a3a2a', '#26292e', '#5a4632'],
+      crashMul: 0.7, mass: 1.5, seats: 4, colors: ['#2e3428', '#39422f', '#4a3a2a', '#26292e', '#5a4632'],
     },
     van: {
       brand: 'Carabela', name: 'Mula 3000', type: 'Furgoneta',
       w: 66, h: 32, top: 235, accel: 70, turn: 1.45,
       fuelCap: 60, fuelRate: 0.66, noise: 430, storage: 16, offroad: 0.6,
-      crashMul: 0.6, mass: 1.8, colors: ['#c8c8c0', '#8a98a8', '#b0a078', '#8a8f96', '#6a7a6a'],
+      crashMul: 0.6, mass: 1.8, seats: 4, colors: ['#c8c8c0', '#8a98a8', '#b0a078', '#8a8f96', '#6a7a6a'],
     },
   },
   // reparto de modelos entre los coches generados (pesos)
@@ -396,7 +396,7 @@ export const NET = {
   maxPlayers: 4,          // anfitrión + 3 invitados
   codeLen: 5,             // caracteres del código de sala
   codeChars: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789',   // sin I/L/O/0/1 (confusos)
-  peerPrefix: 'zc27-',    // id de PeerJS: «zc27-CODIGO» (versionado)
+  peerPrefix: 'zc28-',    // id de PeerJS: «zc28-CODIGO» (versionado)
   snapHz: 15,             // instantáneas por segundo (anfitrión → clientes)
   stateHz: 15,            // estado del propio jugador (cliente → anfitrión)
   lerpK: 14,              // suavidad de interpolación (1-e^(-k·dt))
@@ -404,7 +404,26 @@ export const NET = {
   joinTimeout: 12,        // s para encontrar la sala antes de rendirse
   pingEvery: 2,           // s entre medidas de latencia (ping/pong por ctl)
   colors: ['#e5484d', '#e0b34d', '#4db8e0', '#b48ce0'],   // camiseta por jugador
-  mpSaveNote: 'El multijugador no se guarda: la sala vive mientras el ANFITRIÓN siga conectado.',
+  mpSaveNote: 'Las SALAS no se guarda: viven mientras el ANFITRIÓN siga conectado. Para progreso que permanece, crea un SERVIDOR.',
+
+  // ---- v0.28: REVIVIR ----
+  reviveWindow: 30,        // s de ventana para reanimar a un compañero caído
+  reviveR: 52,             // px de radio para reanimar al caído
+  reviveHp: 50,            // % de vida con el que despierta el reanimado
+  reviveNeedVendas: 2,     // coste A: 2 vendas
+  reviveNeedBotiquin: 1,   // coste B: 1 botiquín
+
+  // ---- v0.28: CHAT de sala ----
+  chatMaxLen: 90,          // caracteres por mensaje
+  chatHistory: 40,         // líneas conservadas en el registro
+
+  // ---- v0.28: SERVIDORES persistentes ----
+  srvCodeLen: 6,           // caracteres del código de servidor (distinto de sala)
+  srvPassLen: 4,           // dígitos de la contraseña del servidor
+  srvPeerPrefix: 'zc28s-', // id de PeerJS del mundo: «zc28s-CODIGO»
+  srvSaveEvery: 60,        // s entre sincronizaciones del mundo (anfitrión → miembros)
+  srvStateEvery: 20,       // s entre estados de jugador (miembro → anfitrión)
+  srvSaveNote: 'El mundo se guarda en el navegador de CADA MIEMBRO: quien lo abra continúa desde la última sincronización.',
 };
 
 // ---------- Supervivencia ----------

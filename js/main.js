@@ -30,10 +30,13 @@ import {
 import { addConstruction, removeConstruction } from './systems/crafting.js';
 import {
   enterCar, exitCar, updateVehicle, updateVehicleFX, drawVehicles,
-  openInspect, closeInspect, forceExit, carLabel,
+  openInspect, closeInspect, forceExit, carLabel, isDriver, carFreeSeats,
 } from './systems/vehicles.js';
-import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, latestSlot, updateRecords, AUTOSAVE_SEC, itemToData, itemFromData } from './systems/save.js';
+import { saveGame, loadSaveData, hasSave, clearSave, restoreGame, latestSlot, updateRecords, AUTOSAVE_SEC, itemToData, itemFromData, serializePlayerData } from './systems/save.js';
 import { NetSession, wrapNoiseForNet, isAuthority } from './systems/net.js';
+import { restoreServerGame, buildServerSave, storeSnapshot } from './systems/servers.js';
+import { countItem, takeItems } from './systems/inventory.js';
+import { ChatUI } from './ui/chat.js';
 import { Player } from './entities/player.js';
 import { Zombie, spawnZombies } from './entities/zombie.js';
 import { HUD } from './ui/hud.js';
@@ -69,6 +72,10 @@ export class Game {
     this._spectate = null;       // jugador seguido tras caer (espectador)
     this._mpPaused = false;      // pausa co-op: overlay SIN congelar el mundo
     this._mpConsT = 0;           // sincronización periódica de construcciones
+    // v0.28: chat de sala + cadáveres saqueables de la sesión
+    this.chat = new ChatUI(this);
+    this.mpBodies = [];          // cuerpos de jugadores caídos (saqueables)
+    this._mpDeathSeq = 0;        // contador de cuerpos creados esta sesión
 
     this.state = STATE.MENU;
     this.uiOpen = false;
@@ -408,6 +415,10 @@ export class Game {
     this._screamedOnce = false;
     this._fireAlertSeen = false;
     this.cam.y = this.player.y - this.cam.h / 2;
+    // v0.28: sesión nueva — sin cadáveres ni chat de la sesión anterior
+    this.mpBodies = [];
+    this._mpDeathSeq = 0;
+    if (this.chat) this.chat.clear();
     // marionetas de los demás + callbacks de la sesión
     this.net.buildPuppets();
     let i = 1;
@@ -416,6 +427,12 @@ export class Game {
       r.p.x = s.x; r.p.y = s.y; r.p._tx = s.x; r.p._ty = s.y;
     }
     this._wireNet();
+    // v0.28: SERVIDOR — primera fotografía del mundo (viaja dentro del
+    // 'start' y queda guardada en este navegador)
+    if (this.net.mode === 'server' && !this.net.snapshot) {
+      this.net.snapshot = buildServerSave(this, this.net);
+      if (this.net.snapshot) storeSnapshot(this.net.code, this.net.snapshot);
+    }
     // ¡todos a la calle!
     this.net.hostStart();
     this.menus.hideAll();
@@ -432,12 +449,89 @@ export class Game {
   }
 
   /**
+   * v0.28: ANFITRIÓN — abre la partida de un SERVIDOR persistente:
+   *  restaura el mundo de la última fotografía local (o crea uno nuevo si
+   *  es la primera apertura) y arranca la sesión para los miembros.
+   */
+  mpServerRun() {
+    const n = this.net;
+    this._mpDeathSeq = 0;
+    if (n.snapshot) {
+      const positions = restoreServerGame(this, n.snapshot, n.memberId);
+      if (positions) {
+        this.audio.init();
+        // transitorios de sesión limpios
+        this.smokes = [];
+        this.carsUI = null;
+        this.build = null;
+        this.fires = [];
+        this.molotovs = [];
+        this.sleepT = 0;
+        this._sleepTarget = null;
+        this._spectate = null;
+        this.tracers.length = 0;
+        this.flashes.length = 0;
+        this.impacts.length = 0;
+        this._dryToastT = 0;
+        this._autosaveT = 0;
+        this._seenVariants = {};
+        this._militarySeen = false;
+        this._hospitalSeen = false;
+        this._screamerCheckT = 0;
+        this._screamedOnce = false;
+        this._fireAlertSeen = false;
+        this.noise = new NoiseSystem();
+        this.vision = new Vision();
+        this._resize();
+        this.cam.x = this.player.x - this.cam.w / 2;
+        this.cam.y = this.player.y - this.cam.h / 2;
+        // marionetas en sus últimas posiciones conocidas
+        n.buildPuppets();
+        for (const r of n.remotes.values()) {
+          const blk = positions[r.p.mpId];
+          if (blk) {
+            r.p.x = blk.x; r.p.y = blk.y; r.p.z = blk.z || 0;
+            r.p._tx = blk.x; r.p._ty = blk.y;
+          }
+        }
+        this._wireNet();
+        n.hostStart();
+        this._mpEnterGameUI('MUNDO ' + n.code + ' — restaurado donde lo dejaron: el progreso de TODOS está guardado en cada navegador');
+        if (this.player.prof) this.menus.toastProfession(this.player.prof);
+        return;
+      }
+      // copia local dañada → mundo nuevo (se avisa, no se rompe nada)
+      this.toasts.push('La copia local del mundo estaba dañada: se abre un mundo NUEVO', 'warn');
+      n.snapshot = null;
+    }
+    // primera apertura (o copia dañada): flujo de sala + fotografía inicial
+    this.mpHostRun();
+  }
+
+  /** v0.28: pantalla de partida común para los arranques de red. */
+  _mpEnterGameUI(toastTxt) {
+    this.menus.hideAll();
+    this.hud.show();
+    this.hud._hintTimer = 0;
+    document.getElementById('controls-hint').classList.remove('fade');
+    this.invUI.closeUI();
+    this.input.enabled = true;
+    this.input.tabHold = true;
+    this.toasts.clear();
+    this.state = STATE.PLAYING;
+    if (toastTxt) this.toasts.push(toastTxt, 'info');
+  }
+
+  /**
    * CLIENTE: reconstruye el mundo del anfitrión con el paquete de inicio
    * (semilla + reloj + clima + horda + objetos). El mapa y su botín salen
-   * DETERMINISTAS de la semilla; los contenedores se abren pidiendo al
-   * anfitrión (botín autoritativo, sin duplicar entre jugadores).
+   *  DETERMINISTAS de la semilla; los contenedores se abren pidiendo al
+   *  anfitrión (botín autoritativo, sin duplicar entre jugadores).
+   *  v0.28: si el paquete es de SERVIDOR (init.srv), el mundo entero
+   *  viene como snapshot y se restaura — con TU personaje donde lo dejaste.
    */
   mpStartClient(init) {
+    if (init && init.srv) { this._mpStartClientServer(init); return; }
     this.audio.init();
     this.seedUsed = init.seed;
     this.rng = new Rng(init.seed);
@@ -499,6 +593,10 @@ export class Game {
     this._fireAlertSeen = false;
     this.cam.x = this.player.x - this.cam.w / 2;
     this.cam.y = this.player.y - this.cam.h / 2;
+    // v0.28: sesión nueva — sin cadáveres ni chat de la sesión anterior
+    this.mpBodies = [];
+    this._mpDeathSeq = 0;
+    if (this.chat) this.chat.clear();
     this.net.buildPuppets();
     let i = 0;
     for (const r of this.net.remotes.values()) {
@@ -517,6 +615,72 @@ export class Game {
     this.toasts.clear();
     this.state = STATE.PLAYING;
     this.toasts.push('Conectado a la sala ' + this.net.code + ' — tu personaje responde EN LOCAL: cero retardo', 'info');
+    if (this.player.prof) this.menus.toastProfession(this.player.prof);
+  }
+
+  /** v0.28: CLIENTE de SERVIDOR — el 'start' trae el snapshot completo
+   *  del mundo; se restaura y TU personaje sigue donde lo dejaste (o
+   *  vida nueva si habías muerto). */
+  _mpStartClientServer(init) {
+    this.audio.init();
+    const n = this.net;
+    const positions = restoreServerGame(this, init.data, init.me);
+    if (!positions) {
+      // restauración rota: se sale limpio (el mundo sigue para los demás)
+      n.leave(false);
+      this.net = null;
+      this.toMenu();
+      this.menus.showMpNotice('No se pudo reconstruir el mundo del servidor — inténtalo de nuevo.');
+      return;
+    }
+    // profesión/color del lobby si es una vida NUEVA (sin bloque propio)
+    if (!this.player.prof) {
+      const me = (init.roster || []).find((r) => r.id === init.me);
+      if (me) this.player.prof = me.prof || null;
+    }
+    const meR = (init.roster || []).find((r) => r.id === init.me);
+    if (meR) this.player.mpColor = meR.color || null;
+    // transitorios de sesión limpios
+    this._mpDeathSeq = 0;
+    this.smokes = [];
+    this.carsUI = null;
+    this.build = null;
+    this.fires = [];
+    this.molotovs = [];
+    this.sleepT = 0;
+    this._sleepTarget = null;
+    this._spectate = null;
+    this.tracers.length = 0;
+    this.flashes.length = 0;
+    this.impacts.length = 0;
+    this._dryToastT = 0;
+    this._autosaveT = 0;
+    this._seenVariants = {};
+    this._militarySeen = false;
+    this._hospitalSeen = false;
+    this._screamerCheckT = 0;
+    this._screamedOnce = false;
+    this._fireAlertSeen = false;
+    this.noise = new NoiseSystem();
+    this.vision = new Vision();
+    this._resize();
+    this.cam.x = this.player.x - this.cam.w / 2;
+    this.cam.y = this.player.y - this.cam.h / 2;
+    // marionetas del resto de la sesión, en su sitio
+    n.buildPuppets();
+    const spawns = this._mpSpawnPoints(Math.max(1, (init.roster || []).length));
+    let si = 0;
+    for (const r of n.remotes.values()) {
+      const blk = positions[r.p.mpId];
+      const s = spawns[si++] || this.map.spawn;
+      r.p.x = blk ? blk.x : s.x;
+      r.p.y = blk ? blk.y : s.y;
+      r.p.z = blk ? (blk.z || 0) : 0;
+      r.p._tx = r.p.x; r.p._ty = r.p.y;
+    }
+    this._wireNet();
+    wrapNoiseForNet(this);
+    this._mpEnterGameUI('MUNDO ' + n.code + ' — tu personaje sigue donde lo dejaste · [T] para el CHAT de sala');
     if (this.player.prof) this.menus.toastProfession(this.player.prof);
   }
 
@@ -547,6 +711,22 @@ export class Game {
       this.molotovs.push({ x: m.x, y: m.y, vx: m.vx, vy: m.vy, t: 0, z: m.z || 0 });
     };
     n.onFull = () => {};
+    // v0.28: al DESPEDIRSE de un SERVIDOR, el anfitrión reparte su última
+    // fotografía del mundo y el cliente sube su estado final — así el
+    // progreso de todos viaja a los navegadores que queden
+    n.onBeforeServerLeave = () => {
+      if (!n.inGame) return;
+      if (n.isHost) {
+        const snap = buildServerSave(this, n);
+        if (snap) {
+          n.snapshot = snap;
+          storeSnapshot(n.code, snap);
+          n._broadcast({ t: 'srvsave', data: snap });
+        }
+      } else {
+        n._srvStateTick();
+      }
+    };
 
     // ---- hooks de los sistemas (definidos aquí: ni crafting ni combat
     // necesitan importar la red — cero dependencias circulares) ----
@@ -636,23 +816,122 @@ export class Game {
     return d;
   }
 
-  /** Muerte EN MULTIJUGADOR: se espectea — la partida sigue para los demás. */
+  /** Muerte EN MULTIJUGADOR (v0.28): primero se está CAÍDO — inconsciente
+   *  pero REANIMABLE durante NET.reviveWindow segundos. Si nadie te
+   *  reanima a tiempo, la muerte es definitiva: a espectar y tu cuerpo
+   *  queda en el sitio como contenedor SAQUEABLE. */
   mpDeath(cause) {
     const p = this.player;
-    if (p.mpDead) return;
-    p.mpDead = true;
+    if (p.mpDead || p.mpDown) return;
+    p.mpDown = true;
+    p.mpDownT = NET.reviveWindow;
     this.deathCause = cause;
     this.build = null;
     this.sleepT = 0;
-    forceExit(this);
+    // ¿iba en un coche? se baja de SU asiento (la tripulación sigue)
+    if (p.inCar) {
+      const car = p.inCar;
+      exitCar(this, true);
+      if (this.net) {
+        const i = this.map.cars.indexOf(car);
+        this.net.sendEv('carOut', { i, x: Math.round(p.x), y: Math.round(p.y), who: this.net.myId });
+      }
+    }
     if (this.carsUI) closeInspect(this);
     this.audio.setEngine(null);
+    this.net.sendEv('pdown', {
+      id: this.net.myId,
+      x: Math.round(p.x), y: Math.round(p.y),
+      dw: NET.reviveWindow,
+    });
+    this.toasts.push('HAS CAÍDO — un compañero puede REANIMARTE ([E] junto a ti) con ' +
+      NET.reviveNeedVendas + ' VENDAS o ' + NET.reviveNeedBotiquin + ' BOTIQUÍN · ' +
+      NET.reviveWindow + ' s', 'bad');
+    if (this.chat) this.chat.pushSys('has caído — ' + NET.reviveWindow + ' s para reanimarte');
+    this.cam.shake(8);
+    this.audio.hurt();
+  }
+
+  /** v0.28: expiró la ventana de reanimación — muerte definitiva. */
+  _mpDownExpire() {
+    const p = this.player;
+    if (!p.mpDown) return;
+    p.mpDown = false;
+    p.mpDead = true;
     this.map.stampCorpse(p.x, p.y, p.angle);
     this.map.stampBlood(p.x, p.y, true);
-    this.net.sendEv('pdead', { id: this.net.myId });
-    this.toasts.push('HAS CAÍDO — espectando: [E] cambia de compañero', 'bad');
+    // su cuerpo queda SAQUEABLE con TODO lo que llevaba encima
+    const its = this._mpStripBody(p);
+    const bd = 'bd-' + this.net.myId + '-' + (++this._mpDeathSeq);
+    const body = {
+      nid: bd, mpBodyNid: bd,
+      name: this.net.roster.find((r) => r.id === this.net.myId)?.name || 'CAÍDO',
+      color: p.mpColor || null,
+      x: Math.round(p.x), y: Math.round(p.y), z: p.z || 0,
+      searched: false,
+      items: its.map(itemFromData).filter(Boolean),
+    };
+    this.mpBodies.push(body);
+    this.net.sendEv('pdead', {
+      id: this.net.myId,
+      x: body.x, y: body.y,
+      bd, its,
+    });
+    this.toasts.push('NADIE TE REANIMÓ — has muerto. Tu equipo queda en el cuerpo: espectando ([E] cambia)', 'bad');
+    if (this.chat) this.chat.pushSys('has muerto — tu equipo quedó en tu cuerpo');
     this._spectate = this._pickSpectate();
     if (this.net.isHost) this.net._checkAllDead();
+  }
+
+  /** v0.28: vacía al jugador (mochila, equipo, barra rápida) y devuelve
+   *  los objetos serializados para su cadáver. */
+  _mpStripBody(p) {
+    const out = [];
+    const grab = (it) => { if (it) out.push(itemToData(it)); };
+    for (const s of p.inventory.slots) grab(s);
+    for (const k of Object.keys(p.equipment || {})) grab(p.equipment[k]);
+    p.inventory.slots.fill(null);
+    p.equipment = {
+      cabeza: null, accesorios: null, accesorios2: null, accesorios3: null,
+      torso: null, pantalones: null, arma: null,
+    };
+    p.hotbar.fill(null);
+    return out;
+  }
+
+  /** v0.28: un compañero te ha REANIMADO — segunda oportunidad. */
+  mpRevived(byName) {
+    const p = this.player;
+    if (!p.mpDown) return;
+    p.mpDown = false;
+    p.mpDownT = 0;
+    const s = this.survival;
+    s.deathCause = null;
+    s.health = NET.reviveHp;
+    s.infected = false;
+    s.infection = 0;
+    s.infectionRateMult = 1;
+    s.intoxicated = 0;
+    s.adrenaline = 0;
+    s.morphine = 0;
+    s.healEffects = [];
+    s.hunger = Math.max(s.hunger, 35);
+    s.thirst = Math.max(s.thirst, 35);
+    s.stamina = s.maxStamina;
+    p.exhausted = false;
+    this.toasts.push((byName || 'ALGUIEN') + ' te ha REANIMADO — segunda oportunidad: ' +
+      NET.reviveHp + '% de vida y TODO tu equipo intacto', 'save');
+    if (this.chat) this.chat.pushSys((byName || 'alguien') + ' te ha reanimado');
+    this.audio.heal();
+    this.cam.shake(3);
+  }
+
+  /** v0.28: ¿puedo pagar la reanimación? (2 vendas o 1 botiquín). */
+  _reviveCostOk() {
+    const inv = this.player.inventory;
+    if (countItem(inv, 'venda') >= NET.reviveNeedVendas) return 'vendas';
+    if (countItem(inv, 'botiquin') >= NET.reviveNeedBotiquin) return 'botiquin';
+    return null;
   }
 
   /** Siguiente compañero vivo al que especting (o null: quedarse donde caíste). */
@@ -670,6 +949,7 @@ export class Game {
   /** Fin de sesión (host cerró / todos cayeron / salida propia). */
   _mpSessionEnd(reason) {
     const wasPlaying = this.state === STATE.PLAYING;
+    const wasServer = !!(this.net && this.net.mode === 'server');
     this.net = null;
     this.input.tabHold = false;
     this.hud.showMpList(false);
@@ -683,11 +963,24 @@ export class Game {
         time: this.time, kills: this.kills, searched: this.searchedCount,
         day: this.daynight.day, stats: this.stats, prof: this.player.prof || null,
       }, false, null);
-      const note = document.getElementById('ds-savegone');
-      if (note) { note.classList.remove('hidden'); note.textContent = NET.mpSaveNote; }
+      // v0.28: nota de abajo del obituario — en SERVIDOR el mundo sigue
+      // guardado (id real del DOM: death-savegone, el mismo de menus.js)
+      const note = document.getElementById('death-savegone');
+      if (note) {
+        note.classList.remove('hidden');
+        note.textContent = wasServer
+          ? 'El mundo del SERVIDOR sigue guardado en tu navegador: puedes VOLVER A ABRIRLO y empezar una vida nueva.'
+          : NET.mpSaveNote;
+      }
       return;
     }
     this.toMenu();
+    if (wasServer) {
+      this.menus.showMpNotice(reason === 'srvhost' || reason === 'host'
+        ? 'El ANFITRIÓN cerró el mundo — el SERVIDOR guarda el progreso de todos: cualquier MIEMBRO puede ABRIRLO de nuevo desde MULTIJUGADOR.'
+        : 'Has salido del mundo — tu progreso quedó guardado en este navegador.');
+      return;
+    }
     this.menus.showMpNotice(
       reason === 'host' ? 'El ANFITRIÓN cerró la sala — la partida co-op termina aquí.'
         : 'Has salido de la sala.');
@@ -785,9 +1078,15 @@ export class Game {
 
   /** Pausa → guardar y volver al menú principal (v0.13; v0.22: a SU ranura). */
   saveAndQuit() {
-    // v0.27: el multijugador NO se guarda — se sale de la sala sin más
+    // v0.27/v0.28: el multijugador NO usa ranuras — en SALA se avisa; en
+    // SERVIDOR se sale del mundo (que se guarda solo, distribuido)
     if (this.net) {
-      this.toasts.push(NET.mpSaveNote, 'warn');
+      if (this.net.mode === 'server') {
+        this.toasts.push('El SERVIDOR se guarda solo — saliendo del mundo…', 'save');
+        this.toMenu();
+      } else {
+        this.toasts.push(NET.mpSaveNote, 'warn');
+      }
       return;
     }
     if (this.state !== STATE.PAUSED && this.state !== STATE.PLAYING) return;
@@ -803,8 +1102,22 @@ export class Game {
 
   /** Vuelve al menú principal (tras guardar). */
   toMenu() {
-    // v0.27: salir al menú en plena sesión = abandonar la sala
-    if (this.net) { this.net.leave(false); this.net = null; this.input.tabHold = false; }
+    // v0.27/v0.28: salir al menú en plena sesión = abandonar la sala/mundo.
+    // leave() dispara onSessionEnd → _mpSessionEnd → toMenu() CON la
+    // limpieza completa y el AVISO de salida — por eso aquí se retorna sin
+    // repetirla (el doble-aseo escondía el aviso al instante). Si la sesión
+    // no tiene callback (p. ej. lobby de anfitrión sin arrancar), se limpia
+    // a mano aquí debajo.
+    if (this.net) {
+      const n = this.net;
+      this.input.tabHold = false;
+      if (!n._closed) {
+        const hadEnd = typeof n.onSessionEnd === 'function';
+        n.leave(false);
+        if (hadEnd) return;   // _mpSessionEnd ya limpió y mostró el aviso
+      }
+      this.net = null;
+    }
     this.state = STATE.MENU;
     this._mpPaused = false;
     this.input.enabled = false;
@@ -819,6 +1132,9 @@ export class Game {
     this.ency.close();            // v0.22: sin enciclopedia abierta al volver
     this.hud.hide();
     this.audio.setRain(0);   // v0.15: el mundo no se dibuja en el menú → sin lluvia
+    this.mpBodies = [];           // v0.28: los cuerpos no cruzan al menú
+    this._mpDeathSeq = 0;
+    if (this.chat) this.chat.clear();   // v0.28: ni el chat
     this.menus.hideAll();
     this.menus.showMenu();      // refresca el botón CONTINUAR PARTIDA
   }
@@ -882,13 +1198,28 @@ export class Game {
   // ================== Entrada ==================
 
   onAction(name) {
+    // v0.28: CHAT abierto — nada más responde (el campo ya retuvo las teclas)
+    if (this.chat && this.chat.isOpen) return;
     // v0.27: lista de jugadores de la sala (TAB mantenido en multijugador)
     if (name === 'tablist') { this.hud.showMpList(true); return; }
     if (name === 'tablistUp') { this.hud.showMpList(false); return; }
-    // v0.27: caído en multijugador — E cambia de compañero, resto apagado
+    // v0.28: [T] despliega el CHAT de sala (multijugador, en partida)
+    if (name === 'chat') {
+      if (this.net && this.state === STATE.PLAYING && !this.uiOpen &&
+          !this.invUI.isOpen && !this.carsUI && !(this.ency && this.ency.isOpen)) {
+        this.chat.open();
+      }
+      return;
+    }
+    // v0.27/v0.28: MUERTO en multijugador — E cambia de compañero, resto apagado
     if (this.net && this.player && this.player.mpDead) {
       if (name === 'interact') { this._spectate = this._pickSpectate(); }
-      else if (name === 'pause') { this.togglePause(); }
+      else if (name === 'pause' || name === 'escape') { this.togglePause(); }
+      return;
+    }
+    // v0.28: CAÍDO en multijugador — inconsciente: pausa y nada más
+    if (this.net && this.player && this.player.mpDown) {
+      if (name === 'pause' || name === 'escape') { this.togglePause(); }
       return;
     }
     // v0.26: FICHA DE INSPECCIÓN de coche abierta — ESC/VOLVER cierra y
@@ -946,19 +1277,23 @@ export class Game {
       this.toasts.push(m ? 'Audio silenciado' : 'Audio activado');
       return;
     }
+    // v0.28: ESC también pausa/reanuda (además de P) — pero en modo
+    // construcción ESC cancela el fantasma (más específico, va después)
     if (name === 'pause') { this.togglePause(); return; }
+    if (name === 'escape' && !this.build) { this.togglePause(); return; }
     if (this.invUI.isOpen) {
       if (name === 'inventory' || name === 'escape') this.invUI.closeUI();
       return;
     }
     if (this.state !== STATE.PLAYING) return;
-    // ---- v0.26: AL VOLANTE — solo E (bajar), L (faros) y P/M funcionan ----
+    // ---- v0.26/v0.28: A BORDO (conductor o PASAJERO) — solo E (bajar)
+    // y L (faros, solo el conductor) y P/M funcionan ----
     if (this.player.inCar) {
       switch (name) {
         case 'interact': {
           const car = this.player.inCar;
           exitCar(this);
-          // v0.27: bajarse del coche se difunde a la sala
+          // v0.27/v0.28: bajarse del coche (asiento propio) se difunde
           if (this.net && car) {
             const i = this.map.cars.indexOf(car);
             this.net.sendEv('carOut', { i, x: Math.round(this.player.x), y: Math.round(this.player.y), who: this.net.myId });
@@ -966,6 +1301,10 @@ export class Game {
           break;
         }
         case 'flash': {
+          if (!isDriver(this.player)) {
+            this.toasts.push('Los faros los lleva quien CONDUCE', 'warn');
+            break;
+          }
           const car = this.player.inCar;
           car.lights = !car.lights;
           this.audio.flashClick();
@@ -1109,14 +1448,32 @@ export class Game {
     const p = this.player;
     // en mitad de la escalera no hay interacción con el mundo
     if (p.climb) return null;
-    // v0.26: AL VOLANTE solo hay una interacción: BAJARSE
+    // v0.26: A BORDO solo hay una interacción: BAJARSE
     if (p.inCar) return { kind: 'exitcar', obj: p.inCar, d: 0, label: '[E] Salir del coche (' + carLabel(p.inCar) + ')' };
     const pz = p.z || 0;
     let best = null;
 
+    // v0.28: REVIVIR a un compañero CAÍDO — prioridad absoluta (corre el tiempo)
+    if (this.net) {
+      for (const r of this.net.remotes.values()) {
+        if (!r.p.mpDown || r.p.mpDead) continue;
+        if ((r.p.z || 0) !== pz) continue;
+        const d = Math.hypot(r.p.x - p.x, r.p.y - p.y);
+        if (d < NET.reviveR) {
+          const cost = this._reviveCostOk();
+          const costTxt = cost === 'vendas'
+            ? NET.reviveNeedVendas + ' vendas' : cost === 'botiquin' ? NET.reviveNeedBotiquin + ' botiquín' : '2 vendas o 1 botiquín (NO LLEVAS)';
+          best = {
+            kind: 'revive', obj: r, d,
+            label: 'REVIVIR a ' + r.name + ' — [E] (' + costTxt + ') · ' + Math.ceil(r.p.mpDownT) + ' s',
+          };
+        }
+      }
+    }
+
     // escaleras al 2º piso / sótano: solo de pie sobre ellas, en TU planta
     const st = this.map.stairsNear(p);
-    if (st) best = { kind: 'stairs', obj: st, d: 0, label: st.label };
+    if (st && (!best || st.d < best.d)) best = { kind: 'stairs', obj: st, d: 0, label: st.label };
 
     for (const c of this.map.containers) {
       if (c.z !== pz) continue;   // nada de registrar a través del techo
@@ -1162,13 +1519,33 @@ export class Game {
         best = { kind: 'item', obj: gi, d, label: 'Recoger ' + itemLabel(gi.item) };
       }
     }
-    // v0.26: COCHES — [E] entra, [Q] inspecciona (la ficha completa)
+    // v0.26: COCHES — [E] entra (a CONDUCIR si está libre; de PASAJERO si
+    // ya hay conductor y quedan asientos), [Q] inspecciona
     if (pz === 0) {
       for (const car of this.map.cars) {
-        if (car.driven) continue;
-        const d = Math.hypot(car.x - p.x, car.y - p.y);
-        if (d < VEHICULOS.enterR && (!best || d < best.d)) {
-          best = { kind: 'car', obj: car, d, label: 'Entrar al ' + car.brand + ' ' + car.name + ' · [Q] Inspeccionar' };
+        const occ = (car.occupants || []).filter(Boolean).length;
+        const free = carFreeSeats(car) > 0;
+        if (!occ && !car.driven) {
+          const d = Math.hypot(car.x - p.x, car.y - p.y);
+          if (d < VEHICULOS.enterR && (!best || d < best.d)) {
+            best = { kind: 'car', obj: car, d, label: 'Entrar al ' + car.brand + ' ' + car.name + ' (conducir) · [Q] Inspeccionar' };
+          }
+        } else if (occ && free && !car.driven) {
+          // aparcado con gente dentro (el conductor se bajó): puedes tomar el volante
+          const d = Math.hypot(car.x - p.x, car.y - p.y);
+          if (d < VEHICULOS.enterR && (!best || d < best.d)) {
+            best = { kind: 'car', obj: car, d, label: 'Tomar el volante del ' + car.brand + ' ' + car.name + ' · [Q] Inspeccionar' };
+          }
+        } else if (occ && free) {
+          const d = Math.hypot(car.x - p.x, car.y - p.y);
+          if (d < VEHICULOS.enterR && (!best || d < best.d)) {
+            const drv = car.occupants[0];
+            best = {
+              kind: 'carpass', obj: car, d,
+              label: 'Subir de PASAJERO al ' + car.brand + ' ' + car.name +
+                (drv && drv.mpName ? ' (conduce ' + drv.mpName + ')' : '') + ' · ' + (carFreeSeats(car)) + ' plaza' + (carFreeSeats(car) === 1 ? '' : 's') + ' libre' + (carFreeSeats(car) === 1 ? '' : 's'),
+            };
+          }
         }
       }
     }
@@ -1187,6 +1564,16 @@ export class Game {
         }
       }
     }
+
+    // v0.28: CUERPOS de compañeros caídos — se registran como cualquier
+    // contenedor (su equipo quedó ahí)
+    for (const b of this.mpBodies || []) {
+      if ((b.z || 0) !== pz) continue;
+      const d = Math.hypot(b.x - p.x, b.y - p.y);
+      if (d < 46 && (!best || d < best.d)) {
+        best = { kind: 'container', obj: b, d, label: 'Registrar el cuerpo de ' + b.name };
+      }
+    }
     return best;
   }
 
@@ -1194,6 +1581,41 @@ export class Game {
     const target = this.interactTarget();
     if (!target) return;
     switch (target.kind) {
+      // v0.28: REVIVIR — 2 vendas o 1 botiquín, y el caído vuelve con
+      // media vida y TODO su equipo (se consume de MI mochila)
+      case 'revive': {
+        const r = target.obj;
+        const inv = this.player.inventory;
+        const how = this._reviveCostOk();
+        if (!how) {
+          this.toasts.push('Para reanimarle necesitas ' + NET.reviveNeedVendas +
+            ' VENDAS o ' + NET.reviveNeedBotiquin + ' BOTIQUÍN — no los llevas', 'warn');
+          return;
+        }
+        if (how === 'vendas') takeItems(inv, 'venda', NET.reviveNeedVendas);
+        else takeItems(inv, 'botiquin', NET.reviveNeedBotiquin);
+        // predicción local: el caído se levanta en mi pantalla ya
+        r.p.mpDown = false;
+        r.p.mpDownT = 0;
+        r.hp = NET.reviveHp;
+        this.net.sendEv('previve', { id: r.p.mpId, by: this.net.myId });
+        this.audio.heal();
+        this.noise.emit(this.player.x, this.player.y, 40, 'reanimar');
+        this.toasts.push('Has REANIMADO a ' + r.name + ' — vuelve con ' + NET.reviveHp +
+          '% de vida y todo su equipo', 'save');
+        if (this.chat) this.chat.pushSys('reanimaste a ' + r.name);
+        break;
+      }
+      // v0.28: SUBIR de PASAJERO (el coche ya tiene conductor)
+      case 'carpass': {
+        const car = target.obj;
+        const ok = enterCar(this, car, false, null, true);
+        if (ok && this.net) {
+          const i = this.map.cars.indexOf(car);
+          this.net.sendEv('carIn', { i, r: car.running ? 1 : 0, who: this.net.myId, ps: 1 });
+        }
+        break;
+      }
       case 'stairs': {
         // empezar a subir/bajar: el movimiento se bloquea y la capa de la
         // planta destino va apareciendo con un fundido (climb.k en render)
@@ -1265,11 +1687,11 @@ export class Game {
       }
       case 'car': {
         // v0.26: ENTRAR al coche (y arrancar si puede)
-        // v0.27: el que entra manda sobre el coche — se avisa a la sala
+        // v0.27/v0.28: el que entra manda sobre el coche — se avisa a la sala
         enterCar(this, target.obj);
         if (this.net) {
           const i = this.map.cars.indexOf(target.obj);
-          this.net.sendEv('carIn', { i, r: target.obj.running ? 1 : 0, who: this.net.myId });
+          this.net.sendEv('carIn', { i, r: target.obj.running ? 1 : 0, who: this.net.myId, ps: 0 });
         }
         break;
       }
@@ -1448,8 +1870,18 @@ export class Game {
     // no se congela una ciudad compartida. En solitario, todo como siempre.
     const mp = !!this.net;
     const world = !mp || this.net.isHost;   // ¿esta máquina simula el mundo?
-    const alive = !this.player.mpDead;
-    if (mp) this.net.tick(dt);
+    // v0.28: también el CAÍDO está fuera de juego (inconsciente: no se
+    // mueve, no come, no bebe — pero SU CUENTA ATRÁS corre)
+    const alive = !this.player.mpDead && !this.player.mpDown;
+    if (mp) {
+      this.net.tick(dt);
+      // v0.28: la ventana de REANIMACIÓN corre SIEMPRE (la sala no se para)
+      if (this.player.mpDown && this.net.inGame) {
+        this.player.mpDownT -= dt;
+        if (this.player.mpDownT <= 0) this._mpDownExpire();
+      }
+      if (this.chat) this.chat.update();
+    }
     if (this.uiOpen && !mp) return;
 
     // v0.20: DORMIR — fundido a negro: el mundo espera al despertar
@@ -1506,7 +1938,19 @@ export class Game {
     // v0.26: EL COCHE EN MARCHA — física de conducción, combustible,
     // choques, atropellos y ruido de motor (el jugador va dentro)
     // v0.27: cada piloto conduce EN LOCAL (autoridad del conductor)
-    if (alive && this.player.inCar) updateVehicle(this, dt);
+    // v0.28: y el PASAJERO viaja — solo el CONDUCTOR corre la física;
+    // el pasajero sigue al coche (que aquí llega interpolado por red)
+    if (alive && this.player.inCar) {
+      if (isDriver(this.player)) {
+        updateVehicle(this, dt);
+      } else {
+        const car = this.player.inCar;
+        this.player.x = car.x; this.player.y = car.y;
+        this.player.angle = car.dir;
+        this.player.moving = Math.abs(car.speed) > 12;
+        this.player.running = false;
+      }
+    }
     updateVehicleFX(this, dt);
 
     // v0.23: chequeo periódico de población para la EMERGENCIA del GRITADOR

@@ -22,6 +22,12 @@ export class Player {
     this.mpName = null;
     this.mpId = null;
     this.mpDead = false;
+    // v0.28: REVIVIR — estado «caído» (inconsciente, aún reanimable):
+    // mpDown mientras corre la ventana de NET.reviveWindow segundos;
+    // mpDownT es la cuenta atrás que queda. Al agotarse pasa a mpDead
+    // y su cadáver se vuelve saqueable.
+    this.mpDown = false;
+    this.mpDownT = 0;
     this.vx = 0; this.vy = 0;
     this.angle = 0;              // apuntado del ratón
     this.sneak = false;

@@ -1,11 +1,17 @@
 /**
- * net.js — v0.27: MULTIJUGADOR co-op P2P (PeerJS).
+ * net.js — v0.27/v0.28: MULTIJUGADOR co-op P2P (PeerJS).
  *
  * SALAS CON CÓDIGO: el anfitrión crea la sala y comparte un código de 5
  * caracteres (p. ej. «K7K2M»); los demás se unen tecleándolo. La
  * señalización atraviesa el servidor PÚBLICO de PeerJS; a partir de ahí
  * el juego viaja DIRECTO entre navegadores por WebRTC — no hay servidor
  * de juego y nadie ve la partida ajena.
+ *
+ * v0.28 — SERVIDORES PERSISTENTES: además de salas efímeras hay MUNDOS
+ * con código de 6 + CONTRASEÑA de 4 dígitos que cualquiera de sus
+ * miembros puede ABRIR (no hace falta el anfitrión original). El mundo
+ * viaja por CHUNKS en el canal fiable (ver _send) y cada navegador
+ * guarda su copia (servers.js).
  *
  * ARQUITECTURA — «ANFITRIÓN AUTORITATIVO + PREDICCIÓN LOCAL»:
  *  · ANFITRIÓN: simula el mundo (IA de zombis, respawn, gritadores,
@@ -18,7 +24,8 @@
  *
  * CANALES POR PAREJA (anfitrión ↔ cliente):
  *  · `ctl` — FIABLE (llegada garantizada): arranque, lobby, botín,
- *    muertes, construcciones, coches, pings.
+ *    muertes, construcciones, coches, pings, CHAT y snapshots de
+ *    servidor. Los mensajes grandes van TROCEADOS ({big}/{bigc}).
  *  · `snap` — NO fiable y sin orden (se pierde antes que reenviar):
  *    instantáneas de posición a 15 Hz. Si se pierde una, manda la
  *    siguiente: el retardo NUNCA se acumula.
@@ -31,11 +38,13 @@
 import { NET, TILE, T, DAYNIGHT } from '../config.js';
 import { Player } from '../entities/player.js';
 import { zombieFromData } from '../entities/zombie.js';
-import { itemToData, itemFromData } from './save.js';
-import { enterCar, exitCar, carCanStart } from './vehicles.js';
+import { itemToData, itemFromData, serializePlayerData } from './save.js';
+import { enterCar, exitCar, carCanStart, isDriver } from './vehicles.js';
+import { buildServerSave, storeSnapshot, srvPeerId } from './servers.js';
 
 // bits del estado de jugador en las instantáneas
 const ST_SNEAK = 1, ST_RUN = 2, ST_SWING = 4, ST_DEAD = 8, ST_HURT = 16;
+const ST_DOWN = 32;   // v0.28: caído — inconsciente, reanimable
 
 // código corto de variante de zombi (1 carácter en el cable)
 const VA2C = { normal: 'n', runner: 'r', brute: 'b', screamer: 's' };
@@ -79,16 +88,24 @@ const ERR = {
   full: 'La sala está COMPLETA (máximo ' + NET.maxPlayers + ' sobrevivientes).',
   timeout: 'La sala no responde — puede que el anfitrión la haya cerrado.',
   closed: 'La conexión se cerró.',
+  // v0.28: servidores
+  srvTaken: 'Ese mundo ya lo tiene ABIERTO otro miembro — únete con el código mientras esté en marcha.',
+  srvClosed: 'Nadie tiene ese mundo abierto ahora mismo. Si eres miembro, puedes ABRIRLO tú desde MIS MUNDOS.',
+  wrongPass: 'La CONTRASEÑA no corresponde a ese mundo.',
+  srvFull: 'El mundo está COMPLETO (máximo ' + NET.maxPlayers + ' miembros de por vida).',
 };
 
 export class NetSession {
-  /** `role`: 'host' | 'client'. El game es el Game local (para puppets). */
-  constructor(game, role) {
+  /** `role`: 'host' | 'client'; `mode`: 'room' (sala efímera) | 'server'
+ *  (mundo persistente v0.28). El game es el Game local (para puppets). */
+  constructor(game, role, mode = 'room') {
     this.game = game;
     this.role = role;
+    this.mode = mode;           // 'room' | 'server'
     this.peer = null;
     this.code = null;
     this.myId = role === 'host' ? 'H' : null;
+    this.hostId = 'H';         // v0.28: quién es el anfitrión (memberId en servidores)
     this.inGame = false;         // lobby vs partida en marcha
     this.roster = [];            // [{id, name, prof, color}] — orden = color
     this.remotes = new Map();    // id → {p, name, prof, color, alive, hp, rtt, carIdx, swing, lastSeenT}
@@ -105,6 +122,14 @@ export class NetSession {
     this._zSent = new Map();     // nid → {x, y, st} último enviado
     this._giNid = 0;             // contador de objetos del suelo
     this._coNid = 0;             // contador de construcciones
+    // — v0.28: servidor persistente —
+    this.password = null;        // contraseña del mundo (host la valida)
+    this.memberId = null;        // identidad estable local en el mundo
+    this.snapshot = null;        // última copia del mundo (arranque y srvsave)
+    this._members = new Map();   // host: id → {name, prof, color, online, state}
+    this._srvSaveT = 0;          // host: cronómetro de sincronización del mundo
+    this._srvStateT = 0;         // cliente: cronómetro de su estado
+    this._bigId = 0;             // contador de mensajes troceados
     // — client —
     this.host = null;            // {ctl, snap}
     this._zByNid = new Map();    // nid → zombi local (marioneta)
@@ -150,6 +175,61 @@ export class NetSession {
     peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) {} });
     peer.on('error', (err) => {
       console.warn('[net] peer host error:', err && err.type);
+    });
+  }
+
+  /** v0.28: ANFITRIÓN DE UN SERVIDOR — reclama el id del mundo
+   *  («zc28s-CODIGO») y prepara el roster con los miembros conocidos
+   *  del snapshot. `entry` viene de servers.js (getServer/loadSnapshot). */
+  hostServerOpen(entry, snapshot, name) {
+    return new Promise((resolve, reject) => {
+      if (typeof window.Peer !== 'function') return reject(new Error(ERR.noPeer));
+      const code = entry.code;
+      const peer = new window.Peer(srvPeerId(code), { debug: 0 });
+      const to = setTimeout(() => { try { peer.destroy(); } catch (e) {} reject(new Error(ERR.timeout)); }, NET.joinTimeout * 1000);
+      peer.on('open', () => {
+        clearTimeout(to);
+        this.peer = peer;
+        this.code = code;
+        this.mode = 'server';
+        this.password = entry.pass;
+        this.memberId = entry.memberId;
+        this.myId = entry.memberId;
+        this.hostId = entry.memberId;
+        this.snapshot = snapshot || null;
+        this.roster = [{
+          id: entry.memberId,
+          name: name || entry.name || 'ANFITRIÓN',
+          prof: null,
+          color: NET.colors[0],
+          host: true,
+        }];
+        // miembros conocidos del snapshot (colores y profesión estables)
+        if (snapshot && snapshot.players) {
+          for (const [id, blk] of Object.entries(snapshot.players)) {
+            if (id === entry.memberId) {
+              this.roster[0].prof = blk.prof || null;
+              if (blk.color) this.roster[0].color = blk.color;
+              continue;
+            }
+            this._members.set(id, {
+              name: blk.name || 'MIEMBRO',
+              prof: blk.prof || null,
+              color: blk.color || NET.colors[1 + (this._members.size % 3)],
+              online: false,
+              state: blk,
+            });
+          }
+        }
+        this._wireHostPeer(peer);
+        resolve(code);
+      });
+      peer.on('error', (err) => {
+        clearTimeout(to);
+        try { peer.destroy(); } catch (e) {}
+        if (err && err.type === 'unavailable-id') reject(new Error(ERR.srvTaken));
+        else reject(new Error(ERR.net));
+      });
     });
   }
 
@@ -222,11 +302,66 @@ export class NetSession {
     else this._sendHost({ t: 'prof', prof });
   }
 
-  /** Anfitrión: lanza la partida para todos. */
+  /** v0.28: CLIENTE — se une a un SERVIDOR (mundo persistente) con su
+   *  código + contraseña + identidad de miembro. El arranque (snapshot)
+   *  llega como 'start' cuando el anfitrión lo mande. */
+  joinServer(code, pass, memberId, name) {
+    return new Promise((resolve, reject) => {
+      if (typeof window.Peer !== 'function') return reject(new Error(ERR.noPeer));
+      const peer = new window.Peer({ debug: 0 });
+      let settled = false;
+      const fail = (msg) => {
+        if (settled) return;
+        settled = true;
+        try { peer.destroy(); } catch (e) {}
+        reject(new Error(msg));
+      };
+      const to = setTimeout(() => fail(ERR.srvClosed), NET.joinTimeout * 1000);
+      peer.on('open', () => {
+        const ctl = peer.connect(srvPeerId(code), { label: 'ctl', reliable: true, serialization: 'json' });
+        const snap = peer.connect(srvPeerId(code), { label: 'snap', reliable: false, serialization: 'json' });
+        ctl.on('open', () => {
+          clearTimeout(to);
+          if (settled) return;
+          settled = true;
+          this.peer = peer;
+          this.code = code;
+          this.mode = 'server';
+          this.memberId = memberId;
+          this.host = { ctl, snap };
+          this._wireCtl(ctl, (m) => this._onHostMsg(m), () => this._hostLost());
+          this._wireData(snap, (m) => this._onHostSnap(m));
+          ctl.send({ t: 'hello', name: name || 'SOBREVIVIENTE', srv: 1, pass: String(pass || ''), mid: memberId });
+          resolve(code);
+        });
+        ctl.on('error', (err) => {
+          clearTimeout(to);
+          fail(err && err.type === 'peer-unavailable' ? ERR.srvClosed : ERR.net);
+        });
+      });
+      peer.on('error', (err) => {
+        clearTimeout(to);
+        fail(err && err.type === 'peer-unavailable' ? ERR.srvClosed : ERR.net);
+      });
+    });
+  }
+
+  /** Anfitrión: lanza la partida para todos.
+   *  v0.28: en SERVIDOR el paquete de inicio es el SNAPSHOT COMPLETO del
+   *  mundo (troceado por _send si pesa) — cada cliente lo restaura con
+   *  servers.restoreServerGame y sigue desde ahí. */
   hostStart() {
     if (!this.isHost || this.inGame) return;
-    const data = this.buildStartData();
     this.inGame = true;
+    if (this.mode === 'server') {
+      for (const e of this._peers.values()) {
+        if (!e.id) continue;
+        this._send(e.ctl, { t: 'start', srv: 1, data: this.snapshot, roster: this.roster, me: e.id, host: this.myId });
+      }
+      if (this.onLocalStart) this.onLocalStart({ srv: 1, data: this.snapshot, roster: this.roster, me: this.myId, host: this.myId });
+      return;
+    }
+    const data = this.buildStartData();
     for (const e of this._peers.values()) {
       if (!e.id) continue;
       this._send(e.ctl, { t: 'start', ...data, me: e.id });
@@ -235,12 +370,18 @@ export class NetSession {
     if (this.onLocalStart) this.onLocalStart(data);
   }
 
-  /** Cierra la sesión (voluntario o caída) y avisa a todos. */
+  /** Cierra la sesión (voluntario o caída) y avisa a todos.
+   *  v0.28: en SERVIDOR el anfitrión difunde una ÚLTIMA fotografía del
+   *  mundo (y el cliente sube su estado) antes de colgar — así el
+   * progreso de todos viaja a los navegadores que queden. */
   leave(broadcastEnd) {
     if (this._closed) return;
     this._closed = true;
+    if (this.mode === 'server' && this.onBeforeServerLeave) {
+      try { this.onBeforeServerLeave(); } catch (e) {}
+    }
     if (this.isHost && broadcastEnd && this.inGame) {
-      this._broadcast({ t: 'end', reason: 'host' });
+      this._broadcast({ t: 'end', reason: this.mode === 'server' ? 'srvhost' : 'host' });
     } else if (!this.isHost && this.host && this.host.ctl && this.host.ctl.open) {
       try { this.host.ctl.send({ t: 'act', op: 'leave' }); } catch (e) {}
     }
@@ -256,8 +397,30 @@ export class NetSession {
   get isHost() { return this.role === 'host'; }
   get active() { return !!this.peer && !this._closed; }
 
+  /** Los mensajes de ctl pasan por aquí: los MÁS GRANDES de 6 KB van
+   *  TROCEADOS ({big} + {bigc}×n) y se reensamblan al llegar — así el
+   *  snapshot de un SERVIDOR (cientos de KB) cruza sin ahogar el canal. */
   _wireCtl(conn, onMsg, onClose) {
-    conn.on('data', onMsg);
+    const bigs = new Map();
+    conn.on('data', (m) => {
+      if (m && m.t === 'big') {
+        bigs.set(m.id, { n: m.n | 0, parts: [] });
+        return;
+      }
+      if (m && m.t === 'bigc') {
+        const b = bigs.get(m.id);
+        if (!b || m.i < 0 || m.i >= b.n) return;
+        b.parts[m.i] = String(m.s);
+        let got = 0;
+        for (let i = 0; i < b.n; i++) if (b.parts[i] !== undefined) got++;
+        if (got === b.n) {
+          bigs.delete(m.id);
+          try { onMsg(JSON.parse(b.parts.join(''))); } catch (e) {}
+        }
+        return;
+      }
+      onMsg(m);
+    });
     conn.on('close', () => onClose && onClose());
     conn.on('error', () => onClose && onClose());
   }
@@ -266,7 +429,17 @@ export class NetSession {
     conn.on('error', () => {});
   }
   _send(conn, msg) {
-    try { if (conn && conn.open) conn.send(msg); } catch (e) {}
+    try {
+      if (!conn || !conn.open) return;
+      const s = JSON.stringify(msg);
+      if (s.length <= 6000) { conn.send(msg); return; }
+      const id = ++this._bigId;
+      const n = Math.ceil(s.length / 6000);
+      conn.send({ t: 'big', id, n });
+      for (let i = 0; i < n; i++) {
+        conn.send({ t: 'bigc', id, i, s: s.slice(i * 6000, (i + 1) * 6000) });
+      }
+    } catch (e) {}
   }
   _sendHost(msg) { this._send(this.host && this.host.ctl, msg); }
   _broadcast(msg) {
@@ -284,17 +457,76 @@ export class NetSession {
     switch (m.t) {
       case 'hello': {
         if (entry.id) return;
-        if (this._peers.size > NET.maxPlayers - 1) { this._send(entry.ctl, { t: 'full' }); return; }
-        entry.id = 'P' + entry.peerKey.slice(-4);
+        // v0.28: SERVIDOR — primero la contraseña, luego el aforo de MIEMBROS
+        if (this.mode === 'server') {
+          if (m.srv !== 1 || String(m.pass || '') !== String(this.password || '')) {
+            this._send(entry.ctl, { t: 'denied', why: 'pass' });
+            setTimeout(() => { try { entry.ctl.close(); } catch (e) {} }, 400);
+            return;
+          }
+          const mid = String(m.mid || '').slice(0, 10);
+          const known = this._members.has(mid);
+          const totalMembers = 1 + this._members.size;   // el anfitrión cuenta
+          if (!known && totalMembers >= NET.maxPlayers) {
+            this._send(entry.ctl, { t: 'denied', why: 'full' });
+            setTimeout(() => { try { entry.ctl.close(); } catch (e) {} }, 400);
+            return;
+          }
+          entry.id = mid;
+        } else {
+          if (this._peers.size > NET.maxPlayers - 1) { this._send(entry.ctl, { t: 'full' }); return; }
+          entry.id = 'P' + entry.peerKey.slice(-4);
+        }
         entry.name = String(m.name || 'SOBREVIVIENTE').slice(0, 12).toUpperCase();
         this._addRosterPlayer(entry.id, entry.name);
-        this._send(entry.ctl, { t: 'welcome', you: entry.id, code: this.code, roster: this.roster });
+        // v0.28: en SERVIDOR se respeta la identidad del miembro (color y
+        // profesión de su última visita) y queda registrado en el mundo
+        if (this.mode === 'server') {
+          const mm = this._members.get(entry.id);
+          const r = this.roster.find((x) => x.id === entry.id);
+          if (mm) {
+            mm.online = true;
+            mm.name = entry.name;
+            if (r && mm.color) r.color = mm.color;
+            if (r && mm.prof) r.prof = mm.prof;
+          } else {
+            this._members.set(entry.id, {
+              name: entry.name, prof: null,
+              color: r ? r.color : NET.colors[1 + (this._members.size % 3)],
+              online: true, state: null,
+            });
+          }
+        }
+        this._send(entry.ctl, { t: 'welcome', you: entry.id, code: this.code, roster: this.roster, host: this.myId });
         this._sendLobby();
         if (this.onLobby) this.onLobby(this.roster);   // el lobby del anfitrión también refresca
         if (this.onPeerJoin) this.onPeerJoin(entry.name);
+        // v0.28: SERVIDOR en marcha — el miembro ENTRA con el estado actual:
+        // snapshot fresco para él y aviso de alta a los demás
+        if (this.mode === 'server' && this.inGame) {
+          const snap = buildServerSave(this.game, this);
+          if (snap) { this.snapshot = snap; storeSnapshot(this.code, snap); }
+          this._send(entry.ctl, { t: 'start', srv: 1, data: this.snapshot, roster: this.roster, me: entry.id, host: this.myId });
+          const mm = this._members.get(entry.id);
+          const blk = mm && mm.state;
+          const px = blk && blk.p ? Math.round(blk.p.x) : Math.round(this.game.map.spawn.x);
+          const py = blk && blk.p ? Math.round(blk.p.y) : Math.round(this.game.map.spawn.y);
+          for (const e of this._peers.values()) {
+            if (!e.id || e.id === entry.id) continue;
+            this._send(e.ctl, { t: 'ev', k: 'pjoin', id: entry.id, name: entry.name, prof: mm ? mm.prof : null, color: mm ? mm.color : '#e5484d', x: px, y: py });
+          }
+        }
         break;
       }
       case 'prof': entry.prof = m.prof || null; this._setRosterProf(entry.id, m.prof); this._sendLobby(); if (this.onLobby) this.onLobby(this.roster); break;
+      case 'pstate': {
+        // v0.28: SERVIDOR — el estado completo de un miembro (su progreso)
+        if (this.mode === 'server' && entry.id && m.st) {
+          const mm = this._members.get(entry.id);
+          if (mm) { mm.state = m.st; mm.online = true; }
+        }
+        break;
+      }
       case 'act': this._onClientAct(entry, m); break;
       case 'ping': this._send(entry.ctl, { t: 'pong', a: m.a }); break;
       case 'leave': this._dropClient(entry); break;
@@ -325,6 +557,12 @@ export class NetSession {
     this._peers.delete(entry.peerKey);
     if (entry.id) {
       this._removeRoster(entry.id);
+      // v0.28: en SERVIDOR el miembre NO se borra del mundo: queda
+      // desconectado (su progreso vuelve con él en la próxima sesión)
+      if (this.mode === 'server') {
+        const mm = this._members.get(entry.id);
+        if (mm) mm.online = false;
+      }
       const rem = this.remotes.get(entry.id);
       if (rem) {
         if (rem.p.inCar) { try { exitCar(this.game, true, rem.p); } catch (e) {} }
@@ -345,6 +583,7 @@ export class NetSession {
       case 'welcome':
         this.myId = m.you;
         this.roster = m.roster || [];
+        this.hostId = m.host || (this.roster[0] && this.roster[0].id) || 'H';
         if (this.onWelcome) this.onWelcome(this.roster);
         break;
       case 'lobby':
@@ -356,11 +595,24 @@ export class NetSession {
         if (this.onLocalStart) this.onLocalStart(m);
         break;
       case 'full': this.error = ERR.full; if (this.onFull) this.onFull(); break;
+      case 'denied':
+        // v0.28: el SERVIDOR rechazó la entrada (contraseña / aforo)
+        this.error = m.why === 'full' ? ERR.srvFull : ERR.wrongPass;
+        if (this.onDenied) this.onDenied(this.error);
+        break;
       case 'ping': this._sendHost({ t: 'pong', a: m.a }); break;
       case 'pong': this.rtt = Math.max(1, Math.round(performance.now() - m.a)); break;
       case 'loot': this._applyLoot(m); break;
       case 'dmg': this._applyRemoteBite(m); break;
       case 'ev': this._onEvent(m); break;
+      case 'srvsave': {
+        // v0.28: el anfitrión sincroniza el mundo — copia local actualizada
+        if (m.data && m.data.v) {
+          this.snapshot = m.data;
+          storeSnapshot(this.code, m.data);
+        }
+        break;
+      }
       case 'end': this.inGame = false; if (this.onSessionEnd) this.onSessionEnd(m.reason || 'host'); break;
       case 'pickFail': this._rollbackPick(m); break;
     }
@@ -433,8 +685,49 @@ export class NetSession {
       if (this.isHost) this._broadcast({ t: 'ping', a });
       else this._sendHost({ t: 'ping', a });
     }
+    // v0.28: SERVIDOR — sincronía del mundo (host → miembros) y del
+    // propio progreso (miembro → host)
+    if (this.mode === 'server' && this.inGame) {
+      if (this.isHost) {
+        this._srvSaveT += dt;
+        if (this._srvSaveT >= NET.srvSaveEvery) {
+          this._srvSaveT = 0;
+          this._srvSaveTick();
+        }
+      } else {
+        this._srvStateT += dt;
+        if (this._srvStateT >= NET.srvStateEvery) {
+          this._srvStateT = 0;
+          this._srvStateTick();
+        }
+      }
+    }
     if (this.isHost) this._hostTick(dt);
     else this._clientTick(dt);
+  }
+
+  /** v0.28: host de SERVIDOR — fotografía el mundo y lo difunde a los
+   *  miembros (cada uno guarda su copia: el mundo sobrevive al anfitrión). */
+  _srvSaveTick() {
+    const snap = buildServerSave(this.game, this);
+    if (!snap) return;
+    this.snapshot = snap;
+    storeSnapshot(this.code, snap);
+    this._broadcast({ t: 'srvsave', data: snap });
+  }
+
+  /** v0.28: miembro de SERVIDOR — sube SU progreso completo al anfitrión
+   *  (mochila, equipo, vitals, posición) para que viaje en el snapshot. */
+  _srvStateTick() {
+    const g = this.game;
+    if (!g || !g.player || !g.survival) return;
+    const carIdx = g.player.inCar ? g.map.cars.indexOf(g.player.inCar) : null;
+    const st = serializePlayerData(g.player, g.survival, {
+      dead: !!g.player.mpDead,
+      down: !!g.player.mpDown,
+      kills: g.kills | 0,
+    }, carIdx);
+    this._sendHost({ t: 'pstate', st });
   }
 
   // ---------- anfitrión: instantáneas ----------
@@ -452,19 +745,21 @@ export class NetSession {
 
     // jugadores: el propio + las marionetas (posición reportada ya interpada)
     const pl = [];
-    const pushPlayer = (id, p, rtt) => {
+    const pushPlayer = (id, p, hp) => {
       let st = 0;
       if (p.sneak) st |= ST_SNEAK;
       if (p.running) st |= ST_RUN;
       if (p.swingT > 0) st |= ST_SWING;
       if (p.mpDead) st |= ST_DEAD;
+      if (p.mpDown) st |= ST_DOWN;      // v0.28: caído, reanimable
       if (p.hurtFlash > 0) st |= ST_HURT;
       const carIdx = p.inCar ? g.map.cars.indexOf(p.inCar) : -1;
-      const hp = Math.round((id === 'H' ? g.survival.health : 100));
-      pl.push([id, Math.round(p.x), Math.round(p.y), Math.round(p.angle * 100), st, hp, p.z || 0, carIdx]);
+      const row = [id, Math.round(p.x), Math.round(p.y), Math.round(p.angle * 100), st, Math.round(hp), p.z || 0, carIdx];
+      if (p.mpDown) row.push(Math.ceil(p.mpDownT));   // v0.28: cuenta atrás visible
+      pl.push(row);
     };
-    pushPlayer('H', g.player, 0);
-    for (const [id, r] of this.remotes) pushPlayer(id, r.p, r.rtt);
+    pushPlayer(this.myId, g.player, g.survival.health);
+    for (const [id, r] of this.remotes) pushPlayer(id, r.p, r.hp);
 
     // zombis: delta contra lo último enviado + altas de los nuevos
     const za = [], zm = [];
@@ -516,11 +811,15 @@ export class NetSession {
     });
   }
 
-  /** Jugadores vivos para el radio de sincronización de zombis. */
+  /** Jugadores vivos para el radio de sincronización de zombis.
+   *  v0.28: los CAÍDOS no cuentan — para la horda ya son carne (y así el
+   *  compañero puede llegar a reanimarlos), igual que los muertos. */
   _targetsForSync() {
     const out = [];
-    if (!this.game.player.mpDead) out.push(this.game.player);
-    for (const r of this.remotes.values()) if (r.alive) out.push(r.p);
+    if (!this.game.player.mpDead && !this.game.player.mpDown) out.push(this.game.player);
+    for (const r of this.remotes.values()) {
+      if (r.alive && !r.p.mpDown) out.push(r.p);
+    }
     return out;
   }
 
@@ -540,6 +839,9 @@ export class NetSession {
     const wasAlive = r.alive;
     r.alive = !(m.st & ST_DEAD);
     p.mpDead = !r.alive;
+    // v0.28: caído (reanimable) — la cuenta atrás la dicta SU máquina
+    p.mpDown = !!(m.st & ST_DOWN);
+    if (p.mpDown && m.dw !== undefined) p.mpDownT = m.dw;
     r.hp = m.hp;
     if ((m.z !== undefined) && !p.inCar) p.z = m.z;
     // coche: el conductor manda el estado del vehículo (autoridad del piloto)
@@ -582,12 +884,14 @@ export class NetSession {
     }
   }
 
-  /** Anfitrión: una mordida cae sobre un jugador REMOTO → se la enviamos. */
+  /** Anfitrión: una mordida cae sobre un jugador REMOTO → se la enviamos.
+   *  v0.28: los CAÍDOS no reciben mordidas (ya están en el suelo). */
   routeBite(z, target) {
     const r = [...this.remotes.entries()].find(([, rr]) => rr.p === target);
     if (!r) return;
     const [id] = r;
-    // ¿va al volante? el golpe cae sobre la CHAPA — el coche es del piloto
+    if (target.mpDead || target.mpDown) return;
+    // ¿va a bordo? el golpe cae sobre la CHAPA — el coche es del piloto
     if (target.inCar) {
       const car = target.inCar;
       const dmg = z.dmgMin + Math.random() * (z.dmgMax - z.dmgMin);
@@ -643,6 +947,7 @@ export class NetSession {
       if (p.running) st |= ST_RUN;
       if (p.swingT > 0) st |= ST_SWING;
       if (p.mpDead) st |= ST_DEAD;
+      if (p.mpDown) st |= ST_DOWN;      // v0.28: caído, reanimable
       if (p.hurtFlash > 0) st |= ST_HURT;
       const msg = {
         t: 2,
@@ -652,16 +957,21 @@ export class NetSession {
         z: p.z || 0,
         car: p.inCar ? g.map.cars.indexOf(p.inCar) : -1,
       };
+      if (p.mpDown) msg.dw = Math.ceil(p.mpDownT);   // v0.28: cuenta atrás
       if (p.inCar) {
         const car = p.inCar;
-        msg.ci = [
-          g.map.cars.indexOf(car),
-          Math.round(car.x), Math.round(car.y),
-          Math.round(car.dir * 100), Math.round(car.speed),
-          Math.round(car.fuel * 10), car.lights ? 1 : 0,
-          Math.round(car.engineHp), car.running ? 1 : 0,
-        ];
-        msg.car = msg.ci[0];
+        // v0.28: SOLO el conductor manda el estado del vehículo — el
+        // pasajero viaja dentro (posición = coche) sin opinar del motor
+        if (isDriver(p)) {
+          msg.ci = [
+            g.map.cars.indexOf(car),
+            Math.round(car.x), Math.round(car.y),
+            Math.round(car.dir * 100), Math.round(car.speed),
+            Math.round(car.fuel * 10), car.lights ? 1 : 0,
+            Math.round(car.engineHp), car.running ? 1 : 0,
+          ];
+          msg.car = msg.ci[0];
+        }
       }
       // ruido y golpes acumulados
       if (this._noiseQ.length) { msg.nz = this._noiseQ; this._noiseQ = []; }
@@ -729,7 +1039,7 @@ export class NetSession {
 
     // jugadores
     for (const row of m.pl || []) {
-      const [id, x, y, a, st, hp, zz, carIdx] = row;
+      const [id, x, y, a, st, hp, zz, carIdx, dw] = row;
       if (id === this.myId) continue;
       let r = this.remotes.get(id);
       if (!r) continue;   // altas tardías: llegan con el paquete de inicio
@@ -743,6 +1053,9 @@ export class NetSession {
       const wasAlive = r.alive;
       r.alive = !(st & ST_DEAD);
       p.mpDead = !r.alive;
+      // v0.28: caído (reanimable) con su cuenta atrás
+      p.mpDown = !!(st & ST_DOWN);
+      if (p.mpDown && dw !== undefined) p.mpDownT = dw;
       if (!p.inCar) p.z = zz;
       r.carIdx = carIdx;
       if (carIdx >= 0) {
@@ -802,7 +1115,9 @@ export class NetSession {
 
   // ================== ACTOS DEL CLIENTE → ANFITRIÓN ==================
 
-  /** Clave de botín estable para cualquier contenedor del mundo. */
+  /** Clave de botín estable para cualquier contenedor del mundo.
+   *  v0.28: los CUERPOS de jugadores caídos son saqueables como cualquier
+   *  contenedor (clave {b: nid del cuerpo}). */
   lootKeyOf(c) {
     const g = this.game;
     if (!c) return null;
@@ -811,6 +1126,7 @@ export class NetSession {
       const i = car ? g.map.cars.indexOf(car) : -1;
       return i >= 0 ? { v: i } : null;
     }
+    if (c.mpBodyNid !== undefined) return { b: c.mpBodyNid };
     if (c.nid !== undefined) return { k: c.nid };                       // caja de crafteo
     const i = g.map.containers.indexOf(c);
     return i >= 0 ? { c: i } : null;
@@ -822,6 +1138,9 @@ export class NetSession {
     if (key.v !== undefined) {
       const car = g.map.cars[key.v];
       return car ? car.trunk : null;
+    }
+    if (key.b !== undefined) {
+      return (g.mpBodies || []).find((x) => x.nid === key.b) || null;   // v0.28: cuerpo
     }
     if (key.k !== undefined) {
       return g.constructions.find((c) => c.nid === key.k) || null;
@@ -871,6 +1190,14 @@ export class NetSession {
 
   /** Cliente: ruido local que el anfitrión debe oír (atrae a sus zombis). */
   queueNoise(x, y, r) { this._noiseQ.push([Math.round(x), Math.round(y), Math.round(r)]); }
+
+  /** v0.28: CHAT de sala — difunde un mensaje a todos (con eco local).
+   *  El nombre y el color los pone cada máquina al recibir el evento. */
+  sendChat(txt) {
+    const clean = String(txt || '').slice(0, NET.chatMaxLen).trim();
+    if (!clean) return;
+    this.sendEv('chat', { id: this.myId, txt: clean });
+  }
 
   /** Cualquiera: difunde un evento del mundo (el anfitrión lo reparte). */
   sendEv(k, data) {
@@ -964,22 +1291,25 @@ export class NetSession {
         break;
       }
       case 'carIn': {
+        // v0.28: `ps`=1 sube como PASAJERO (el conductor manda; el asiento
+        // se replica en la máquina de cada uno)
         const car = g.map.cars[m.i];
         const r = this.remotes.get(entry.id);
         if (car && r) {
-          enterCar(g, car, true, r.p);
+          enterCar(g, car, true, r.p, !!m.ps);
           car.running = !!m.r && carCanStart(car);
-          this._broadcast({ t: 'ev', k: 'carIn', i: m.i, r: car.running ? 1 : 0 });
+          this._broadcast({ t: 'ev', k: 'carIn', i: m.i, r: car.running ? 1 : 0, who: entry.id, ps: m.ps ? 1 : 0 });
         }
         break;
       }
       case 'carOut': {
+        // v0.28: solo se baja QUIEN lo pidió (antes vaciaba el coche)
         const car = g.map.cars[m.i];
         const r = this.remotes.get(entry.id);
         if (car && r && r.p.inCar === car) {
           exitCar(g, true, r.p);
           if (m.x !== undefined) { r.p.x = m.x; r.p.y = m.y; r.p._tx = m.x; r.p._ty = m.y; }
-          this._broadcast({ t: 'ev', k: 'carOut', i: m.i, x: m.x, y: m.y });
+          this._broadcast({ t: 'ev', k: 'carOut', i: m.i, x: m.x, y: m.y, who: entry.id });
         }
         break;
       }
@@ -1003,7 +1333,9 @@ export class NetSession {
   }
 
   /** Anfitrión: evento de cliente → efecto local + re-difusión AL RESTO
-   *  (nunca al originador: él ya lo aplicó al generar). */
+   *  (nunca al originador: él ya lo aplicó al generar).
+   *  v0.28: los eventos de sala (caídas, reanimaciones, chat, cuerpos)
+   *  también se aplican AQUÍ — el anfitrión los ve igual que un cliente. */
   _relayEvent(fromId, m) {
     const g = this.game;
     switch (m.k) {
@@ -1015,7 +1347,12 @@ export class NetSession {
         break;
       }
       case 'scream': break;   // el chillido nace SOLO en el anfitrión
-      default: break;
+      default: {
+        // pdown / previve / pdead / chat / pleave…: mismo tratamiento que
+        // en un cliente (efectos locales + toasts)
+        this._onEvent({ t: 'ev', k: m.k, ...m });
+        break;
+      }
     }
     // re-difusión a todos MENOS al originador
     for (const e of this._peers.values()) {
@@ -1115,33 +1452,118 @@ export class NetSession {
         }
         break;
       }
+      // ---- v0.28: CAÍDA (inconsciente, reanimable) ----
+      case 'pdown': {
+        const r = this.remotes.get(m.id);
+        if (r) {
+          r.p.mpDown = true;
+          r.p.mpDownT = m.dw !== undefined ? m.dw : NET.reviveWindow;
+          r.p.mpDead = false;
+          r.alive = true;
+          if (m.x !== undefined && m.y !== undefined) {
+            r.p.x = m.x; r.p.y = m.y; r.p._tx = m.x; r.p._ty = m.y;
+          }
+          g.toasts.push(m.name + ' HA CAÍDO — ¡REVÍVALO! ([E] junto a él, con ' +
+            NET.reviveNeedVendas + ' vendas o ' + NET.reviveNeedBotiquin + ' botiquín) · ' +
+            Math.ceil(r.p.mpDownT) + ' s', 'bad');
+          if (g.chat) g.chat.pushSys(m.name + ' ha caído — se puede reanimar (' + Math.ceil(r.p.mpDownT) + ' s)');
+          g.audio.groan(1, 0, 0.8);
+          g.cam.shake(3);
+        }
+        break;
+      }
+      // ---- v0.28: REANIMADO — segunda oportunidad ----
+      case 'previve': {
+        // ¿reaniman a ESTE jugador? SU máquina aplica la reanimación (la
+        // vida y la ventana de reanimación son locales) — sin esta rama el
+        // caído no se enteraría y acabaría muriendo a pesar de salvado
+        if (m.id === this.myId) {
+          const byR = this.roster.find((x) => x.id === m.by);
+          if (g.mpRevived) g.mpRevived(byR ? byR.name : null);
+          break;
+        }
+        const r = this.remotes.get(m.id);
+        if (r) {
+          r.p.mpDown = false;
+          r.p.mpDownT = 0;
+          r.hp = NET.reviveHp;
+          const byName = m.by || this.hostId;
+          const byR = this.remotes.get(byName);
+          g.toasts.push((byR ? byR.name : 'ALGUIEN') + ' ha REANIMADO a ' + r.name, 'save');
+          if (g.chat) g.chat.pushSys((byR ? byR.name : 'alguien') + ' reanimó a ' + r.name);
+        }
+        break;
+      }
+      // ---- v0.28: alta tardía (miembro que entra al mundo en marcha) ----
+      case 'pjoin': {
+        if (this.remotes.has(m.id)) break;
+        if (!this.roster.some((x) => x.id === m.id)) {
+          this.roster.push({ id: m.id, name: m.name, prof: m.prof || null, color: m.color || '#e5484d' });
+        }
+        const p = new Player(m.x || 0, m.y || 0);
+        p.mpColor = m.color; p.mpName = m.name; p.prof = m.prof || null; p.mpId = m.id;
+        this.remotes.set(m.id, {
+          p, name: m.name, prof: m.prof || null, color: m.color || '#e5484d',
+          alive: true, hp: 100, rtt: null, carIdx: -1, swing: 0,
+          tx: m.x || 0, ty: m.y || 0, tAng: 0,
+        });
+        g.toasts.push(m.name + ' se une al mundo', 'info');
+        if (g.chat) g.chat.pushSys(m.name + ' se ha unido');
+        break;
+      }
+      // ---- v0.28: CHAT de sala ----
+      case 'chat': {
+        const mine = m.id === this.myId;
+        const r = this.remotes.get(m.id);
+        const name = mine ? 'TÚ' : (r ? r.name : 'ALGUIEN');
+        const color = mine ? '#8ac0e8' : (r ? r.color : '#a8aba0');
+        if (g.chat) g.chat.push(name, color, m.txt);
+        break;
+      }
       case 'pdead': {
         const r = this.remotes.get(m.id);
         if (r) {
           r.alive = false;
           r.p.mpDead = true;
-          g.map.stampCorpse(r.p.x, r.p.y, r.p.angle);
-          g.map.stampBlood(r.p.x, r.p.y, true);
-          g.toasts.push(m.name + ' HA CAÍDO', 'bad');
+          r.p.mpDown = false;
+          const bx = m.x !== undefined ? m.x : r.p.x;
+          const by2 = m.y !== undefined ? m.y : r.p.y;
+          g.map.stampCorpse(bx, by2, r.p.angle);
+          g.map.stampBlood(bx, by2, true);
+          // v0.28: su CUERPO queda registrado — se puede SAQUEAR
+          if (m.bd && Array.isArray(m.its)) {
+            g.mpBodies = g.mpBodies || [];
+            g.mpBodies.push({
+              nid: m.bd, mpBodyNid: m.bd,
+              name: r.name, color: r.color,
+              x: bx, y: by2, z: r.p.z || 0,
+              searched: false,
+              items: m.its.map(itemFromData).filter(Boolean),
+            });
+          }
+          g.toasts.push(m.name + ' HA CAÍDO — su cuerpo queda en el sitio: se puede registrar', 'bad');
+          if (g.chat) g.chat.pushSys(m.name + ' ha muerto');
           g.audio.groan(1, 0, 0.8);
         }
         break;
       }
       case 'carIn': {
         const car = g.map.cars[m.i];
-        if (car && !car.driven) {
-          const r = m.who ? this.remotes.get(m.who) : null;
-          enterCar(g, car, true, r ? r.p : null);
+        const r = m.who ? this.remotes.get(m.who) : null;
+        if (car && r) {
+          // v0.28: asiento — conductor o pasajero (enterCar lo resuelve)
+          enterCar(g, car, true, r.p, !!m.ps);
           car.running = !!m.r && carCanStart(car);
         }
         break;
       }
       case 'carOut': {
+        // v0.28: se baja SOLO quien lo pidió (el coche sigue con su gente)
         const car = g.map.cars[m.i];
-        if (car) {
-          for (const r of this.remotes.values()) {
-            if (r.p.inCar === car) { exitCar(g, true, r.p); if (m.x !== undefined) { r.p.x = m.x; r.p.y = m.y; } }
-          }
+        const r = m.who ? this.remotes.get(m.who) : null;
+        if (car && r && r.p.inCar === car) {
+          exitCar(g, true, r.p);
+          if (m.x !== undefined) { r.p.x = m.x; r.p.y = m.y; r.p._tx = m.x; r.p._ty = m.y; }
         }
         break;
       }
@@ -1241,13 +1663,23 @@ export class NetSession {
     for (const r of this.roster) {
       const isMe = r.id === this.myId;
       let hp = 100;
-      if (isMe) hp = g.survival ? Math.round(g.survival.health) : 100;
-      else { const rr = this.remotes.get(r.id); if (rr) hp = Math.round(rr.hp); }
+      let down = 0;
+      if (isMe) {
+        hp = g.survival ? Math.round(g.survival.health) : 100;
+        down = g.player && g.player.mpDown ? Math.ceil(g.player.mpDownT) : 0;
+      } else {
+        const rr = this.remotes.get(r.id);
+        if (rr) {
+          hp = Math.round(rr.hp);
+          down = rr.p.mpDown ? Math.ceil(rr.p.mpDownT) : 0;
+        }
+      }
       rows.push({
-        name: r.name, color: r.color, hp,
-        me: isMe, dead: isMe ? !!g.player.mpDead : !(this.remotes.get(r.id) || {}).alive,
+        name: r.name, color: r.color, hp, down,
+        me: isMe,
+        dead: isMe ? !!g.player.mpDead : !(this.remotes.get(r.id) || {}).alive,
         rtt: isMe ? this.rtt : ((this.remotes.get(r.id) || {}).rtt ?? null),
-        host: r.id === 'H',
+        host: r.id === (this.hostId || 'H'),
       });
     }
     return rows;

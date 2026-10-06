@@ -1884,3 +1884,193 @@ button.mp-big:hover:not(:disabled) { background: #36485c !important; }
 .mp-row.dead .mp-hp { color: #e05a4f; }
 .mp-row .mp-rtt { font-size: 11.5px; color: #6d6f64; min-width: 52px; text-align: right; }
 #mp-list .mp-note { border: none; margin: 0; padding: 8px 0 2px; }
+
+/* ==================== v0.28: SERVIDORES + CHAT ==================== */
+
+/* pestañas SALAS / SERVIDORES del panel de multijugador */
+.mp-tabs {
+  display: flex;
+  gap: 0;
+  margin: 6px 0 12px;
+  border-bottom: 1px solid #2c3325;
+}
+.mp-tabs button {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  padding: 8px 22px;
+  background: transparent;
+  color: #6d7264;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.mp-tabs button:hover { color: #b8bfae; }
+.mp-tabs button.sel {
+  color: #d8dbd0;
+  border-bottom-color: #d8a04a;
+}
+
+/* fila de entrada a un mundo: código de 6 + clave de 4 + botón */
+.srv-join input {
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 5px;
+  text-align: center;
+  background: #141a11;
+  border: 1px solid #4a4f42;
+  color: #d8dbd0;
+  padding: 8px 10px;
+  outline: none;
+}
+.srv-join #srv-code { width: 130px; }
+.srv-join #srv-pass { width: 96px; letter-spacing: 8px; color: #d8a04a; }
+.srv-join input:focus { border-color: #d8a04a; }
+.srv-join button { flex: 1; min-width: 170px; }
+
+/* MIS MUNDOS — lista local de mundos del navegador */
+.srv-mine {
+  margin-top: 12px;
+  border: 1px solid #2c3325;
+  background: rgba(10, 13, 9, 0.6);
+  max-height: 218px;
+  overflow-y: auto;
+}
+.srv-mine-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-bottom: 1px solid #2c3325;
+}
+.srv-mine-head span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  color: #8d8f84;
+}
+.srv-mine-head button {
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 9px;
+  background: #1c211b;
+  color: #8d8f84;
+  border: 1px solid #3a3f35;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.srv-mine-head button:hover { color: #d8dbd0; border-color: #6a705a; }
+.srv-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid #20261c;
+}
+.srv-row:last-child { border-bottom: none; }
+.srv-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.srv-name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #d8dbd0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.srv-sum { font-size: 11.5px; color: #6d7264; letter-spacing: 0.5px; }
+.srv-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.srv-empty {
+  padding: 14px 10px;
+  font-size: 13px;
+  color: #6d7264;
+  line-height: 1.5;
+}
+
+/* hint del flujo de servidores (código + contraseña al crear) */
+.srv-hint {
+  padding: 10px 6px 2px;
+  color: #a8aba0;
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+.srv-hint:empty { display: none; }
+.srv-hint b { color: #d8a04a; font-size: 16px; letter-spacing: 2px; }
+
+/* CHAT de sala — registro de líneas (arriba de las barras, abajo-izq) */
+#mp-chat {
+  position: fixed;
+  left: 18px;
+  bottom: 254px;
+  z-index: 38;
+  width: min(400px, 46vw);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  background: rgba(8, 11, 7, 0.55);
+  border-left: 2px solid #3a4430;
+  pointer-events: none;
+}
+#mp-chat.pinned { background: rgba(8, 11, 7, 0.82); border-left-color: #6aa8d8; }
+.chat-line {
+  font-size: 13.5px;
+  line-height: 1.35;
+  color: #cdd2c4;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  word-break: break-word;
+}
+.chat-line .chat-name { font-weight: 700; letter-spacing: 1px; }
+.chat-line.sys { color: #a8aba0; font-style: italic; font-size: 12.5px; }
+
+/* campo de escritura del chat ([T]) — centrado, sobre la barra rápida */
+#mp-chat-form {
+  position: fixed;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(560px, 86vw);
+  padding: 8px 10px;
+  background: rgba(10, 13, 9, 0.94);
+  border: 1px solid #3a6a8a;
+  border-bottom-width: 3px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.7);
+}
+#mp-chat-form .chat-tag {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #8ac0e8;
+  border: 1px solid #3a6a8a;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+#mp-chat-input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: #e6e8dc;
+  background: #141a11;
+  border: 1px solid #4a4f42;
+  padding: 6px 9px;
+  outline: none;
+}
+#mp-chat-input:focus { border-color: #6aa8d8; }
+
+/* lista TAB: compañero CAÍDO (reanimable) */
+.mp-row.down .mp-hp { color: #e8c35a; }
